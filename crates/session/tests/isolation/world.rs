@@ -364,7 +364,7 @@ pub(super) fn words_of(name: &str) -> [String; 7] {
 
 /// What reads the files a turn makes in the world: each is previewed as its text.
 fn previews() -> glave_ports::ReadMade {
-    Arc::new(|_, bytes, _| {
+    Arc::new(|bytes, _| {
         Box::pin(async move {
             Some(glave_ports::MadeRead {
                 markdown: Some(String::from_utf8_lossy(&bytes).into_owned()),

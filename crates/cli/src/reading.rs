@@ -7,9 +7,10 @@
 //! enforces no such limit, glave's own allocator, `allocator.rs`), leaves no core dump of what it
 //! decoded, and on Linux is the first the kernel ends when memory runs out, so the readers' own
 //! never take the server. The server stops it past [`WITHIN`], with all it started. A reader
-//! that ends otherwise than as it should has read nothing. At most [`MOST_READERS`] run at once
-//! on a server, and at most [`MOST_PER_ORG`] for one organization, so no one's files hold up
-//! everyone's: their memory, in all, is at most [`MOST_READERS`] times [`MOST_MEMORY`].
+//! that ends otherwise than as it should has read nothing. Readers run inside look-overs, one
+//! file at a time each, so as many run at once as look-overs do: at most 4 on a server and 2 for
+//! one organization (glave-harness's `made.rs`), their memory in all at most 4 times
+//! [`MOST_MEMORY`].
 
 use std::ffi::OsString;
 use std::io::{Read as _, Write as _};
@@ -17,7 +18,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_harness::{MAX_FILE, Shares};
+use glave_harness::MAX_FILE;
 use glave_ports::{MadeRead, ReadMade};
 use glave_process::{Processes, Program};
 use rustix::process::{Resource, Rlimit, setrlimit};
@@ -25,9 +26,14 @@ use rustix::process::{Resource, Rlimit, setrlimit};
 /// What glave is started with to read a file a turn made, followed by its media type.
 const READER_ARG: &str = "--glave-read-made";
 
-/// What starts each line a reader writes to its standard error, which the server logs: why it
-/// couldn't hold itself to what reading may take, never anything of the file.
+/// What starts each line a reader writes to its standard error saying why it couldn't hold
+/// itself to what reading may take, never anything of the file.
 const SAYS: &str = "glave's reader: ";
+
+/// What a reader exits with when it couldn't hold itself to what reading may take: only then are
+/// the lines it wrote that start with [`SAYS`] its own, and logged. A reader that ends any other
+/// way, a panic in what read the file among them, may have written anything, which never is.
+const NOT_HELD: u8 = 75;
 
 /// The longest a file is read for.
 const WITHIN: Duration = Duration::from_secs(20);
@@ -40,12 +46,6 @@ const MOST_MEMORY: usize = 1536 * 1024 * 1024;
 /// (256 KB) written as JSON.
 const MOST_ANSWER: usize = 2 * 1024 * 1024;
 
-/// The most readers running at once on a server.
-const MOST_READERS: usize = 4;
-
-/// The most readers running at once for one organization.
-const MOST_PER_ORG: usize = 2;
-
 /// Runs glave as a reader when it was started as one, and then returns the code to exit with.
 pub(crate) fn helper(args: &[OsString]) -> Option<ExitCode> {
     if args.get(1).is_none_or(|first| first != READER_ARG) {
@@ -56,8 +56,10 @@ pub(crate) fn helper(args: &[OsString]) -> Option<ExitCode> {
     };
     if let Err(why) = held_to_reading() {
         let _ = writeln!(std::io::stderr(), "{SAYS}{why}");
-        return Some(ExitCode::FAILURE);
+        return Some(ExitCode::from(NOT_HELD));
     }
+    // What reads the file says nothing of it, however it fails: a panic's message may quote it.
+    std::panic::set_hook(Box::new(|_| {}));
     let mut bytes = Vec::new();
     let mut input = std::io::stdin().take(MAX_FILE.saturating_add(1));
     if input.read_to_end(&mut bytes).is_err() {
@@ -122,19 +124,14 @@ fn held_to_reading() -> Result<(), String> {
 pub(crate) fn reader(processes: &Processes) -> Option<ReadMade> {
     let program = glave_process::this_program().ok()?;
     let processes = processes.clone();
-    let readers = Arc::new(Shares::new(MOST_READERS, MOST_PER_ORG));
-    Some(Arc::new(move |org, bytes, media_type| {
-        let (processes, program, readers) =
-            (processes.clone(), program.clone(), Arc::clone(&readers));
+    Some(Arc::new(move |bytes, media_type| {
+        let (processes, program) = (processes.clone(), program.clone());
         Box::pin(async move {
-            let _share = readers.share(org).await;
             let mut reading = Program::new(&program);
             reading.arg(READER_ARG).arg(&media_type).env_clear();
             let read = processes.output_with(&mut reading, &bytes, WITHIN, MOST_ANSWER);
             let output = read.await.ok()?;
-            // Why a reader couldn't hold itself to its limits, in its own words: never the file's.
-            let said = String::from_utf8_lossy(&output.stderr);
-            for why in said.lines().filter_map(|line| line.strip_prefix(SAYS)) {
+            for why in said_why(output.status.code(), &output.stderr) {
                 tracing::warn!(why, "a reader of a file a turn made read nothing");
             }
             if !output.status.success() {
@@ -145,11 +142,38 @@ pub(crate) fn reader(processes: &Processes) -> Option<ReadMade> {
     }))
 }
 
+/// Why a reader that ended with `code`, having written `stderr`, read nothing, in its own words:
+/// only when it ended as one that couldn't hold itself to its limits ([`NOT_HELD`]), so nothing
+/// else it wrote, which might quote the file, is ever logged.
+fn said_why(code: Option<i32>, stderr: &[u8]) -> Vec<String> {
+    if code != Some(i32::from(NOT_HELD)) {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(stderr)
+        .lines()
+        .filter_map(|line| line.strip_prefix(SAYS))
+        .map(str::to_owned)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use rustix::process::getrlimit;
 
     use super::*;
+
+    #[test]
+    fn only_a_reader_that_could_not_hold_itself_is_heard_and_never_what_it_read() {
+        let said = format!("{SAYS}its memory couldn't be limited: EPERM\n");
+        assert_eq!(
+            said_why(Some(i32::from(NOT_HELD)), said.as_bytes()),
+            ["its memory couldn't be limited: EPERM"]
+        );
+        // A reader that ended any other way, a panic among them, may have written the file.
+        let forged = format!("thread 'main' panicked\n{SAYS}Q3 revenue: 4.2M\n");
+        assert_eq!(said_why(Some(101), forged.as_bytes()), Vec::<String>::new());
+        assert_eq!(said_why(None, forged.as_bytes()), Vec::<String>::new());
+    }
 
     #[test]
     fn a_reader_leaves_no_core_dump_and_is_held_to_its_memory() {

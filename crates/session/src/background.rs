@@ -13,7 +13,7 @@ use glave_event::{Principal, ThreadId};
 use glave_harness::Commands;
 use glave_ports::computer::CommandId;
 use glave_ports::host::PublicOrigin;
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -149,8 +149,14 @@ where
     }
 
     /// Records what the thread's commands are waiting to have recorded, when no turn holds it,
-    /// with what was made since a turn's mark when the last of them has ended (`looks`).
-    async fn record_idle(&self, thread: ThreadId, looks: bool) {
+    /// with what was made since a turn's mark when the last of them has ended (`looks`). Boxed,
+    /// since a turn's own task calls it once the turn has ended (`held.rs`), whose future would
+    /// otherwise hold its own type.
+    pub(crate) fn record_idle(&self, thread: ThreadId, looks: bool) -> BoxFuture<'_, ()> {
+        Box::pin(self.record_idle_now(thread, looks))
+    }
+
+    async fn record_idle_now(&self, thread: ThreadId, looks: bool) {
         if !matches!(self.lock().get(&thread), Some(Slot::Idle { .. })) {
             return;
         }

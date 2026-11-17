@@ -4,25 +4,27 @@
 //! reader read it; `file/read` reads it back and `file/preview` gives the preview its turn kept;
 //! a file the server doesn't preview is refused plainly, and one its reader couldn't read only
 //! downloads, said why. A command that waits for the person makes a file once they allow it. A
-//! message sent while what a command made is looked over starts a turn once it is done.
+//! message sent while what a command made is looked over starts a turn once it is done. A turn
+//! the person stopped keeps what it made once it has ended, with no message after it.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use glave_event::{AssetKind, Body, Parts, decode};
+use glave_event::{AssetKind, Body, Outcome, Parts, RawEvent, ThreadId, decode};
 use glave_ports::{MadeRead, ReadMade};
 use glave_session::Answering;
 use glave_session::protocol::{Answer, MadeFile, Reply, Request, code};
 use serde_json::json;
+use tokio::sync::Notify;
 
 use crate::support::*;
 
 /// A reader standing in for glave's own: a CSV file is one sheet, previewed as its text, a PDF
 /// one page; a file that says it can't be read can't.
 fn reader() -> ReadMade {
-    Arc::new(|_, bytes, media_type| {
+    Arc::new(|bytes, media_type| {
         Box::pin(async move {
             let text = String::from_utf8(bytes).ok()?;
             match media_type.as_str() {
@@ -65,17 +67,20 @@ fn a_file_a_command_made_after_the_person_allowed_it_is_kept() {
         };
         server.request(decide).await.unwrap();
         stream.finish().await.unwrap();
-        let listed = server.request(Request::ThreadFiles { thread }).await;
-        let Ok(Reply::Files { made }) = listed else {
-            panic!("files, not {listed:?}")
-        };
-        let names: Vec<&str> = made
-            .iter()
-            .flat_map(|turn| &turn.files)
-            .map(|file| file.file_name.as_str())
-            .collect();
-        assert_eq!(names, ["allowed.csv"]);
+        assert_eq!(made_names(&server, thread).await, ["allowed.csv"]);
     });
+}
+
+/// The names of the files `thread`'s turns made, as `thread/files` lists them.
+async fn made_names(server: &Tested, thread: ThreadId) -> Vec<String> {
+    let listed = server.request(Request::ThreadFiles { thread }).await;
+    let Ok(Reply::Files { made }) = listed else {
+        panic!("files, not {listed:?}")
+    };
+    made.iter()
+        .flat_map(|turn| &turn.files)
+        .map(|file| file.file_name.clone())
+        .collect()
 }
 
 /// The budget the turn writes.
@@ -237,16 +242,71 @@ fn a_message_sent_while_a_command_s_files_are_looked_over_starts_a_turn_after() 
         let mut stream = sent.expect("taken, once the look-over is done, not refused as busy");
         stream.finish().await.unwrap();
         let events = events(&server, thread).await;
-        let kinds: Vec<&str> = events
-            .iter()
-            .filter_map(
-                |event| match decode(event.clone()).map(|event| event.body) {
-                    Ok(Body::TurnMade(_)) => Some("made"),
-                    Ok(Body::TurnStarted(_)) => Some("started"),
-                    _ => None,
-                },
-            )
-            .collect();
-        assert_eq!(kinds, ["started", "made", "started"]);
+        assert_eq!(
+            turns(&events),
+            ["started", "ended", "made", "started", "ended"]
+        );
+    });
+}
+
+/// The turns' starts and ends in `events`, and the looks made after them.
+fn turns(events: &[RawEvent]) -> Vec<&'static str> {
+    events
+        .iter()
+        .filter_map(
+            |event| match decode(event.clone()).map(|event| event.body) {
+                Ok(Body::TurnMade(_)) => Some("made"),
+                Ok(Body::TurnStarted(_)) => Some("started"),
+                Ok(Body::TurnEnded(_)) => Some("ended"),
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+/// A turn the person stops after it wrote a file owes the look over what it made: made once its
+/// end is in the log, so the file is kept though they send nothing more.
+#[test]
+fn a_file_a_turn_the_person_stopped_made_is_kept_with_no_message_after() {
+    let dir = folder("made-stopped");
+    block_on!(async {
+        let write = json!({"path": "notes.csv", "content": TABLE});
+        let answers = vec![
+            answer(None, Some(("write", write))),
+            answer(Some("Done."), None),
+        ];
+        let gate = Arc::new(Notify::new());
+        let mut setup = Setup::new(answers);
+        setup.settings.titles = false;
+        setup.gate = Some(Arc::clone(&gate));
+        setup.reader = Some(reader());
+        let (server, seen) = setup.build(&dir).await;
+        let thread = start(&server, false).await;
+        let mut running = stream_turn(&server, thread, "write it", None)
+            .await
+            .unwrap();
+        // The first answer writes the file; the second is never let through, so the turn runs
+        // until the person stops it.
+        gate.notify_one();
+        asked(&seen, 2).await;
+        server
+            .request(Request::TurnCancel { thread })
+            .await
+            .unwrap();
+        assert_eq!(running.finish().await.unwrap().outcome, Outcome::Cancelled);
+        let looked = async {
+            loop {
+                let events = events(&server, thread).await;
+                if turns(&events).contains(&"made") {
+                    return events;
+                }
+                tokio::task::yield_now().await;
+            }
+        };
+        let events = tokio::time::timeout(TOLD, looked)
+            .await
+            .expect("the stopped turn's files are looked over within seconds");
+        assert_eq!(turns(&events), ["started", "ended", "made"]);
+        assert_eq!(made_names(&server, thread).await, ["notes.csv"]);
     });
 }
