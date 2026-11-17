@@ -144,11 +144,10 @@ where
     }
 
     /// Refused once `caller` keeps as many schedules as policy allows that will still run, or
-    /// may once resumed: a paused one counts, so pausing makes no room.
+    /// may once resumed, a hundred where it sets none: a paused one counts, so pausing makes
+    /// no room.
     async fn room_for_one_more(&self, caller: &Caller) -> Result<(), ApiError> {
-        let Some(most) = self.inner.limits.max_schedules else {
-            return Ok(());
-        };
+        let most = self.most_schedules();
         let projects = self.read_ledgers_of(caller).await?;
         let now = self.inner.harness.clock().now();
         let kept = self
@@ -159,10 +158,11 @@ where
             .filter(|scheduled| info::kept(scheduled, now))
             .count();
         if kept >= most {
-            return Err(ApiError::new(
-                code::LIMIT,
-                Sentence::TooManySchedules { kept, most },
-            ));
+            let said = match self.inner.limits.max_schedules {
+                Some(_) => Sentence::TooManySchedules { kept, most },
+                None => Sentence::TooManySchedulesKept { kept, most },
+            };
+            return Err(ApiError::new(code::LIMIT, said));
         }
         Ok(())
     }

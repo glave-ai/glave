@@ -235,8 +235,13 @@ pub(super) async fn sweep<L: EventLog + Clone + 'static>(world: &World<L>) -> Ve
 
 /// What only the person on a server's computer may do, the session's `local` check: folders
 /// there, web search, keeping it awake, credits, answering what a folder asks to be trusted,
-/// gone folders, model accounts, connections, secrets, the memory switch and sign-up links.
+/// gone folders, model accounts, connections, secrets, the memory switch, sign-up links and
+/// the browsers signed in there. Every place the session checks it is counted
+/// ([`LOCAL_CHECKS`]), so a new one fails the suite until its methods are listed here.
 const LOCAL_ONLY: &[&str] = &[
+    "passkey/list",
+    "passkey/remove",
+    "project/find",
     "folder/list",
     "search/set",
     "awake/set",
@@ -258,6 +263,36 @@ const LOCAL_ONLY: &[&str] = &[
     "memory/set",
     "signup/link",
 ];
+
+/// The places the session checks that a caller is the person on its computer (`local`, and
+/// `theirs`, which asks it), each one's methods in [`LOCAL_ONLY`]: browsers 1, awake 1,
+/// connections 1, credits 2, gone folders 2, folders 3 (one only for a project made with a
+/// folder, which no template asks for), memory 1, model accounts 1, search 1, secrets 1,
+/// sign-ups 1, trust 2 (one only says whether a folder asks).
+const LOCAL_CHECKS: usize = 17;
+
+/// How many places in the session's sources check that a caller is the person on its computer.
+fn local_checks() -> usize {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let sources = super::doors::rust_files(vec![src], Vec::new());
+    let read = sources
+        .iter()
+        .map(|path| std::fs::read_to_string(path).unwrap());
+    read.map(|source| {
+        let theirs = source.lines().filter(|line| line.trim() == "theirs(");
+        source.matches("local(caller, self.inner.person)").count() + theirs.count()
+    })
+    .sum()
+}
+
+#[test]
+fn every_place_only_the_person_here_may_reach_is_swept_on_someone_s_behalf() {
+    assert_eq!(
+        local_checks(),
+        LOCAL_CHECKS,
+        "a place checks the person on the computer: add its methods to LOCAL_ONLY, then count it"
+    );
+}
 
 /// `person` as glave acts for them on its own, as a schedule's run does: signed in by no one
 /// (`on_behalf`), in their organization; none for the person on a server's computer, whom glave
@@ -312,8 +347,7 @@ pub(super) async fn on_behalf<L: EventLog + Clone + 'static>(world: &World<L>) -
                 let theirs = ask(org, &as_them, theirs).await;
                 let (signed, as_signed) = split(method, params, &person.caller);
                 let signed = ask(org, &as_signed, signed).await;
-                let refused = theirs.get("error").is_some();
-                if !refused || (signed.get("error").is_some() && theirs != signed) {
+                if theirs.get("error").is_none() {
                     found.push(format!(
                         "{method} {template} for {} on their behalf, not refused as signed in \
                          from elsewhere:\n  on their behalf: {theirs}\n  signed in: {signed}",

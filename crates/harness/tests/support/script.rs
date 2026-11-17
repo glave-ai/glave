@@ -390,7 +390,6 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::SchedulePaused(_) => "schedule.paused",
             Body::SchedulePlaced(_) => "schedule.placed",
             Body::ScheduleOrganization(_) => "schedule.organization",
-            Body::ScheduleFired(_) => "schedule.fired",
             Body::MemorySaved(_) => "memory.saved",
             Body::MemoryEdited(_) => "memory.edited",
             Body::MemoryForgotten(_) => "memory.forgotten",

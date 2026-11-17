@@ -8,22 +8,24 @@
 //! ledger. `tasks/list` and `tasks/stop` show and stop them; `task/finished` tells the thread's
 //! watchers when one ends.
 
+mod acting;
 mod adopted;
+mod run;
+
+pub(crate) use acting::{Membership, whose};
+pub(crate) use run::Unstarted;
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 
 use glave_event::{
-    At, Auth, AuthMethod, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal,
-    PrincipalId, PrincipalKind, TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound,
-    decode,
+    At, Body, Currency, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId, TaskEnded,
+    TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
 use glave_harness::Cancel;
 use glave_ports::computer::{Reason, Refusal};
-use glave_ports::{
-    BlobStore, Caller, EventLog, Lease, Located, ModelProvider, OrgId, Scope, title_from,
-};
+use glave_ports::{BlobStore, Caller, EventLog, Lease, Located, ModelProvider, Scope, title_from};
 
 use crate::choice::Choice;
 use crate::held::{Slot, busy};
@@ -38,7 +40,7 @@ use crate::turn::{TurnItem, TurnStream};
 use crate::words::Sentence;
 
 /// What a person may run at once and keep scheduled (`[tasks]` in `policy.toml`): with no rule,
-/// four tasks at once and any number of schedules.
+/// four tasks at once and a hundred schedules that will still run.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TaskLimits {
     pub max_running: Option<usize>,
@@ -48,6 +50,10 @@ pub struct TaskLimits {
 /// The tasks a person runs at once where policy sets no `max_running`, decided: each is a copy
 /// of a folder, model calls and commands on one computer (`specs/one-server.md`).
 const MOST_RUNNING: usize = 4;
+
+/// The schedules a person keeps that will still run where policy sets no `max_schedules`: each
+/// is runs of theirs at set times, read every tick.
+const MOST_SCHEDULES: usize = 100;
 
 /// What a task does: one turn with this prompt, with the model and mode chosen with it, if any.
 pub(crate) struct Work(pub(crate) String, pub(crate) Choice);
@@ -82,38 +88,6 @@ pub(crate) fn in_place() -> ApiError {
 /// folder is no git repository with a commit.
 pub(crate) fn no_copy() -> ApiError {
     ApiError::new(code::WORKSPACE, Sentence::TaskNoCopy)
-}
-
-/// Who glave acts as for `person` on its own, in `org`, as a schedule's run does: the person on
-/// this computer as they call, for none; anyone else unmistakably as themselves, signed in by no
-/// one (`on_behalf`), so nothing that only the person on this computer may do is theirs.
-pub(crate) fn acting_for(person: Option<PrincipalId>, org: OrgId) -> Caller {
-    let auth = person.map(|_| Auth {
-        method: AuthMethod::OnBehalf,
-        issuer: None,
-        subject: None,
-        session: None,
-    });
-    Caller {
-        person,
-        auth,
-        org: Some(org),
-        ..Caller::default()
-    }
-}
-
-/// The person `by` names, as a task's or a schedule's events record them: none for the server's
-/// own person, whom they leave implied. Refused for anything but a person with an id, whom glave
-/// could act for only as someone else.
-pub(crate) fn whose(by: Option<&Principal>) -> Result<Option<PrincipalId>, ApiError> {
-    match by {
-        None => Ok(None),
-        Some(Principal {
-            kind: PrincipalKind::Person,
-            id: Some(person),
-        }) => Ok(Some(*person)),
-        Some(_) => Err(ApiError::new(code::NOT_ALLOWED, Sentence::MakerUnknown)),
-    }
 }
 
 /// Whether `refused` is [`no_copy`]'s, and not any other reason a copy could not be made.
@@ -186,12 +160,24 @@ where
         thread: ThreadId,
         work: Work,
         budget: Option<u64>,
-        schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
-        let project = (self
-            .may_start_task(caller, thread, schedule.is_some())
-            .await?)
-            .located();
+        let project = (self.may_start_task(caller, thread, false).await?).located();
+        self.run_task(caller, (project, thread), work, budget, None)
+            .await
+    }
+
+    /// Starts `work` in `thread` of `project` as a task for `caller`, who may, and answers
+    /// with it at once: its start recorded once its turn started, unless it came `claimed`,
+    /// a schedule's run whose start was recorded first (`run.rs`).
+    async fn run_task(
+        &self,
+        caller: &Caller,
+        (project, thread): (Located, ThreadId),
+        work: Work,
+        budget: Option<u64>,
+        claimed: Option<TaskStarted>,
+    ) -> Result<TaskInfo, ApiError> {
+        let schedule = claimed.as_ref().and_then(|started| started.schedule);
         // Whoever follows a task holds its task lease, so one server records its end.
         let lease =
             (self.take_task(project.org, thread).await?).ok_or_else(|| elsewhere(thread))?;
@@ -229,14 +215,14 @@ where
         };
         // Its end is what the ledger records, though its person signs out meanwhile.
         stream.outlasting_access();
-        let started = TaskStarted {
+        let started = claimed.clone().unwrap_or_else(|| TaskStarted {
             thread,
             title,
             model: stream.model.clone(),
             budget,
             schedule,
             by: self.someone_else(caller.person),
-        };
+        });
         let running = Running {
             project,
             started: started.clone(),
@@ -255,7 +241,11 @@ where
         let info = self.running_info(&running);
         let unfollowed = running.unfollowed.clone();
         self.tasks().insert(thread, running);
-        if let Err(error) = self.record_in_ledger(project, &started).await {
+        let recorded = match claimed {
+            Some(_) => Ok(()),
+            None => self.record_in_ledger(project, &started).await,
+        };
+        if let Err(error) = recorded {
             self.cancel_busy(thread);
             self.follow_task(thread, stream).await;
             self.let_go(&lease).await;
@@ -571,26 +561,15 @@ where
             .map(Principal::person)
     }
 
-    /// Who glave acts as for `person` on its own, in `org`: [`acting_for`] anyone but the
-    /// server's own person, who stays the person on this computer.
-    pub(crate) fn acting_as(&self, person: Option<PrincipalId>, org: OrgId) -> Caller {
-        acting_for(self.someone_else(person).and_then(|by| by.id), org)
-    }
-
-    /// Whether `caller`, someone glave acts for on its own, was removed from their
-    /// organization: never the server's own person. Refused while its people can't be read,
-    /// never taken for still there.
-    pub(crate) async fn removed_from_org(&self, caller: &Caller) -> Result<bool, ApiError> {
-        let (Some(person), Some(org)) = (caller.person, caller.org) else {
-            return Ok(false);
-        };
-        self.catch_up_people(org).await?;
-        Ok(self.people(org, |people| people.removed(person)))
-    }
-
     /// The tasks one person may run at once here: policy's `max_running`, else four.
     pub(crate) fn most_running(&self) -> usize {
         self.inner.limits.max_running.unwrap_or(MOST_RUNNING)
+    }
+
+    /// The schedules one person may keep that will still run: policy's `max_schedules`, else
+    /// a hundred.
+    pub(crate) fn most_schedules(&self) -> usize {
+        self.inner.limits.max_schedules.unwrap_or(MOST_SCHEDULES)
     }
 
     /// How many tasks of `person`'s this server runs now: none for the server's own person.

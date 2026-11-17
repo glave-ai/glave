@@ -6,8 +6,7 @@
 //! schedules are offered only where a server fires them.
 
 use glave_event::{
-    At, AuthMethod, Body, EventId, Header, Payload, PersonRemoved, Principal, ScheduleId, Seq,
-    Skipped, ThreadId, When, decode, encode,
+    AuthMethod, Body, PersonRemoved, Principal, ScheduleId, Skipped, ThreadId, When, decode,
 };
 use glave_ports::stream::Reserved;
 use glave_ports::testing::{FaultyLog, ManualClock};
@@ -17,83 +16,16 @@ use glave_ports::{
     Caller, EventLog as _, InMemoryLog, InMemoryProjects, OrgId, ProjectId, Projects, Scope,
 };
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
-use jiff::Timestamp;
 
+use crate::schedule_firing::{append, daily, ledger_of, on_a_store, runs_in, set, setup};
 use crate::support::*;
-
-pub(crate) fn set(now: &ManualClock, text: &str) {
-    now.set_millis(text.parse::<Timestamp>().unwrap().as_millisecond());
-}
-
-/// A server with plenty of short answers, its clock at 10:03 until the test moves it.
-pub(crate) fn setup() -> Setup {
-    let mut setup = Setup::new((0..10).map(|_| answer(Some("Done."), None)).collect());
-    setup.clock = ManualClock::at_millis(
-        "2026-10-10T10:03:00Z"
-            .parse::<Timestamp>()
-            .unwrap()
-            .as_millisecond(),
-    );
-    setup
-}
-
-/// A schedule `caller` makes in their Chats, every day at 11:00.
-pub(crate) async fn daily<L: glave_ports::EventLog + 'static>(
-    server: &Tested<L>,
-    caller: &Caller,
-) -> Result<ScheduleInfo, i64> {
-    let request = Request::ScheduleCreate {
-        project: None,
-        name: None,
-        when: When::Cron("0 11 * * *".into()),
-        zone: None,
-        prompt: "check the build".into(),
-        budget: 5_000,
-    };
-    match server.request_as(caller, request).await {
-        Ok(Reply::Schedule { schedule }) => Ok(schedule),
-        Ok(other) => panic!("a schedule, not {other:?}"),
-        Err(error) => Err(error.code),
-    }
-}
-
-/// What `project`'s task ledger records.
-pub(crate) async fn ledger_of(log: &Shared, project: ProjectId) -> Vec<Body> {
-    let ledger = Scope::glaves_own(scope().org(), project);
-    let events = log
-        .read(&ledger, Reserved::Tasks.id(), None, usize::MAX)
-        .await
-        .unwrap();
-    (events.into_iter())
-        .map(|raw| decode(raw).unwrap().body)
-        .collect()
-}
-
-/// Who each task started in `project`'s ledger ran as, and for which schedule.
-pub(crate) async fn runs_in(
-    log: &Shared,
-    project: ProjectId,
-) -> Vec<(Option<Principal>, ScheduleId)> {
-    (ledger_of(log, project).await.into_iter())
-        .filter_map(|body| match body {
-            Body::TaskStarted(started) => {
-                Some((started.by, started.schedule.map(|fired| fired.schedule)?))
-            }
-            _ => None,
-        })
-        .collect()
-}
 
 #[test]
 fn a_server_started_since_fires_everyone_s_schedules_each_as_whoever_made_it() {
     block_on!(async {
         let log = Shared::default();
         // One store: its log, and its projects.
-        let projects: Arc<dyn Projects> = Arc::new(InMemoryProjects::new());
-        let mut first = setup();
-        first.projects = Some(Arc::clone(&projects));
-        let now = first.clock.clone();
-        let (server, _, repo, _dir) = first.build_in_repository("people-fire", log.clone()).await;
+        let (server, projects, now, repo, _dir) = on_a_store("people-fire", &log).await;
         let grace = elsewhere();
         let theirs = daily(&server, &grace).await.unwrap();
         let mine = daily(&server, &Caller::default()).await.unwrap();
@@ -231,29 +163,6 @@ async fn removed_elsewhere(log: &Shared, caller: &Caller) {
     append(log, &people, ledger, next, &removed).await;
 }
 
-/// Appends `payload` at `seq` to `thread` in `scope`, at 10:00 that morning, as another server
-/// would.
-pub(crate) async fn append<T: Payload>(
-    log: &Shared,
-    scope: &Scope,
-    thread: ThreadId,
-    seq: u64,
-    payload: &T,
-) {
-    let at = At::try_from("2026-10-10T10:00:00.000Z".to_owned()).unwrap();
-    let mut random = [7; 10];
-    random[..8].copy_from_slice(&seq.to_be_bytes());
-    let header = Header {
-        id: EventId::new(at.timestamp(), random).unwrap(),
-        thread,
-        seq: Seq::new(seq).unwrap(),
-        at,
-    };
-    log.append(scope, &[encode(header, payload).unwrap()])
-        .await
-        .unwrap();
-}
-
 /// Why `project`'s latest run was refused, as its ledger records it: its reason.
 pub(crate) async fn refusal_in(log: &Shared, project: ProjectId) -> String {
     let refused = (ledger_of(log, project).await.into_iter().rev()).find_map(|body| match body {
@@ -293,6 +202,43 @@ fn a_run_whose_maker_can_t_be_read_still_there_is_held_back_and_recorded_nowhere
         assert_eq!(runs_in(&log, theirs.project).await, Vec::new());
         let refused = refusal_in(&log, theirs.project).await;
         assert_eq!(refused, "MAKER_REMOVED");
+    });
+}
+
+#[test]
+fn a_run_of_someone_the_people_ledger_does_not_list_is_held_back() {
+    block_on!(async {
+        let log = Shared::default();
+        let first = setup();
+        let now = first.clock.clone();
+        let (server, _, _, _dir) = first
+            .build_in_repository("people-unlisted", log.clone())
+            .await;
+        // A schedule of someone no person.joined names, as a ledger this server forgot meanwhile
+        // reads: never taken for still there.
+        let chat = start(&server, false).await;
+        let created = glave_event::ScheduleCreated {
+            schedule: ScheduleId::try_from(uuid::Uuid::from_u128(
+                0x0192_f5c1_0000_7000_8000_0000_0000_0042,
+            ))
+            .unwrap(),
+            name: "Daily check".into(),
+            when: When::Cron("0 11 * * *".into()),
+            zone: "UTC".into(),
+            prompt: "check the build".into(),
+            budget: 5_000,
+            thread: Some(chat),
+            from: None,
+            by: Some(Principal::person(id("nobody"))),
+        };
+        append(&log, &scope(), Reserved::Tasks.id(), 1, &created).await;
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), Vec::new());
+        assert_eq!(
+            ledger_of(&log, scope().project()).await.len(),
+            1,
+            "its making alone: neither run, claimed nor refused"
+        );
     });
 }
 
