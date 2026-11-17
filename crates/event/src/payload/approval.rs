@@ -15,8 +15,9 @@ pub(crate) const DECIDED: &str = "approval.decided";
 
 crate::worded! {
     /// What an approval asks the person, by what would run: a command, an edit, a write, a
-    /// read, a page, a service's tool by what it does and the service, work that would repeat
-    /// or stop repeating (version 2), or any other tool.
+    /// read, a page, a service's tool by what it does and the service, work that would repeat,
+    /// by when (or for a shape with no plain words, its next runs), or stop repeating (version
+    /// 2), or any other tool.
     Ask {
         Command = "ask-command" "Run this command?",
         Edit = "ask-edit" "Edit this file?",
@@ -25,6 +26,7 @@ crate::worded! {
         Page = "ask-page" "Open this page?",
         With { act, service } = "ask-with" "{ $act } with { $service }?",
         Repeat { when } = "ask-repeat" "Repeat this { $when }?",
+        RepeatNext { runs } = "ask-repeat-next" "Repeat this, next on { $runs }?",
         StopRepeating { name } = "ask-stop-repeating" "Stop repeating { $name }?",
         Allow = "ask-allow" "Allow this?",
     }
@@ -73,7 +75,7 @@ pub struct ApprovalRequested {
 }
 
 /// What a schedule's card was written from: when it repeats, on whose clocks, its chat's name,
-/// and its first run.
+/// its first run, and what each run starts with, when the card shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Repeating {
@@ -84,6 +86,9 @@ pub struct Repeating {
     /// The schedule's name, and its chat's.
     pub name: String,
     pub first: At,
+    /// What each run starts with, in the model's words, when the card shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
 }
 
 /// A request to run one command outside the sandbox, or in it with the network.

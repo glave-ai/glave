@@ -1,23 +1,31 @@
 //! Logs and telemetry: glave's spans and metrics (content-free by construction in the crates
-//! that emit them) written to a local file with `--log`, and sent to an OpenTelemetry
-//! collector when `[telemetry] otlp` names one (the `otlp` feature). Off unless asked for.
-//! Only glave's own targets are ever recorded, at the level GLAVE_LOG names: other crates'
-//! logs could carry headers or bodies.
+//! that emit them) written to a local file with `--log`, or to standard error as JSON lines
+//! with `--log -` (`json.rs`), and sent to an OpenTelemetry collector when `[telemetry] otlp`
+//! names one (the `otlp` feature). Off unless asked for. Only glave's own targets are ever
+//! recorded, at the level GLAVE_LOG names: other crates' logs could carry headers or bodies.
 
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::path::Path;
 use std::sync::Mutex;
 
 use anyhow::Context as _;
 use glave_config::policy::Choices;
+use glave_ports::SystemClock;
 use tracing::dispatcher::DefaultGuard;
 use tracing_subscriber::Layer as _;
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::layer::SubscriberExt as _;
 
+mod json;
+
 /// The level of glave's spans and events recorded, unless GLAVE_LOG names another.
 const DEFAULT_LEVEL: LevelFilter = LevelFilter::INFO;
+
+/// The `--log` that is standard error rather than a file: the log as JSON lines, for whatever
+/// collects a server's output (a container's runtime, a service manager) and hands it to a log
+/// store, which reads one JSON object a line.
+const STANDARD_ERROR: &str = "-";
 
 /// Logs and telemetry while this lives; flushed and stopped when it is dropped.
 #[must_use = "telemetry stops when this is dropped"]
@@ -38,43 +46,46 @@ impl Telemetry {
     }
 }
 
-/// Starts recording glave's spans to the file `log`, and to the collector `choices` name.
+/// Starts sending glave's spans to the collector `choices` name, the log `log` beside it, over
+/// the log alone the run started with ([`start`], in `session.rs`); nothing more when they
+/// name none.
 pub(crate) fn start_for(log: Option<&Path>, choices: &Choices) -> anyhow::Result<Telemetry> {
-    let otlp = choices.telemetry.as_ref();
-    start(log, otlp.map(|chosen| chosen.value.as_str()))
+    match choices.telemetry.as_ref() {
+        Some(chosen) => start(log, Some(chosen.value.as_str())),
+        None => Ok(Telemetry::off()),
+    }
 }
 
-/// Starts recording glave's spans to the file `log`, and sending them to the collector at
-/// `otlp`, as asked; nothing when neither is.
+/// Whether the log `log` is standard error (`-`) rather than a file.
+pub(crate) fn on_standard_error(log: Option<&Path>) -> bool {
+    log.is_some_and(|path| path.as_os_str() == STANDARD_ERROR)
+}
+
+/// Starts recording glave's spans to the file `log`, or to standard error when it is `-`, and
+/// sending them to the collector at `otlp`, as asked; nothing when neither is.
 pub(crate) fn start(log: Option<&Path>, otlp: Option<&str>) -> anyhow::Result<Telemetry> {
     if log.is_none() && otlp.is_none() {
         return Ok(Telemetry::off());
     }
     let level = level()?;
-    let file = match log {
+    let (file, standard_error) = match log {
+        Some(path) if on_standard_error(Some(path)) => {
+            let layer = json::layer(std::io::stderr, SystemClock).with_filter(filter(level)?);
+            (None, Some(layer))
+        }
         Some(path) => {
-            if let Some(parent) = path
-                .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-            {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("could not create {}", parent.display()))?;
-            }
-            let file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-                .with_context(|| format!("could not open the log {}", path.display()))?;
             let layer = tracing_subscriber::fmt::layer()
-                .with_writer(Mutex::new(file))
+                .with_writer(Mutex::new(open(path)?))
                 .with_ansi(false)
                 .with_span_events(FmtSpan::CLOSE)
                 .with_filter(filter(level)?);
-            Some(layer)
+            (Some(layer), None)
         }
-        None => None,
+        None => (None, None),
     };
-    let subscriber = tracing_subscriber::registry().with(file);
+    let subscriber = tracing_subscriber::registry()
+        .with(file)
+        .with(standard_error);
     #[cfg(feature = "otlp")]
     {
         let providers = otlp.map(otlp::Providers::start).transpose()?;
@@ -103,12 +114,34 @@ pub(crate) fn start(log: Option<&Path>, otlp: Option<&str>) -> anyhow::Result<Te
     }
 }
 
-/// The level GLAVE_LOG names, or the default.
+/// The log file at `path`, opened to append, its folder made first.
+fn open(path: &Path) -> anyhow::Result<File> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("could not create {}", parent.display()))?;
+    }
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .with_context(|| format!("could not open the log {}", path.display()))
+}
+
+/// The level GLAVE_LOG names, or the default. Never `off`, which tracing would take: a log asked
+/// for that records nothing, not even the error glave stops on, is refused.
 fn level() -> anyhow::Result<LevelFilter> {
     match std::env::var("GLAVE_LOG") {
-        Ok(text) if !text.trim().is_empty() => text.trim().parse().map_err(|_| {
-            anyhow::anyhow!("GLAVE_LOG must be error, warn, info, debug or trace, not {text:?}")
-        }),
+        Ok(text) if !text.trim().is_empty() => text
+            .trim()
+            .parse()
+            .ok()
+            .filter(|level| *level != LevelFilter::OFF)
+            .ok_or_else(|| {
+                anyhow::anyhow!("GLAVE_LOG must be error, warn, info, debug or trace, not {text:?}")
+            }),
         _ => Ok(DEFAULT_LEVEL),
     }
 }

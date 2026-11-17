@@ -14,6 +14,9 @@
 //!   once each part is checked, so what the edit didn't touch stays as it was.
 //! - PDFs are changed with lopdf: pages merged, kept, reordered and turned, and forms listed
 //!   and filled. Reading a PDF stays with the `read` tool.
+//! - A file glave made is described ([`describe`]: its title, pages, sheets or slides) and
+//!   previewed for a person as Markdown ([`preview`]): sheets and CSV as
+//!   tables, documents and decks as `glave doc read` reads them.
 //! - CSV, JSON and workbooks are loaded as tables into an in-memory SQLite, the one glave's
 //!   store builds, and queried, with SQLite's math and percentile functions and standard
 //!   deviation and correlation added.
@@ -21,6 +24,7 @@
 mod cells;
 mod command;
 mod data;
+mod describe;
 mod document;
 mod error;
 mod layout;
@@ -28,13 +32,16 @@ mod package;
 mod parts;
 mod pdf;
 mod presentation;
+mod preview;
 mod read;
 mod table;
 mod write;
 mod xml;
 
 pub use command::{Answer, USAGE, run};
+pub use describe::{Described, describe};
 pub use error::OfficeError;
+pub use preview::{MOST_MARKDOWN, Preview, preview};
 
 /// The skills built into glave that teach the model `glave doc`, each a SKILL.md's text: for
 /// spreadsheets, Word documents, PowerPoint decks, PDFs and data.

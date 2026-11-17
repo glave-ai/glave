@@ -327,6 +327,9 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) scheduling: Mutex<BTreeMap<OrgId, Lease>>,
     /// Where each waiting turn sends how it ends, for whoever follows it (`answers.rs`).
     pub(crate) followed: Followed,
+    /// Told each time a task ends here, so a run the task limit held back starts then
+    /// (`schedule/fire.rs`).
+    pub(crate) tasks_ended: tokio::sync::Notify,
     /// The computer held awake while work runs, where it is.
     pub(crate) awake: Option<Awake>,
     /// Set once the person on this computer's web search switch was read (`search.rs`).
@@ -351,6 +354,10 @@ where
     /// A server for the projects of `org`, its threads working on the computer
     /// `wiring.workspace` is on: in their projects' folders, or scratch folders. It has no
     /// project of its own: a request that names none acts in the caller's Chats.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "it names each part of the server once, in one literal"
+    )]
     pub fn new(
         wiring: Wiring<P, L, B>,
         settings: Settings,
@@ -428,6 +435,7 @@ where
                 holder: OnceLock::new(),
                 scheduling: Mutex::new(BTreeMap::new()),
                 followed: Followed::default(),
+                tasks_ended: tokio::sync::Notify::new(),
                 awake: wiring.awake.map(Awake::new),
                 searching: tokio::sync::OnceCell::new(),
                 worktrees: wiring.worktrees,
@@ -492,7 +500,9 @@ where
             .start_thread_in(scope, caller, place)
             .await
             .map_err(|error| match error {
-                HarnessError::Workspace(ComputerError::Refused(_)) if copy => {
+                HarnessError::Workspace(ComputerError::Refused(reason))
+                    if copy && crate::tasks::no_repository(&reason) =>
+                {
                     crate::tasks::no_copy()
                 }
                 error => ApiError::from(&error),

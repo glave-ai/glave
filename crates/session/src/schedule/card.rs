@@ -1,7 +1,8 @@
 //! The card the person confirms a schedule with, in the server's words, in their language: the
-//! question ("Repeat this every weekday at 8:00 am?"), when it first runs on their clock ("First
-//! run: Tuesday 17 November at 8:00 am, your time.", or for a shape with no plain words its
-//! next three), and the chat its runs go to. Recorded in English as the approval's `ask` and
+//! question ("Repeat this every weekday at 8:00 am?", or for a shape with no plain words "Repeat
+//! this, next on …?" with its next three runs), when it runs on their clock ("Monday to Friday,
+//! 8:00 am your time. First run: Tuesday 17 November."), the chat its runs go to, and what each
+//! run starts with, when the card shows it. Recorded in English as the approval's `ask` and
 //! `detail`, and written again from what it was written from (`repeating`) in the reader's
 //! language as a transport sends it.
 
@@ -10,12 +11,15 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use crate::cron::Cron;
-use crate::repeats::{clock_in, listed_in, plain, repeats_in};
+use crate::repeats::{Shape, clock_in, days_in, listed_in, repeats_in, shape_of, times_in};
 use crate::words::{Language, Sentence, say};
-use crate::zone::time_zone;
+use crate::zone::{UTC, time_zone};
 
 /// The runs a card names for a shape with no plain words.
 const RUNS_SAID: usize = 3;
+
+/// What a card calls the person's own clock in its sentences.
+const YOURS: &str = "yours";
 
 /// The first [`RUNS_SAID`] runs of `cron` after `after`, on the clocks of `zone`.
 pub(crate) fn first_runs(cron: &Cron, after: Timestamp, zone: &TimeZone) -> Vec<Timestamp> {
@@ -31,58 +35,121 @@ pub(crate) fn first_runs(cron: &Cron, after: Timestamp, zone: &TimeZone) -> Vec<
     runs
 }
 
-/// The card's question for `repeating`, in `language`.
+/// The card's question for `repeating`, in `language`: when it repeats in plain words, or its
+/// next runs for a shape with none.
 pub(crate) fn asked_in(language: Language, repeating: &Repeating) -> Ask {
+    let unplain = read(repeating).filter(|(cron, _)| shape_of(cron).is_none());
+    if let Some((cron, clocks)) = unplain {
+        let runs: Vec<String> = (runs_of(&cron, repeating, &clocks).iter())
+            .map(|run| date_at(language, *run, &clocks))
+            .collect();
+        return Ask::RepeatNext {
+            runs: listed_in(language, &runs),
+        };
+    }
     let when = When::Cron(repeating.cron.clone());
     Ask::Repeat {
         when: repeats_in(language, &when, false),
     }
 }
 
-/// What the card for `repeating` says below its question, in `language`: when it first runs,
-/// and the chat its runs go to; `None` for one that can't be read.
+/// What the card for `repeating` says below its question, in `language`, a line each: when it
+/// runs on whose clock, the chat its runs go to, and what each run starts with when the card
+/// shows it; `None` for one that can't be read.
 pub(crate) fn card_in(language: Language, repeating: &Repeating) -> Option<String> {
-    let clocks = time_zone(&repeating.zone).ok()?;
-    let parsed = Cron::parse(&repeating.cron).ok()?;
+    let (cron, clocks) = read(repeating)?;
     let first = repeating.first.timestamp();
-    let before = first
-        .checked_sub(jiff::SignedDuration::from_millis(1))
-        .ok()?;
-    let runs: Vec<String> = (first_runs(&parsed, before, &clocks).iter())
-        .map(|run| date_in(language, *run, &clocks))
-        .collect();
-    let runs = if plain(&When::Cron(repeating.cron.clone())) {
-        let when = runs.first()?.clone();
-        Sentence::RunsFirst { when }
-    } else {
-        let when = listed_in(language, &runs);
-        Sentence::RunsNext { when }
+    // UTC, the zone of anyone who never gave theirs, may not be their time: it is named.
+    let zone = if repeating.zone == UTC { UTC } else { YOURS }.to_owned();
+    let when = match shape_of(&cron) {
+        Some(Shape::OnDays {
+            days,
+            hours,
+            minute,
+        }) => {
+            // With more than one time a day, which comes first.
+            let first = match hours.as_slice() {
+                [_] => date_on(language, first, &clocks),
+                _ => date_at(language, first, &clocks),
+            };
+            Sentence::RunsOn {
+                days: days_in(language, &days),
+                time: times_in(language, &hours, minute),
+                zone,
+                first,
+            }
+        }
+        Some(Shape::Hourly { .. } | Shape::EveryMinutes { .. }) => Sentence::RunsFirst {
+            when: date_at(language, first, &clocks),
+            zone,
+        },
+        // Its next runs are the question's.
+        None => Sentence::RunsTimes { zone },
     };
     let name = repeating.name.clone();
-    let chat = Sentence::RunsInChat { name };
-    Some(format!(
-        "{}\n{}",
-        say(language, &runs),
-        say(language, &chat)
-    ))
+    let mut lines = vec![
+        say(language, &when),
+        say(language, &Sentence::RunsInChat { name }),
+    ];
+    if let Some(prompt) = &repeating.prompt {
+        // On one line, every word of it.
+        let prompt = prompt.split_whitespace().collect::<Vec<_>>().join(" ");
+        lines.push(say(language, &Sentence::RunsPrompt { prompt }));
+    }
+    Some(lines.join("\n"))
+}
+
+/// The cron expression `repeating` runs on and the clocks of its zone, when both read.
+fn read(repeating: &Repeating) -> Option<(Cron, TimeZone)> {
+    let clocks = time_zone(&repeating.zone).ok()?;
+    Some((Cron::parse(&repeating.cron).ok()?, clocks))
+}
+
+/// The first [`RUNS_SAID`] runs of `repeating` from its first, on `clocks`.
+fn runs_of(cron: &Cron, repeating: &Repeating, clocks: &TimeZone) -> Vec<Timestamp> {
+    let before = (repeating.first.timestamp())
+        .checked_sub(jiff::SignedDuration::from_millis(1))
+        .ok();
+    before.map_or_else(Vec::new, |before| first_runs(cron, before, clocks))
+}
+
+/// `at` on the clocks of `zone`, as a date in `language`: `Tuesday 17 November`.
+fn date_on(language: Language, at: Timestamp, zone: &TimeZone) -> String {
+    let (weekday, day, month) = day_of(language, at, zone);
+    say(
+        language,
+        &Sentence::DateOn {
+            weekday,
+            day,
+            month,
+        },
+    )
 }
 
 /// `at` on the clocks of `zone`, as a date and time in `language`: `Tuesday 17 November at
 /// 8:00 am`.
-fn date_in(language: Language, at: Timestamp, zone: &TimeZone) -> String {
+fn date_at(language: Language, at: Timestamp, zone: &TimeZone) -> String {
+    let (weekday, day, month) = day_of(language, at, zone);
+    let civil = at.to_zoned(zone.clone());
+    let (hour, minute) = (civil.hour().unsigned_abs(), civil.minute().unsigned_abs());
+    let date = Sentence::DateAt {
+        weekday,
+        day,
+        month,
+        time: clock_in(language, hour, minute),
+    };
+    say(language, &date)
+}
+
+/// The weekday's and the month's names in `language`, and the day of the month, of `at` on the
+/// clocks of `zone`.
+fn day_of(language: Language, at: Timestamp, zone: &TimeZone) -> (String, u64, String) {
     let civil = at.to_zoned(zone.clone());
     let day = u64::from(civil.weekday().to_sunday_zero_offset().unsigned_abs());
     let weekday = say(language, &Sentence::Weekday { day });
     let month = u64::from(civil.month().unsigned_abs());
     let month = say(language, &Sentence::Month { month });
-    let (hour, minute) = (civil.hour().unsigned_abs(), civil.minute().unsigned_abs());
-    let date = Sentence::DateAt {
-        weekday,
-        day: u64::from(civil.day().unsigned_abs()),
-        month,
-        time: clock_in(language, hour, minute),
-    };
-    say(language, &date)
+    (weekday, u64::from(civil.day().unsigned_abs()), month)
 }
 
 #[cfg(test)]
@@ -97,24 +164,39 @@ mod tests {
             zone: "Europe/Lisbon".into(),
             name: "Morning check".into(),
             first: At::try_from("2026-11-17T08:00:00.000Z".to_owned()).unwrap(),
+            prompt: None,
         }
     }
 
+    const CHAT: &str = "Each run is added to its own chat, \u{201c}Morning check\u{201d}.";
+
     #[test]
-    fn a_card_says_its_first_run_on_the_person_s_clock_and_its_chat_in_their_words() {
+    fn a_card_says_when_it_runs_on_the_person_s_clock_and_its_chat_in_their_words() {
         let english = card_in(Language::English, &card("0 8 * * 1-5")).unwrap();
         assert_eq!(
             english,
-            "First run: Tuesday 17 November at 8:00 am, your time.\nEach run is added to its own chat, \u{201c}Morning check\u{201d}."
+            format!("Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.\n{CHAT}")
         );
-        let other = card_in(Language::English, &card("0 8 */2 * *")).unwrap();
+        let twice = card_in(Language::English, &card("0 8,17 * * *")).unwrap();
         assert!(
-            other.starts_with("Next runs: Tuesday 17 November at 8:00 am, "),
-            "{other}"
+            twice.starts_with(
+                "Every day, 8:00 am and 5:00 pm your time. First run: Tuesday 17 November at 8:00 am."
+            ),
+            "which time first: {twice}"
         );
-        assert!(other.contains(" and "), "three runs: {other}");
+        let monthly = card_in(Language::English, &card("0 8 17 * *")).unwrap();
+        assert!(
+            monthly.starts_with("Day 17 of every month, 8:00 am your time."),
+            "{monthly}"
+        );
+        let hourly = card_in(Language::English, &card("0 * * * *")).unwrap();
+        assert!(
+            hourly.starts_with("First run: Tuesday 17 November at 8:00 am, your time."),
+            "{hourly}"
+        );
         let accented = card_in(Language::Accented, &card("0 8 * * 1-5")).unwrap();
         assert!(!accented.contains("First run"), "{accented}");
+        assert!(!accented.contains("Monday"), "{accented}");
         let Ask::Repeat { when } = asked_in(Language::Accented, &card("0 8 * * 1-5")) else {
             panic!("a card");
         };
@@ -122,5 +204,46 @@ mod tests {
             !when.is_empty() && !when.contains("every weekday"),
             "{when}"
         );
+    }
+
+    #[test]
+    fn a_shape_with_no_plain_words_is_asked_with_its_next_runs() {
+        let other = card("0 8 */2 * *");
+        let Ask::RepeatNext { runs } = asked_in(Language::English, &other) else {
+            panic!("its next runs");
+        };
+        assert_eq!(
+            runs,
+            "Tuesday 17 November at 8:00 am, Thursday 19 November at 8:00 am and Saturday 21 November at 8:00 am"
+        );
+        let english = card_in(Language::English, &other).unwrap();
+        assert_eq!(english, format!("Times are in your time zone.\n{CHAT}"));
+        let Ask::RepeatNext { runs } = asked_in(Language::Accented, &other) else {
+            panic!("its next runs");
+        };
+        assert!(!runs.contains("November"), "{runs}");
+    }
+
+    #[test]
+    fn utc_is_named_and_what_each_run_starts_with_is_shown_whole_on_one_line() {
+        let utc = Repeating {
+            zone: UTC.into(),
+            prompt: Some("Check the build\n\nand   tell me what broke".into()),
+            ..card("0 8 * * 1-5")
+        };
+        let english = card_in(Language::English, &utc).unwrap();
+        assert_eq!(
+            english,
+            format!(
+                "Monday to Friday, 8:00 am UTC. First run: Tuesday 17 November.\n{CHAT}\n\
+                 Each run starts with: \u{201c}Check the build and tell me what broke\u{201d}"
+            )
+        );
+        let other = Repeating {
+            zone: UTC.into(),
+            ..card("0 8 */2 * *")
+        };
+        let english = card_in(Language::English, &other).unwrap();
+        assert!(english.starts_with("Times are in UTC."), "{english}");
     }
 }

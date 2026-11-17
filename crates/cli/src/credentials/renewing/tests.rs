@@ -371,6 +371,69 @@ fn a_sign_in_with_nothing_to_renew_it_goes_nowhere_and_is_told_once_it_expires()
     assert!(Hosts::expired(&first));
 }
 
+/// The level of each of glave's events while `run` runs, on a runtime whose time is paused.
+fn levels_while<T>(run: impl Future<Output = T>) -> (T, Vec<tracing::Level>) {
+    use tracing_subscriber::layer::{Context, SubscriberExt as _};
+
+    #[derive(Clone, Default)]
+    struct Levels(Arc<Mutex<Vec<tracing::Level>>>);
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Levels {
+        fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
+            self.0.lock().unwrap().push(*event.metadata().level());
+        }
+    }
+
+    let levels = Levels::default();
+    let subscriber = tracing_subscriber::registry().with(levels.clone());
+    let ran = tracing::subscriber::with_default(subscriber, || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .unwrap()
+            .block_on(run)
+    });
+    let seen = levels.0.lock().unwrap().clone();
+    (ran, seen)
+}
+
+#[test]
+fn a_renewal_not_kept_is_one_error_however_many_requests_try_again() {
+    use tracing::Level;
+    let job = |keeps: bool| Counted {
+        fresh: "renewed".into(),
+        spent: Arc::new(AtomicUsize::new(0)),
+        keeps,
+    };
+    let (first, levels) = levels_while(
+        Renewing {
+            job: job(false),
+            fresh: None,
+        }
+        .run(),
+    );
+    assert!(matches!(first, Ended::Unkept(_)));
+    assert_eq!(levels, [Level::WARN, Level::WARN, Level::ERROR]);
+    let (again, levels) = levels_while(
+        Renewing {
+            job: job(false),
+            fresh: Some("renewed".into()),
+        }
+        .run(),
+    );
+    assert!(matches!(again, Ended::Unkept(_)));
+    assert_eq!(levels, [Level::WARN; 3], "still not kept: a warning");
+    let (kept, levels) = levels_while(
+        Renewing {
+            job: job(true),
+            fresh: Some("renewed".into()),
+        }
+        .run(),
+    );
+    assert!(matches!(kept, Ended::Done(_)));
+    assert_eq!(levels, [Level::INFO], "kept at last");
+}
+
 #[test]
 fn a_renewal_from_before_glave_kept_its_app_still_reads() {
     let renewal: Renewal = serde_json::from_value(json!({

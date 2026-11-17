@@ -252,17 +252,19 @@ where
         if let Some(bound) = bound.filter(|bound| bound.computer.kind == ComputerKind::Person) {
             return self.instructions_at_home(scope, bound, person).await;
         }
+        let trusting = self.trusting(person);
         let (Some(reader), Some(workspace), Some(bound)) =
             (&self.project_folders, workspace, bound)
         else {
-            return self.settings.instructions.clone();
+            // The settings' own are the person's the harness works for: no one else's thread
+            // opens with them.
+            return self.settings.instructions.clone().filter(|_| trusting);
         };
         let project = match &bound.opened {
             Opened::Folder { path } => Some(Path::new(path)),
             Opened::Worktree { repository, .. } => Some(Path::new(repository)),
             Opened::Scratch { .. } => None,
         };
-        let trusting = self.trusting(person);
         reader.for_folder(workspace.root(), project, trusting).await
     }
 

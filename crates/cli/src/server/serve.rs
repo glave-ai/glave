@@ -25,6 +25,7 @@ use crate::args::Args;
 use crate::client::Glave;
 use crate::data::{Data, DataLog};
 use crate::memory::Running;
+use crate::said::Said;
 use crate::serving::Reach;
 use glave_ports::Holder;
 
@@ -49,6 +50,8 @@ pub(crate) struct Daily<'a> {
     pub memory: Option<&'a Running>,
     /// The processes the worktrees' check runs git as.
     pub processes: &'a Processes,
+    /// Where it says what it did, and what failed.
+    pub said: Said,
 }
 
 impl Daily<'_> {
@@ -67,7 +70,7 @@ impl Daily<'_> {
         let mut swept: Option<Instant> = None;
         loop {
             tick.tick().await;
-            crate::worktrees::check_daily(&self.log, self.processes).await;
+            crate::worktrees::check_daily(&self.log, self.processes, self.said).await;
             if swept.is_none_or(|at| at.elapsed() >= DAILY) {
                 swept = Some(Instant::now());
                 self.sweep().await;
@@ -98,8 +101,9 @@ impl Daily<'_> {
                 super::sweep::every_organization(organizations, &blobs, leases.as_ref(), holder)
                     .await;
             }
+            // The store failing: what no thread refers to grows until someone acts.
             Err(error) => {
-                tracing::warn!(error = %format!("{error:#}"), "the blobs could not be swept");
+                tracing::error!(error = %format!("{error:#}"), "the blobs could not be swept");
             }
         }
     }
@@ -122,9 +126,10 @@ pub(crate) async fn run(
     let path = socket_path()?;
     // Only the lock's holder removes a socket a server before it left.
     let listener = crate::socket::listen(&path).await?;
+    let said = args.said();
     // What a glave before this one left running, and later what its leases still held.
-    let mut left_open = recover(server).await;
-    eprintln!("glave: serving you on {}", path.display());
+    let mut left_open = recover(server, said).await;
+    said.info(&format!("serving you on {}", path.display()));
     let mut terminate = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
     let stopping = Cancel::new();
@@ -135,7 +140,7 @@ pub(crate) async fn run(
     let mut removals = Box::pin(server.follow_removals());
     let mut notifications = Box::pin(server.push_notifications());
     let mut daily = Box::pin(daily.run());
-    let mut certificates = Box::pin(crate::serving::keep_https(reach));
+    let mut certificates = Box::pin(crate::serving::keep_https(reach, said));
     let mut clients = JoinSet::new();
     // Only a server started in the background writes to the log.
     let log = args.own_session.then(log_path).transpose()?;
@@ -154,12 +159,12 @@ pub(crate) async fn run(
             _ = tick.tick() => {
                 while clients.try_join_next().is_some() {}
                 if left_open > 0 {
-                    left_open = recover(server).await;
+                    left_open = recover(server, said).await;
                 }
                 if let Some(log) = &log
                     && let Err(error) = log::keep_capped(log.clone()).await
                 {
-                    eprintln!("glave: could not keep the log under its cap: {error}");
+                    said.warn(&format!("could not keep the log under its cap: {error}"));
                 }
             }
             outcome = &mut http => break Some(outcome),
@@ -168,7 +173,7 @@ pub(crate) async fn run(
         }
     };
     drop((scheduler, removals, daily, certificates));
-    eprintln!("glave: stopping");
+    said.info("stopping");
     drop(listener);
     let _ = tokio::fs::remove_file(&path).await;
     // Every turn, the socket's clients' too: what still runs after the grace is interrupted.
@@ -185,8 +190,8 @@ pub(crate) async fn run(
 
 /// Records the tasks and turns a glave before this one left running as interrupted, and
 /// answers how many another server's lease still holds, to look at again once it may have
-/// lapsed.
-async fn recover(server: &Glave) -> usize {
+/// lapsed. Saying so as `said`: that the store could not say is an error, as the store failing.
+async fn recover(server: &Glave, said: Said) -> usize {
     let tasks = server.recover_tasks().await;
     let turns = server.repair_left_open().await;
     [("tasks", tasks), ("turns", turns)]
@@ -194,17 +199,17 @@ async fn recover(server: &Glave) -> usize {
         .map(|(what, recovered)| match recovered {
             Ok(recovered) => {
                 if recovered.closed > 0 {
-                    eprintln!(
-                        "glave: {} {what} a glave before this one left running were interrupted",
+                    said.info(&format!(
+                        "{} {what} a glave before this one left running were interrupted",
                         recovered.closed
-                    );
+                    ));
                 }
                 recovered.held
             }
             Err(error) => {
-                eprintln!(
-                    "glave: could not look at the {what} left running: {}",
-                    error.message
+                said.failed(
+                    &format!("could not look at the {what} left running"),
+                    &error.message,
                 );
                 0
             }

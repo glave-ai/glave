@@ -94,6 +94,7 @@ where
                     round: open.round,
                     proposed: false,
                     compact: Asked::No,
+                    scheduled: scheduled(turn),
                 };
                 let span = crate::telemetry::turn(thread.id, caller.trace.as_ref());
                 let began = std::time::Instant::now();
@@ -153,4 +154,12 @@ where
 #[derive(Deserialize)]
 struct Kept {
     permissions: Permissions,
+}
+
+/// Whether the turn whose events are `turn` is a schedule's run, as its `turn.started` says.
+fn scheduled(turn: &[Event]) -> bool {
+    matches!(
+        turn.first().map(|event| &event.body),
+        Some(Body::TurnStarted(started)) if started.scheduled.is_some()
+    )
 }

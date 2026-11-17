@@ -114,7 +114,11 @@ where
         prompt: &str,
         cancel: &Cancel,
     ) -> Result<String, String> {
-        if let Some((command, arguments)) = invoked(&self.settings.commands, prompt) {
+        // The commands are the person's the harness works for: what anyone else types is sent
+        // as they wrote it.
+        if self.trusting(thread.for_)
+            && let Some((command, arguments)) = invoked(&self.settings.commands, prompt)
+        {
             return Ok(command.expand(arguments));
         }
         if let Some((name, words)) = served(prompt) {

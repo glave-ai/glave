@@ -16,6 +16,7 @@ use glave_harness::{AllowAll, Cancel, Decision, Homes, Place, ProjectFolders, Wo
 use glave_ports::computer::{ComputerError, Home, Sandbox, SandboxLevel, SandboxNetwork};
 use glave_ports::settings::{Hook, Hooks};
 use glave_ports::stream::Reserved;
+use glave_ports::testing::ManualClock;
 use glave_ports::{BoxFuture, Caller, EventLog, InMemoryLog, OrgId};
 use serde_json::json;
 
@@ -90,7 +91,8 @@ impl Sleepy {
             Box::pin(std::future::ready(found.clone()))
         });
         let scratch = scratch.to_string_lossy();
-        let planned = Waking::home((wake, peek), None, reached.home.clone(), &scratch);
+        let still = Arc::new(ManualClock::at_second(1_791_001_000));
+        let planned = Waking::home((wake, peek), None, reached.home.clone(), &scratch, still);
         Self {
             planned,
             asked,
