@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use glave_event::{
     At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, Skipped,
-    TaskEnded, TaskStarted, ThreadId, encode,
+    TaskEnded, TaskStarted, ThreadId, When, encode,
 };
 use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope};
@@ -35,11 +35,35 @@ pub(crate) struct Scheduled {
     /// memory only, so a server started later tries it once more.
     pub(crate) held: Option<At>,
     pub(crate) paused: bool,
+    /// When it was last paused.
+    paused_at: Option<At>,
     /// When it was last resumed: its runs count from then, none for the time it was paused.
     pub(crate) resumed: Option<At>,
+    /// When a one-off's time came, when that was while it was paused: it runs no more.
+    pub(crate) missed: Option<At>,
 }
 
 impl Scheduled {
+    /// Takes in its pausing (`paused`) or resuming at `at`: a one-off that has not run and whose
+    /// time came while it was paused is missed.
+    fn pause(&mut self, paused: bool, at: At) {
+        if paused && !self.paused {
+            self.paused_at = Some(at);
+        }
+        if !paused {
+            self.resumed = Some(at);
+            if let When::At(due) = &self.created.when
+                && self.paused
+                && self.last.is_none()
+                && self.paused_at.is_some_and(|since| since <= *due)
+                && *due < at
+            {
+                self.missed = Some(*due);
+            }
+        }
+        self.paused = paused;
+    }
+
     /// Takes in a run that was due at `due`: started, or skipped for `skipped`.
     fn ran(&mut self, due: At, skipped: Option<Skipped>) {
         if self.last.is_none_or(|last| due >= last) {
@@ -55,6 +79,14 @@ pub(crate) struct Recorded {
     pub(crate) started: TaskStarted,
     pub(crate) at: At,
     pub(crate) ended: Option<(TaskEnded, At)>,
+}
+
+impl Recorded {
+    /// Whether `ended` is this task's end: one for the run of its schedule that came due when
+    /// this did, or one that names no run.
+    fn ended_by(&self, ended: &TaskEnded) -> bool {
+        ended.due.is_none() || self.started.schedule.map(|fired| fired.due) == ended.due
+    }
 }
 
 /// What the ledger says so far.
@@ -102,7 +134,9 @@ impl Ledger {
                     skipped: None,
                     held: None,
                     paused: false,
+                    paused_at: None,
                     resumed: None,
+                    missed: None,
                 };
                 self.schedules.insert(scheduled.created.schedule, scheduled);
                 chat
@@ -113,10 +147,7 @@ impl Ledger {
             }
             Body::SchedulePaused(paused) => {
                 let scheduled = self.schedules.get_mut(&paused.schedule)?;
-                scheduled.paused = paused.paused;
-                if !paused.paused {
-                    scheduled.resumed = Some(at);
-                }
+                scheduled.pause(paused.paused, at);
                 scheduled.created.thread
             }
             Body::ScheduleSkipped(skipped) => {
@@ -146,6 +177,10 @@ impl Ledger {
                 chat
             }
             Body::TaskEnded(ended) => {
+                // A late end of a run before never closes the one its chat runs since.
+                if !self.open.get(&ended.thread)?.ended_by(&ended) {
+                    return None;
+                }
                 let mut recorded = self.open.remove(&ended.thread)?;
                 let chat = recorded.started.schedule.map(|_| ended.thread);
                 recorded.ended = Some((ended, at));
@@ -301,5 +336,53 @@ where
             .ledgers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_event::{Fired, Outcome};
+    use jiff::Timestamp;
+
+    use super::*;
+
+    fn at(seconds: i64) -> At {
+        At::from(Timestamp::from_second(seconds).unwrap())
+    }
+
+    #[test]
+    fn a_run_s_end_closes_that_run_alone() {
+        let thread = ThreadId::new(Timestamp::UNIX_EPOCH, [1; 10]).unwrap();
+        let schedule = ScheduleId::new(Timestamp::UNIX_EPOCH, [2; 10]).unwrap();
+        let started = |due| Recorded {
+            started: TaskStarted {
+                thread,
+                title: String::new(),
+                model: String::new(),
+                budget: None,
+                schedule: Some(Fired { schedule, due }),
+                by: None,
+            },
+            at: due,
+            ended: None,
+        };
+        let ended = |due| TaskEnded {
+            thread,
+            due,
+            outcome: Outcome::Completed,
+            tokens: glave_event::TokenCounts::default(),
+            cost: None,
+            by: None,
+        };
+        let second = started(at(7_200));
+        assert!(second.ended_by(&ended(Some(at(7_200)))));
+        assert!(
+            !second.ended_by(&ended(Some(at(3_600)))),
+            "the run before's"
+        );
+        assert!(
+            second.ended_by(&ended(None)),
+            "one from before ends carried a run"
+        );
     }
 }

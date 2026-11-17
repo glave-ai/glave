@@ -199,6 +199,8 @@ pub struct Thread {
     pub(crate) opened: Option<Opened>,
     /// Where it works now that its project's folder moved, which its next turn records.
     pub(crate) rebound: Option<WorkspaceBound>,
+    /// What its next turn's opening note tells the model besides what changed (`copy.rs`).
+    pub(crate) reminder: Option<String>,
     /// Where it works on its person's own computer, when it does: opened there again at a
     /// turn's start whenever that computer woke since (`homes.rs`).
     pub(crate) home: Option<crate::homes::AtHome>,
@@ -476,7 +478,13 @@ where
             sources.insert(after, Arc::clone(web));
         }
         if let (None, Some(skills)) = (&thread.home, &self.skills) {
-            sources.push(Arc::clone(skills) as Arc<dyn ToolSource>);
+            // The skills found on this computer are its person's own: anyone else's thread
+            // here is offered glave's alone, as on a computer of their own.
+            if self.trusting(thread.for_) {
+                sources.push(Arc::clone(skills) as Arc<dyn ToolSource>);
+            } else if let Some(built_in) = Skills::offer(skills.built_in().collect()) {
+                sources.push(Arc::new(built_in));
+            }
         }
         // Where someone can choose where it goes, and the thread works on this computer.
         if thread.home.is_none() && self.someone_answers(thread) {
@@ -624,6 +632,7 @@ where
             commands: Arc::default(),
             opened: None,
             rebound: None,
+            reminder: None,
             home: crate::homes::at_home(bound.as_ref()),
             prefix: Prefixed::None,
             summary_failed: None,

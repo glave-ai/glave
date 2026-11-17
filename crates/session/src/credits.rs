@@ -246,8 +246,8 @@ where
 
     /// Adds `amount` to the personal space `org` a sign-up link made as it starts, the link's
     /// code's hash `link` its payment's reference, so it adds once. The space is made and its
-    /// person signed in either way: one the store does not take is said in the server's log,
-    /// for whoever runs it to add by hand.
+    /// person signed in either way: one the store does not take is an error in the server's
+    /// log, for whoever runs it to add by hand.
     pub(crate) async fn start_credits(&self, org: OrgId, amount: Money, link: &str) {
         let Some(credits) = self.inner.credits.as_deref() else {
             return;
@@ -257,7 +257,7 @@ where
             .add(org, amount, &reference, Principal::glave())
             .await
         {
-            tracing::warn!(%error, %org, "a sign-up's starting credits were not added");
+            tracing::error!(%error, %org, "a sign-up's starting credits were not added");
         }
     }
 }

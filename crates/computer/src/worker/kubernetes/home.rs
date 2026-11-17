@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-use glave_ports::computer::{ComputerError, Isolation};
+use glave_ports::computer::{ComputerError, Isolation, Refusal};
 use k8s_openapi::api::core::v1::PersistentVolumeClaim;
 use kube::Api;
 use kube::api::{DeleteParams, PostParams};
@@ -189,6 +189,34 @@ impl PersonComputer {
         }
     }
 
+    /// What the person is told when the computer woke but its first connection failed: that
+    /// it couldn't start safely, in plain words, when glave there stopped because its fence
+    /// never held ([`super::UNFENCED`], waited for up to three seconds, as its container
+    /// ends); `error` otherwise. The last lines it printed, with its node's address and how
+    /// its network plugin answered, go to the server's log alone, read before it is put to
+    /// sleep again, which takes its log (`specs/computers.md`, *The Pod*).
+    pub(crate) async fn never_served(&self, error: ComputerError) -> ComputerError {
+        let name = self.name();
+        let mut unfenced = None;
+        for _ in 0..12 {
+            let pod = self.cluster.pods().get_opt(&name).await.ok().flatten();
+            unfenced = pod
+                .and_then(|pod| serde_json::to_value(pod).ok())
+                .and_then(|pod| super::objects::unfenced(&pod));
+            if unfenced.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        let said = self.cluster.logs(&name).await;
+        tracing::warn!(computer = %name, %error, said = %said.trim(), "a person's computer woke but never served");
+        if unfenced == Some(true) {
+            ComputerError::Refused(Refusal::Unfenced.into())
+        } else {
+            error
+        }
+    }
+
     /// Gives the computer awake a fresh `token`, replacing the one it woke with, so a connection
     /// that died can be opened again after the first token has expired.
     pub(crate) async fn renew(&self, token: &Token) -> Result<(), ComputerError> {
@@ -340,6 +368,8 @@ fn saying(error: ComputerError, said: &str) -> ComputerError {
     }
 }
 
+#[cfg(test)]
+mod contained;
 #[cfg(test)]
 mod measured;
 #[cfg(test)]

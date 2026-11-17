@@ -17,10 +17,10 @@ use crate::held::{Finish, Use, busy, finished};
 use crate::hub::Hub;
 use crate::keyed::{Claimed, Done, Kept};
 use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update, code};
-use crate::server::{Ended, Glave, Inner, Server};
+use crate::server::{Ended, Inner, Server};
 use crate::steer::{Message, Queue, Sent};
 use crate::watch::{Watch, Watched};
-use crate::words::{Language, Sentence, say};
+use crate::words::{Sentence, say};
 
 /// One thing a running turn sends.
 #[derive(Debug, Clone)]
@@ -330,12 +330,10 @@ where
             }
             let harness = &inner.harness;
             // A schedule's run works on its project as it is now, where its copy can be brought
-            // up to date, and says so where it can't.
-            let prompt = if scheduled.is_some() {
-                caught_up(harness, &mut held, prompt).await
-            } else {
-                prompt
-            };
+            // up to date, and is told where it can't.
+            if scheduled.is_some() {
+                caught_up(&inner, &mut held, &caller).await;
+            }
             let ran = harness
                 .run_turn_with_files(
                     &mut held,
@@ -368,20 +366,29 @@ where
     })
 }
 
-/// `prompt` for a schedule's run in `held`, its chat's copy of the project brought up to date
-/// first: with a note for the run when the copy has changes of its own and was left as it was.
-async fn caught_up<P, L, B>(harness: &Glave<P, L, B>, held: &mut Thread, prompt: String) -> String
+/// Brings the copy of the project a schedule's run in `held` works on up to date, and where it
+/// can't, has its turn's opening note tell the model why, in the language of `caller`, whose
+/// run it is.
+async fn caught_up<P, L, B>(inner: &Arc<Inner<P, L, B>>, held: &mut Thread, caller: &Caller)
 where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    match harness.catch_up_copy(held).await {
-        Ok(CaughtUp::NoCopy | CaughtUp::Current) => prompt,
-        Ok(CaughtUp::Kept) => format!("{prompt}\n\n{}", say(Language::English, &Sentence::RunKept)),
+    let left = match inner.harness.catch_up_copy(held).await {
+        Ok(CaughtUp::NoCopy | CaughtUp::Current) => return,
+        Ok(CaughtUp::Changed) => "changed",
+        Ok(CaughtUp::Diverged) => "diverged",
+        Ok(CaughtUp::Failed) => "failed",
         Err(error) => {
             tracing::warn!(%error, "a schedule's copy of its project was not brought up to date");
-            prompt
+            "failed"
         }
-    }
+    };
+    let server = Server {
+        inner: Arc::clone(inner),
+    };
+    let language = server.language_for(caller, None).await;
+    let why = left.to_owned();
+    held.remind(say(language, &Sentence::RunCopyLeft { why }));
 }

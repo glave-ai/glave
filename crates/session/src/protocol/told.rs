@@ -108,6 +108,11 @@ impl Told {
         }
     }
 
+    /// Whether it is the server's own `sentence`, alone.
+    pub(crate) fn is(&self, sentence: &Sentence) -> bool {
+        matches!(self.said.as_deref(), Some(Said::Sentences(said)) if said.as_slice() == std::slice::from_ref(sentence))
+    }
+
     /// Whether a transport writes it again in the caller's language: it is the server's own.
     pub(crate) fn translatable(&self) -> bool {
         self.said.is_some()
