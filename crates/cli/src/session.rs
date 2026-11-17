@@ -126,8 +126,9 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     if let Some(url) = crate::remote::chosen(&args).await? {
         if !turn {
             anyhow::bail!(
-                "glave alone opens glave on this computer in a browser; for the server at {url}, \
-                 give it a prompt, or open its address in a browser"
+                "glave alone opens glave on this computer in a browser; for the server at {}, \
+                 give it a prompt, or open its address in a browser",
+                glave_ports::host::shown(&url)
             );
         }
         return crate::remote::run(&args, &url).await;

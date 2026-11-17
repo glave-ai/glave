@@ -191,7 +191,8 @@ pub(crate) fn https<'a>(field: &str, url: &'a str) -> Result<&'a str, AuthError>
         Ok(url)
     } else {
         Err(AuthError::refused(format!(
-            "the credentials file's {field} = {url:?} is not an https:// address"
+            "the credentials file's {field} is not an https:// address with no name or password \
+             in it"
         )))
     }
 }
@@ -202,9 +203,10 @@ fn plain_url(url: &str) -> Result<&str, AuthError> {
     if (url.starts_with("https://") || url.starts_with("http://")) && !signs_in(url) {
         Ok(url)
     } else {
-        Err(AuthError::refused(format!(
-            "the external account's credential_source url = {url:?} is not an http(s) address"
-        )))
+        Err(AuthError::refused(
+            "the external account's credential_source url is not an http(s) address with no name \
+             or password in it",
+        ))
     }
 }
 
