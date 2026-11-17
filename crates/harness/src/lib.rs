@@ -86,7 +86,6 @@ pub use prompt::system_prompt;
 pub use question::{Choice, Question, QuestionRequest};
 pub use removed::{last_active, owner_label, owner_of, record_removed};
 pub use retry::Retries;
-pub use shares::{Share, Shares};
 pub use skills::{
     Found, MAX_LISTED, SKILL, Skill, SkillSource, Skills, find_skills, skill_folders,
 };
