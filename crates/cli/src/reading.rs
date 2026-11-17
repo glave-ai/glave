@@ -2,7 +2,7 @@
 //! glave starts itself again as a reader, which takes the file on its input, describes and
 //! previews it with glave-office, and prints what it found as JSON. A file crafted to take more
 //! memory or time than reading it should ends the reader, never the server: on Linux the reader
-//! can't take more than [`MOST_MEMORY`], and the server stops it past [`WITHIN`], with all it
+//! can't take more than `MOST_MEMORY`, and the server stops it past [`WITHIN`], with all it
 //! started. A reader that ends otherwise than as it should has read nothing.
 
 use std::ffi::OsString;
@@ -76,7 +76,7 @@ pub(crate) fn reader(processes: &Processes) -> Option<ReadMade> {
     }))
 }
 
-/// Holds this reader to [`MOST_MEMORY`], on Linux, so a file that asks for more fails to be read
+/// Holds this reader to `MOST_MEMORY`, on Linux, so a file that asks for more fails to be read
 /// rather than taking the computer's memory. Elsewhere, where the limit is not kept, a reader
 /// that can't have what it asks for ends.
 fn held_to_its_memory() {
