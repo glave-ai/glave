@@ -141,8 +141,8 @@ where
     }
 
     /// What setting up `repeat` would ask `caller`, refused for whatever setting it up would
-    /// refuse: where schedules don't run, a time that doesn't parse, runs more often than the
-    /// agent may propose or never comes, no prompt, a zone glave doesn't know, a project they
+    /// refuse: where schedules don't run, a time that doesn't parse, never comes or runs more
+    /// often than the agent may propose, no prompt, a zone glave doesn't know, a project they
     /// can't work in, or no room under policy.
     async fn check_repeat(
         &self,
@@ -167,6 +167,7 @@ where
         let zone = self.zone_of(caller).await?;
         let clocks = time_zone(&zone)?;
         let now = self.inner.harness.clock().now();
+        // One that never runs was refused above; on these clocks, its first run.
         let Some(first_run) = first_runs(&cron, now, &clocks).first().copied() else {
             let text = repeat.cron.escape_debug().to_string();
             return Err(invalid(Sentence::CronNever { text }));
