@@ -1,24 +1,242 @@
 //! Firing every run once: past the ledgers a server keeps in memory, every project's runs are
 //! still looked at, each found right after its ledger is read; two servers on one store that
-//! both believe they fire start a run once, the one whose claim lands; a schedule made by no
-//! one glave can act for is refused and recorded; and a run is never someone else's in more than
-//! their own sign-in would be: no sign-in of the owner's, and no Full access, fired or adopted.
+//! both believe they fire start someone else's run once, the one whose claim (its
+//! `task.started`) lands, and a claim whose server stopped before the turn began is recorded
+//! lost, never run; a schedule made by no one glave can act for, or to run more often than one
+//! may, is refused and recorded; an organization has schedules in at most its own share of
+//! projects; and a run is never someone else's in more than their own sign-in would be: no
+//! sign-in of the owner's, and no Full access, fired or adopted.
 
 use std::sync::Arc;
 
 use glave_event::{
-    Body, Forge, Principal, ScheduleCreated, ScheduleId, ScheduleOrganization, SchedulePlaced,
-    ThreadId, When, decode,
+    At, Body, EventId, Fired, Forge, Header, Outcome, Payload, Principal, ScheduleCreated,
+    ScheduleId, ScheduleOrganization, SchedulePlaced, Seq, TaskStarted, ThreadId, When, decode,
+    encode,
 };
 use glave_ports::computer::{CredentialHost, GitCredential};
 use glave_ports::stream::Reserved;
-use glave_ports::testing::{FaultyLog, FixedGitCredentials, any_secret};
-use glave_ports::{InMemoryProjects, ProjectId, Projects, Scope};
-use glave_session::protocol::{Answer, Request};
+use glave_ports::testing::{FaultyLog, FixedGitCredentials, ManualClock, TempDir, any_secret};
+use glave_ports::{Caller, EventLog as _, InMemoryProjects, ProjectId, Projects, Scope};
+use glave_session::protocol::{Answer, Reply, Request, ScheduleInfo, code};
+use jiff::Timestamp;
 use serde_json::json;
 
-use crate::schedule_people::{append, daily, ledger_of, refusal_in, runs_in, set, setup};
+use crate::schedule_people::refusal_in;
 use crate::support::*;
+
+pub(crate) fn set(now: &ManualClock, text: &str) {
+    now.set_millis(text.parse::<Timestamp>().unwrap().as_millisecond());
+}
+
+/// A server with plenty of short answers, its clock at 10:03 until the test moves it.
+pub(crate) fn setup() -> Setup {
+    let mut setup = Setup::new((0..10).map(|_| answer(Some("Done."), None)).collect());
+    setup.clock = ManualClock::at_millis(
+        "2026-10-10T10:03:00Z"
+            .parse::<Timestamp>()
+            .unwrap()
+            .as_millisecond(),
+    );
+    setup
+}
+
+/// A schedule `caller` makes in their Chats, every day at 11:00.
+pub(crate) async fn daily<L: glave_ports::EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+) -> Result<ScheduleInfo, i64> {
+    let request = Request::ScheduleCreate {
+        project: None,
+        name: None,
+        when: When::Cron("0 11 * * *".into()),
+        zone: None,
+        prompt: "check the build".into(),
+        budget: 5_000,
+    };
+    match server.request_as(caller, request).await {
+        Ok(Reply::Schedule { schedule }) => Ok(schedule),
+        Ok(other) => panic!("a schedule, not {other:?}"),
+        Err(error) => Err(error.code),
+    }
+}
+
+/// What `project`'s task ledger records.
+pub(crate) async fn ledger_of(log: &Shared, project: ProjectId) -> Vec<Body> {
+    let ledger = Scope::glaves_own(scope().org(), project);
+    let events = log
+        .read(&ledger, Reserved::Tasks.id(), None, usize::MAX)
+        .await
+        .unwrap();
+    (events.into_iter())
+        .map(|raw| decode(raw).unwrap().body)
+        .collect()
+}
+
+/// Who each task started in `project`'s ledger ran as, and for which schedule.
+pub(crate) async fn runs_in(
+    log: &Shared,
+    project: ProjectId,
+) -> Vec<(Option<Principal>, ScheduleId)> {
+    (ledger_of(log, project).await.into_iter())
+        .filter_map(|body| match body {
+            Body::TaskStarted(started) => {
+                Some((started.by, started.schedule.map(|fired| fired.schedule)?))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// A server in the fresh folder `name` on one store, `log` and projects it keeps for the next
+/// server: the server, the projects, its clock, at 10:03, its repository and the folder.
+pub(crate) async fn on_a_store(
+    name: &str,
+    log: &Shared,
+) -> (
+    Tested<Shared>,
+    Arc<dyn Projects>,
+    ManualClock,
+    std::path::PathBuf,
+    TempDir,
+) {
+    let projects: Arc<dyn Projects> = Arc::new(InMemoryProjects::new());
+    let mut first = setup();
+    first.projects = Some(Arc::clone(&projects));
+    let now = first.clock.clone();
+    let (server, _, repo, dir) = first.build_in_repository(name, log.clone()).await;
+    (server, projects, now, repo, dir)
+}
+
+/// Appends `payload` at `seq` to `thread` in `scope`, at 10:00 that morning, as another server
+/// would.
+pub(crate) async fn append<T: Payload>(
+    log: &Shared,
+    scope: &Scope,
+    thread: ThreadId,
+    seq: u64,
+    payload: &T,
+) {
+    let at = At::try_from("2026-10-10T10:00:00.000Z".to_owned()).unwrap();
+    let mut random = [7; 10];
+    random[..8].copy_from_slice(&seq.to_be_bytes());
+    let header = Header {
+        id: EventId::new(at.timestamp(), random).unwrap(),
+        thread,
+        seq: Seq::new(seq).unwrap(),
+        at,
+    };
+    log.append(scope, &[encode(header, payload).unwrap()])
+        .await
+        .unwrap();
+}
+
+#[test]
+fn two_servers_that_both_fire_start_someone_else_s_run_once() {
+    block_on!(async {
+        let log = Shared::default();
+        let faulty = FaultyLog::over(Arc::clone(&log.0));
+        // One store: its log, and its projects; each server keeps leases of its own, so both
+        // believe they fire the store's schedules.
+        let projects: Arc<dyn Projects> = Arc::new(InMemoryProjects::new());
+        let mut first = setup();
+        first.projects = Some(Arc::clone(&projects));
+        let now = first.clock.clone();
+        let (one, _, repo, _dir) = first
+            .build_in_repository("firing-twice", faulty.clone())
+            .await;
+        let grace = elsewhere();
+        let made = daily(&one, &grace).await.unwrap();
+        let mut second = setup();
+        second.clock = now.clone();
+        second.projects = Some(projects);
+        second.seed = 2;
+        let (two, _) = second.build_on(&repo, log.clone()).await;
+        set(&now, "2026-10-10T11:00:00Z");
+        // The first's claim, its run's start, is held as it is written, while the second ticks
+        // through.
+        faulty.hold("task.started");
+        let racing = async {
+            faulty.held().await;
+            let fired = two.tick().await;
+            faulty.release();
+            fired
+        };
+        let (from_one, from_two) = tokio::join!(one.tick(), racing);
+        let mut started = from_one.unwrap();
+        started.extend(from_two.unwrap());
+        assert_eq!(started, vec![made.thread.unwrap()], "started once");
+        settle_for(&one, &grace).await;
+        settle_for(&two, &grace).await;
+        assert_eq!(
+            runs_in(&log, made.project).await.len(),
+            1,
+            "one claim landed; the other read it and wrote none"
+        );
+    });
+}
+
+#[test]
+fn a_run_claimed_by_a_server_that_stopped_before_starting_it_is_recorded_lost() {
+    block_on!(async {
+        let log = Shared::default();
+        let (server, projects, now, repo, _dir) = on_a_store("firing-lost", &log).await;
+        // In the server's own project, which a server started since recovers.
+        let request = Request::ScheduleCreate {
+            project: Some(scope().project()),
+            name: None,
+            when: When::Cron("0 11 * * *".into()),
+            zone: None,
+            prompt: "check the build".into(),
+            budget: 5_000,
+        };
+        let Ok(Reply::Schedule { schedule: made }) = server.request(request).await else {
+            panic!("a schedule");
+        };
+        let person = server.person();
+        server.shutdown().await;
+        drop(server);
+        // Its claim landed, and its server stopped before the turn began.
+        let fired = Fired {
+            schedule: made.schedule,
+            due: At::try_from("2026-10-10T11:00:00.000Z".to_owned()).unwrap(),
+        };
+        let claim = TaskStarted {
+            thread: made.thread.unwrap(),
+            title: "check the build".into(),
+            model: "test-model".into(),
+            budget: Some(5_000),
+            schedule: Some(fired),
+            by: None,
+        };
+        let ledger = Scope::glaves_own(scope().org(), made.project);
+        let next = u64::try_from(ledger_of(&log, made.project).await.len()).unwrap() + 1;
+        append(&log, &ledger, Reserved::Tasks.id(), next, &claim).await;
+        set(&now, "2026-10-10T11:00:30Z");
+        let mut later = setup();
+        later.clock = now.clone();
+        later.projects = Some(projects);
+        later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
+        // The same person's server, started again.
+        later.settings.person = person;
+        let (restarted, _) = later.build_on(&repo, log.clone()).await;
+        let recovered = restarted.recover_tasks().await.unwrap();
+        assert_eq!(
+            recovered,
+            glave_session::Repaired { closed: 1, held: 0 },
+            "recorded interrupted: the person learns it was lost"
+        );
+        assert_eq!(
+            restarted.tick().await.unwrap(),
+            Vec::new(),
+            "never run twice"
+        );
+        let ended = (ledger_of(&log, made.project).await.into_iter()).any(
+            |body| matches!(body, Body::TaskEnded(ended) if ended.outcome == Outcome::Interrupted),
+        );
+        assert!(ended);
+    });
+}
 
 /// The `n`th id of the kind `kind` stands for, a UUID v7.
 fn v7(kind: u128, n: u128) -> uuid::Uuid {
@@ -77,48 +295,44 @@ fn past_the_ledgers_a_server_keeps_every_project_s_runs_are_still_looked_at() {
 }
 
 #[test]
-fn two_servers_that_both_fire_start_someone_else_s_run_once() {
+fn a_schedule_made_to_run_more_often_than_one_may_is_refused_at_its_time() {
     block_on!(async {
         let log = Shared::default();
-        let faulty = FaultyLog::over(Arc::clone(&log.0));
-        // One store: its log, and its projects; each server keeps leases of its own, so both
-        // believe they fire the organization's schedules.
-        let projects: Arc<dyn Projects> = Arc::new(InMemoryProjects::new());
-        let mut first = setup();
-        first.projects = Some(Arc::clone(&projects));
+        let first = setup();
         let now = first.clock.clone();
-        let (one, _, repo, _dir) = first
-            .build_in_repository("firing-twice", faulty.clone())
-            .await;
-        let grace = elsewhere();
-        let theirs = daily(&one, &grace).await.unwrap();
-        let mut second = setup();
-        second.clock = now.clone();
-        second.projects = Some(projects);
-        second.seed = 2;
-        let (two, _) = second.build_on(&repo, log.clone()).await;
+        let (server, _, _, _dir) = first.build_in_repository("firing-often", log.clone()).await;
+        let chat = start(&server, false).await;
+        let mut often = made_by(2, chat, None);
+        often.when = When::Cron("* * * * *".into());
+        append(&log, &scope(), Reserved::Tasks.id(), 1, &often).await;
         set(&now, "2026-10-10T11:00:00Z");
-        // The first's claim is held as it is written, while the second ticks through.
-        faulty.hold("schedule.fired");
-        let racing = async {
-            faulty.held().await;
-            let fired = two.tick().await;
-            faulty.release();
-            fired
-        };
-        let (from_one, from_two) = tokio::join!(one.tick(), racing);
-        let mut started = from_one.unwrap();
-        started.extend(from_two.unwrap());
-        assert_eq!(started, vec![theirs.thread.unwrap()], "started once");
-        settle_for(&one, &grace).await;
-        settle_for(&two, &grace).await;
-        assert_eq!(runs_in(&log, theirs.project).await.len(), 1);
-        let claims = (ledger_of(&log, theirs.project).await.into_iter())
-            .filter(|body| matches!(body, Body::ScheduleFired(_)))
-            .count();
+        assert_eq!(server.tick().await.unwrap(), Vec::new());
+        assert_eq!(refusal_in(&log, scope().project()).await, "TOO_OFTEN");
+    });
+}
+
+#[test]
+fn an_organization_has_schedules_in_at_most_its_own_share_of_projects() {
+    block_on!(async {
+        let log = Shared::default();
+        let (server, _, _, _dir) = setup()
+            .build_in_repository("firing-share", log.clone())
+            .await;
+        // As many of its projects listed as one organization may have.
+        let org = scope().org();
+        let index = (Scope::of_organization(org), Reserved::Scheduled.id());
+        let listed = ScheduleOrganization { org: org.as_uuid() };
+        append(&log, &index.0, index.1, 1, &listed).await;
+        for n in 0..10_000u64 {
+            let placed = SchedulePlaced {
+                project: v7(5, n.into()),
+            };
+            append(&log, &index.0, index.1, n + 2, &placed).await;
+        }
         assert_eq!(
-            claims, 1,
-            "one claim landed; the other read it and wrote none"
+            daily(&server, &Caller::default()).await.unwrap_err(),
+            code::LIMIT,
+            "a project of its own not listed yet"
         );
     });
 }
