@@ -16,7 +16,7 @@ use crate::accounts::KeptConnector;
 use crate::protocol::{
     ApiError, ConnectionInfo, ConnectorStatus, Connects, Reply, SignInLink, code,
 };
-use crate::providers::theirs;
+use crate::providers::{theirs, unsigned};
 use crate::server::Server;
 use crate::words::Sentence;
 
@@ -167,7 +167,7 @@ where
     /// What `caller` may connect here (`server/discover`): each where it would not be refused;
     /// nothing for someone not signed in over the network, whom `server/discover` answers too.
     pub(crate) fn connects(&self, caller: &Caller) -> Connects {
-        if caller.auth.is_none() && caller.from.is_some() {
+        if unsigned(caller) {
             return Connects::default();
         }
         Connects {
