@@ -346,7 +346,7 @@ describe('results', () => {
     const repeat = (seq: number, decision: ApprovalItem['decision']): ApprovalItem => ({
       ...approval(seq, false),
       tool: 'schedule',
-      repeat: { lines: [], made: null, refused: null },
+      repeat: { lines: [], chat: null },
       decision,
     });
     const asked = turnResults(turn([ask, call(2), repeat(2, null)]), null, null, true, 'en-US');

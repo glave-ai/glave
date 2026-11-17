@@ -101,18 +101,22 @@ export interface ApprovalItem extends Placed {
   readonly decision: GlzDecision | null;
 }
 
-/** What a card asking to repeat work (`ask-repeat`) asks, and what came of it, as the server says. */
-export interface RepeatAsk {
-  /** The card's lines under its question, as the server gives them: when, and its chat. */
-  readonly lines: readonly string[];
+/** A line of a schedule's card, by what it says, as the server gives it. */
+export interface CardLine {
   /**
-   * Once the call made the schedule (its result's `structured`): its own chat, and when it
-   * repeats in the server's sentence ("Every weekday at 8:00 am"); `null` before, or when it made
-   * none.
+   * What it says: when it runs, the chat its runs go to, or what each run starts with; `null`
+   * for a line of a card recorded before the server gave them typed.
    */
-  readonly made: { readonly chat: string; readonly repeats: string } | null;
-  /** What the server refused the call with, after the person's yes, in its words; else `null`. */
-  readonly refused: string | null;
+  readonly says: 'when' | 'chat' | 'prompt' | null;
+  readonly text: string;
+}
+
+/** What a card asking to repeat work asks, and what came of it, as the server says. */
+export interface RepeatAsk {
+  /** The card's lines under its question, as the server gives them. */
+  readonly lines: readonly CardLine[];
+  /** The schedule's own chat, once the call made it (its result's `structured`); else `null`. */
+  readonly chat: string | null;
 }
 
 /** Questions the model asked the person. */
@@ -324,32 +328,28 @@ function isDecision(value: unknown): value is GlzDecision {
 }
 
 /**
- * What an approval asks to repeat, when the server says it asks to (`asking`, `ask-repeat`): the
- * card's lines, its `detail`, one a line; `null` for any other approval.
+ * What an approval asks to repeat, when it is a schedule's card: one carries what it was written
+ * from (`repeating`), whatever its question says. Its lines, typed (`lines`), else its `detail`,
+ * a line each; `null` for any other approval.
  */
 function repeatOf(data: Data): RepeatAsk | null {
-  const asking = data['asking'];
-  if (!isRecord(asking) || asking['says'] !== 'ask-repeat') {
+  if (!isRecord(data['repeating'])) {
     return null;
   }
-  const lines = text(data['detail'])
-    .split('\n')
-    .filter((line) => line.trim() !== '');
-  return { lines, made: null, refused: null };
+  const lines = data['lines'];
+  const typed: readonly CardLine[] = isRecord(lines)
+    ? (['when', 'chat', 'prompt'] as const).map((says) => ({ says, text: text(lines[says]) }))
+    : text(data['detail'])
+        .split('\n')
+        .map((line) => ({ says: null, text: line }));
+  return { lines: typed.filter((line) => line.text.trim() !== ''), chat: null };
 }
 
-/**
- * What a `schedule` call's result says came of the yes: the chat and the server's sentence for
- * when it repeats, from its `structured`; or, when it failed, the server's words for why.
- */
-function repeatDone(data: Data, output: string): Pick<RepeatAsk, 'made' | 'refused'> {
-  if (data['is_error'] === true) {
-    return { made: null, refused: output };
-  }
+/** The chat a `schedule` call's result says it made (`structured`, `chat`), if it made one. */
+function chatOf(data: Data): string | null {
   const structured = data['structured'];
-  const chat = isRecord(structured) ? text(structured['chat']) : '';
-  const repeats = isRecord(structured) ? text(structured['repeats']) : '';
-  return { made: chat === '' || repeats === '' ? null : { chat, repeats }, refused: null };
+  const chat = data['is_error'] === true || !isRecord(structured) ? '' : text(structured['chat']);
+  return chat === '' ? null : chat;
 }
 
 /** Whether glave wrote a message the person's side of the conversation holds, such as a note. */
@@ -471,7 +471,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
         const images = imagesOf(data['output']);
         update(`approval-${call}`, (item) =>
           item.kind === 'approval' && item.repeat !== undefined
-            ? { ...item, repeat: { ...item.repeat, ...repeatDone(data, output) } }
+            ? { ...item, repeat: { ...item.repeat, chat: chatOf(data) } }
             : item,
         );
         update(`call-${call}`, (item) => {

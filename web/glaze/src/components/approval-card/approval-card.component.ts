@@ -126,6 +126,7 @@ export class GlzApprovalCardComponent {
 
   protected readonly labelId = injectId('glz-approval-label');
   protected readonly summaryId = injectId('glz-approval-summary');
+  protected readonly linesId = injectId('glz-approval-lines');
   protected readonly cautionId = injectId('glz-approval-caution');
   protected readonly reasonId = injectId('glz-approval-reason');
   protected readonly ariaBusy = computed(() => (this.busy() ? 'true' : null));
@@ -143,9 +144,13 @@ export class GlzApprovalCardComponent {
   protected readonly labelledBy = computed(() =>
     this.decided() ? this.summaryId : `${this.labelId} ${this.summaryId}`,
   );
-  /** Described by why it asks, when a caution says, and by the agent's reason, when it gave one. */
+  /**
+   * Described by more of what it asks, when it says more, why it asks, when a caution says, and
+   * by the agent's reason, when it gave one.
+   */
   protected readonly describedBy = computed(() => {
     const ids = [
+      ...(this.hasLines() ? [this.linesId] : []),
       ...(this.hasCaution() ? [this.cautionId] : []),
       ...(this.hasReason() ? [this.reasonId] : []),
     ];

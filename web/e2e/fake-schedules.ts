@@ -1,4 +1,4 @@
-import type { RawEvent, ThreadSummary } from '@glave/client';
+import type { RawEvent, ScheduleInfo, ThreadSummary } from '@glave/client';
 import type { Page, Route } from '@playwright/test';
 
 import { PERSONAL } from './fake-api';
@@ -15,8 +15,6 @@ const SCHEDULE = '01900000-0000-7000-8000-0000000005c3';
 export const ZONE = 'Europe/Lisbon';
 /** When the schedule repeats, in the server's words. */
 export const REPEATS = 'Every weekday at 8:00 am';
-/** What the server refuses the schedule with, after the person's yes, when a test asks. */
-export const REFUSED = 'You have as many schedules as you may keep: 10.';
 
 const NONE = { input: 0, output: 0, cache_read: 0, cache_write: 0, reasoning: 0 };
 const CALL = 'call_3';
@@ -60,60 +58,95 @@ function chat(id: string, title: string, more: Partial<ThreadSummary> = {}): Thr
   };
 }
 
-const LINES = [
-  'Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.',
-  'Each run is added to its own chat, “Morning email summary”.',
-  'Each run starts with: “Summarize my email”',
-];
+/** Which card the model asks with: every weekday at 8, or a shape with no plain words. */
+export type Card = 'weekdays' | 'unplain';
+
+/** How the schedule's call ends once the person says yes: made, or refused by the server. */
+export type Outcome = 'made' | 'refused';
+
+/** The card's lines, typed, as the server records them for each kind of card. */
+const LINES = {
+  weekdays: {
+    when: 'Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.',
+    chat: 'Each run is added to its own chat, “Morning email summary”.',
+    prompt: 'Each run starts with: “Summarize my email”',
+  },
+  unplain: {
+    when: 'Times are in your time zone.',
+    chat: 'Each run is added to its own chat, “Morning email summary”.',
+    prompt: 'Each run starts with: “Summarize my email”',
+  },
+} as const;
+
+/** The server's question and what it was written from, for each kind of card. */
+const ASKS = {
+  weekdays: {
+    ask: 'Repeat this every weekday at 8:00 am?',
+    asking: { says: 'ask-repeat', when: 'every weekday at 8:00 am' },
+    cron: '0 8 * * 1-5',
+  },
+  unplain: {
+    ask: 'Repeat this, next on Monday 30 November, Thursday 31 December and Sunday 31 January?',
+    asking: {
+      says: 'ask-repeat-next',
+      runs: 'Monday 30 November, Thursday 31 December and Sunday 31 January',
+    },
+    cron: '0 8 30,31 * *',
+  },
+} as const;
 
 /** What the asking chat records: the person's ask, the model's call, and the server's card. */
-const ASKED: readonly RawEvent[] = [
-  recorded(ASKING, 1, 'turn.started', { model: { provider: 'openrouter', name: 'hope' } }, 2),
-  recorded(ASKING, 2, 'message.added', {
-    role: 'user',
-    parts: [{ type: 'text', text: 'Summarize my email every weekday at 8.' }],
-  }),
-  recorded(ASKING, 3, 'tool.call.requested', {
-    call_id: CALL,
-    tool: 'schedule',
-    arguments: {
-      json: {
-        action: 'create',
-        name: 'Morning email summary',
-        prompt: 'Summarize my email',
-        cron: '0 8 * * 1-5',
-      },
-    },
-    summary: 'schedule: Morning email summary',
-  }),
-  recorded(
-    ASKING,
-    4,
-    'approval.requested',
-    {
+function asked(card: Card): readonly RawEvent[] {
+  const lines = LINES[card];
+  const detail = [lines.when, lines.chat, lines.prompt].join('\n');
+  const { ask, asking, cron } = ASKS[card];
+  const model = { provider: 'openrouter', name: 'hope' };
+  return [
+    recorded(ASKING, 1, 'turn.started', { model }, 2),
+    recorded(ASKING, 2, 'message.added', {
+      role: 'user',
+      parts: [{ type: 'text', text: 'Summarize my email every weekday at 8.' }],
+    }),
+    recorded(ASKING, 3, 'tool.call.requested', {
       call_id: CALL,
       tool: 'schedule',
-      summary: `schedule: ${LINES.join('\n')}`,
-      ask: 'Repeat this every weekday at 8:00 am?',
-      asking: { says: 'ask-repeat', when: 'every weekday at 8:00 am' },
-      detail: LINES.join('\n'),
-      secret: false,
-      caution: 'It runs only while glave runs on this computer.',
-      reason: { risk: { says: 'risk-runs-while-glave-runs' } },
-      repeating: {
-        cron: '0 8 * * 1-5',
-        zone: ZONE,
-        name: 'Morning email summary',
-        first: '2026-11-17T08:00:00.000Z',
-        prompt: 'Summarize my email',
+      arguments: {
+        json: {
+          action: 'create',
+          name: 'Morning email summary',
+          prompt: 'Summarize my email',
+          cron,
+        },
       },
-    },
-    2,
-  ),
-];
-
-/** How the schedule's call ends after the person's answer: made, refused, or declined. */
-export type Outcome = 'made' | 'refused';
+      summary: 'schedule: Morning email summary',
+    }),
+    recorded(
+      ASKING,
+      4,
+      'approval.requested',
+      {
+        call_id: CALL,
+        tool: 'schedule',
+        summary: `schedule: ${detail}`,
+        ask,
+        asking,
+        detail,
+        secret: false,
+        caution: 'It runs only while glave runs on this computer.',
+        reason: { risk: { says: 'risk-runs-while-glave-runs' } },
+        repeating: {
+          cron,
+          zone: ZONE,
+          name: 'Morning email summary',
+          first: '2026-11-17T08:00:00.000Z',
+          prompt: 'Summarize my email',
+        },
+        lines,
+      },
+      2,
+    ),
+  ];
+}
 
 /** What the asking chat records once the person answers `decision`, the call ending `outcome`. */
 function answered(decision: string, outcome: Outcome): readonly RawEvent[] {
@@ -127,7 +160,7 @@ function answered(decision: string, outcome: Outcome): readonly RawEvent[] {
       }
     : {
         is_error: true,
-        output: [{ type: 'text', text: yes ? REFUSED : 'The person said not now.' }],
+        output: [{ type: 'text', text: yes ? 'As many as may be kept.' : 'Not now.' }],
       };
   return [
     recorded(ASKING, 5, 'approval.decided', { call_id: CALL, decision }),
@@ -142,32 +175,96 @@ function answered(decision: string, outcome: Outcome): readonly RawEvent[] {
 
 /** What the fake keeps while it runs. */
 interface Kept {
+  readonly card: Card;
   /** How the schedule's call ends once the person says yes. */
   readonly outcome: Outcome;
   /** The person's answer to the card, once given. */
   decision: string | null;
+  /** The lists' watch the page holds open, answered once the schedule's chat is made. */
+  watch: { readonly route: Route; readonly id: number } | null;
   /** Each time zone the page gave, in order. */
   readonly zones: string[];
 }
+
+/** Whether the schedule and its chat were made. */
+function made(kept: Kept): boolean {
+  return kept.decision === 'allow_once' && kept.outcome === 'made';
+}
+
+/** The schedule, as the server shows it, running next tomorrow at 8. */
+function info(): ScheduleInfo {
+  return {
+    schedule: SCHEDULE,
+    name: 'Morning email summary',
+    name_shown: 'Morning email summary',
+    stop: 'Stop repeating Morning email summary?',
+    project: PERSONAL.id,
+    thread: MORNING,
+    from: ASKING,
+    prompt: 'Summarize my email',
+    prompt_shown: 'Summarize my email',
+    when: { cron: ASKS.weekdays.cron },
+    zone: ZONE,
+    repeats: REPEATS,
+    budget: 200_000,
+    created_at: '2026-11-16T09:01:00.000Z',
+    paused: false,
+    next: '2026-11-17T08:00:00.000Z',
+  };
+}
+
+/** The schedule's chat once made, carrying its schedule. */
+function morningChat(kept: Kept): ThreadSummary | undefined {
+  return made(kept) ? chat(MORNING, 'Morning email summary', { schedule: info() }) : undefined;
+}
+
+const ASKING_CHAT = chat(ASKING, 'Summarize my email');
 
 function events(thread: string, kept: Kept): readonly RawEvent[] | undefined {
   if (thread !== ASKING) {
     return undefined;
   }
-  return kept.decision === null ? ASKED : [...ASKED, ...answered(kept.decision, kept.outcome)];
+  const before = asked(kept.card);
+  return kept.decision === null ? before : [...before, ...answered(kept.decision, kept.outcome)];
 }
 
-const ASKING_CHAT = chat(ASKING, 'Summarize my email');
+/** A thread's summary, as `thread/get` answers it, for the threads this fake has. */
+function summaryOf(thread: string, kept: Kept): ThreadSummary | undefined {
+  return thread === ASKING ? ASKING_CHAT : thread === MORNING ? morningChat(kept) : undefined;
+}
 
-const CARD: Answers<Kept> = {
+/** Tells the lists' watch the page holds of the schedule's chat, once made, and ends it. */
+async function tell(kept: Kept): Promise<void> {
+  const [watch, morning] = [kept.watch, morningChat(kept)];
+  if (watch === null || morning === undefined) {
+    return;
+  }
+  kept.watch = null;
+  const messages = [
+    { jsonrpc: '2.0', method: 'thread/changed', params: { thread: MORNING, summary: morning } },
+    { jsonrpc: '2.0', id: watch.id, result: { ended: 'unwatched' } },
+  ];
+  await watch.route.fulfill({
+    contentType: 'text/event-stream',
+    body: messages.map((message) => `data: ${JSON.stringify(message)}\n\n`).join(''),
+  });
+}
+
+const ANSWERS: Answers<Kept> = {
   'server/discover': () => ({ ...discovered(), schedules: true }),
   'zone/set': ({ zone }, kept) => {
     kept.zones.push(zone);
     return {};
   },
-  'thread/list': ({ project }) =>
-    project === PERSONAL.id ? { threads: [ASKING_CHAT] } : undefined,
-  'thread/get': ({ thread }) => (thread === ASKING ? { thread: ASKING_CHAT } : undefined),
+  'thread/list': ({ project }, kept) => {
+    const morning = morningChat(kept);
+    const threads = morning === undefined ? [ASKING_CHAT] : [morning, ASKING_CHAT];
+    return project === PERSONAL.id ? { threads } : undefined;
+  },
+  'thread/get': ({ thread }, kept) => {
+    const summary = summaryOf(thread, kept);
+    return summary === undefined ? undefined : { thread: summary };
+  },
   'thread/turns': ({ thread }, kept) => {
     const all = events(thread, kept);
     return all === undefined ? undefined : { events: all };
@@ -195,16 +292,32 @@ const CARD: Answers<Kept> = {
 };
 
 /**
- * Answers `page`'s calls with `answers` over whatever `fakeApi` answers, keeping `kept`: what
- * the answers leave unanswered falls back to it.
+ * A server where schedules run, over whatever `fakeApi` answers: the person's chat in which the
+ * model asks to repeat their email summary, the server's card waiting for them (`card`: every
+ * weekday at 8, or a shape with no plain words), recorded as the server records it; "Repeat it"
+ * makes the schedule and its own chat, which the lists' watch is told of, or with `outcome`
+ * `refused` the server refuses it; "Not now" makes nothing. Each time zone the page gives is
+ * kept in `zones`.
  */
-async function answering<K>(page: Page, answers: Answers<K>, kept: K): Promise<void> {
+export async function schedules(
+  page: Page,
+  {
+    card = 'weekdays',
+    outcome = 'made',
+  }: { readonly card?: Card; readonly outcome?: Outcome } = {},
+): Promise<Kept> {
+  const kept: Kept = { card, outcome, decision: null, watch: null, zones: [] };
   await page.route('**/*', async (route: Route) => {
     const message = await posted(route);
     if (message === null) {
       return;
     }
-    const result = answerFrom(answers, message.method, message.params, kept);
+    if (message.method === 'thread/list/watch') {
+      kept.watch = { route, id: message.id };
+      await tell(kept);
+      return;
+    }
+    const result = answerFrom(ANSWERS, message.method, message.params, kept);
     if (result === undefined) {
       await route.fallback();
       return;
@@ -213,18 +326,9 @@ async function answering<K>(page: Page, answers: Answers<K>, kept: K): Promise<v
       contentType: 'application/json',
       body: JSON.stringify({ jsonrpc: '2.0', id: message.id, result }),
     });
+    if (message.method === 'approval/decide') {
+      await tell(kept);
+    }
   });
-}
-
-/**
- * A server where schedules run, over whatever `fakeApi` answers: the person's chat in which the
- * model asks to repeat their email summary every weekday at 8, the server's card waiting for
- * them, recorded as the server records it; "Repeat it" makes the schedule and its own chat, or
- * with `outcome` `refused` the server refuses it; "Not now" makes nothing. Each time zone the
- * page gives is kept in `zones`.
- */
-export async function schedules(page: Page, outcome: Outcome = 'made'): Promise<Kept> {
-  const kept: Kept = { outcome, decision: null, zones: [] };
-  await answering(page, CARD, kept);
   return kept;
 }

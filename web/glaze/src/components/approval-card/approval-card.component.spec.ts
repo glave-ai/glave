@@ -134,6 +134,9 @@ describe('GlzApprovalCardComponent', () => {
     expect(root.querySelector('.summary glz-icon')).not.toBeNull();
     expect(root.querySelector('code')).toBeNull();
     expect(root.querySelector('.summary')?.contains(lines ?? null)).toBe(false);
+    // A screen reader on its answers hears them too.
+    const card = root.querySelector('glz-approval-card');
+    expect(card?.getAttribute('aria-describedby')).toBe(lines?.id);
     await expectAccessible(root);
   });
 
