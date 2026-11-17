@@ -63,6 +63,7 @@ function chat(id: string, title: string, more: Partial<ThreadSummary> = {}): Thr
 const LINES = [
   'Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.',
   'Each run is added to its own chat, “Morning email summary”.',
+  'Each run starts with: “Summarize my email”',
 ];
 
 /** What the asking chat records: the person's ask, the model's call, and the server's card. */
@@ -104,6 +105,7 @@ const ASKED: readonly RawEvent[] = [
         zone: ZONE,
         name: 'Morning email summary',
         first: '2026-11-17T08:00:00.000Z',
+        prompt: 'Summarize my email',
       },
     },
     2,
