@@ -29,9 +29,10 @@ impl Processes {
         self.waited(program, None, limit, None).await
     }
 
-    /// [`Processes::output`], keeping of its standard output only the first `most` bytes and
-    /// one more, which says it printed more: the pipe is closed there, which ends a program that
-    /// goes on writing, so a long answer costs neither memory nor the rest of its run.
+    /// [`Processes::output`], keeping of its standard output, and of its standard error, only
+    /// the first `most` bytes and one more, which says it printed more: the pipe is closed
+    /// there, which ends a program that goes on writing, so a long answer, or a long complaint,
+    /// costs neither memory nor the rest of its run.
     pub async fn output_at_most(
         &self,
         program: &mut Program,
@@ -87,8 +88,8 @@ impl Processes {
     }
 }
 
-/// How `child` ended, with all it printed, or of its standard output the first `most` bytes
-/// and one more: `input` written to it and its standard input closed, beside reading both its
+/// How `child` ended, with all it printed, or of each of its outputs the first `most` bytes and
+/// one more: `input` written to it and its standard input closed, beside reading both its
 /// outputs, so neither side waits on a full pipe.
 async fn finished(
     child: &mut Child,
@@ -103,7 +104,7 @@ async fn finished(
         }
         Ok(())
     };
-    let read = (drained(stdout, most), drained(stderr, None));
+    let read = (drained(stdout, most), drained(stderr, most));
     let (status, (), stdout, stderr) = tokio::try_join!(child.wait(), written, read.0, read.1)?;
     Ok(Output {
         status,
