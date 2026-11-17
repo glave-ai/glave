@@ -16,6 +16,7 @@ use glave_event::{
 };
 use glave_harness::{Looked, Workspace};
 use glave_ports::computer::{ComputerError, CredentialHost, Forge};
+use glave_ports::host::{shown, urls_shown};
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use glave_ports::{
     BlobStore, Caller, EventLog, FolderKey, Located, ModelProvider, OrgId, Project, ProjectId,
@@ -589,8 +590,8 @@ fn not_cloned(url: &str, error: &ComputerError) -> ApiError {
     ApiError::new(
         code::HOST,
         Sentence::CloneFailed {
-            url: url.to_owned(),
-            reason: error.message().to_owned(),
+            url: shown(url),
+            reason: urls_shown(error.message()),
         },
     )
 }
@@ -600,14 +601,7 @@ fn not_cloned(url: &str, error: &ComputerError) -> ApiError {
 /// not.
 fn repository(url: &str) -> Result<String, ApiError> {
     let url = url.trim();
-    let refused = || {
-        ApiError::new(
-            code::INVALID_PARAMS,
-            Sentence::NotARepository {
-                url: url.escape_debug().to_string(),
-            },
-        )
-    };
+    let refused = || ApiError::new(code::INVALID_PARAMS, Sentence::NotARepository);
     let (scheme, rest) = url.split_once("://").ok_or_else(refused)?;
     let (host, path) = rest.split_once('/').ok_or_else(refused)?;
     let origin = format!("{scheme}://{host}");

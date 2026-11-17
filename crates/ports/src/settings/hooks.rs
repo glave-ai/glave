@@ -23,25 +23,23 @@ pub struct Hook {
     pub timeout_secs: Option<u64>,
 }
 
-/// Why a hook cannot be used as configured.
+/// Why a hook cannot be used as configured. A hook is named by its point and where it comes
+/// among that point's, never by its command, which may hold a secret (a token in a `curl`).
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum HookError {
     #[error(
-        "the {point} hook {command:?} has matcher {matcher:?}, which is not a regular expression: {why}"
+        "{point} hook number {nth} has matcher {matcher:?}, which is not a regular expression: {why}"
     )]
     Matcher {
         point: &'static str,
-        command: String,
+        nth: usize,
         matcher: String,
         why: String,
     },
-    #[error("the {point} hook {command:?} has a matcher, but {point} hooks do not run for a tool")]
-    NoTool {
-        point: &'static str,
-        command: String,
-    },
-    #[error("the {point} hook has an empty command")]
-    Empty { point: &'static str },
+    #[error("{point} hook number {nth} has a matcher, but {point} hooks do not run for a tool")]
+    NoTool { point: &'static str, nth: usize },
+    #[error("{point} hook number {nth} has an empty command")]
+    Empty { point: &'static str, nth: usize },
 }
 
 /// The hooks a harness runs, in the order configured.
@@ -53,13 +51,12 @@ pub struct Hooks {
 impl Hooks {
     /// `hooks`, each checked: a command, and a matcher only where there is a tool to match.
     pub fn new(hooks: Vec<Hook>) -> Result<Self, HookError> {
-        let checked = hooks
-            .into_iter()
-            .map(|hook| {
-                let regex = matcher(&hook)?;
-                Ok((hook, regex))
-            })
-            .collect::<Result<_, HookError>>()?;
+        let mut checked: Vec<(Hook, Option<Regex>)> = Vec::with_capacity(hooks.len());
+        for hook in hooks {
+            let before = checked.iter().filter(|(kept, _)| kept.point == hook.point);
+            let regex = matcher(&hook, before.count() + 1)?;
+            checked.push((hook, regex));
+        }
         Ok(Self { hooks: checked })
     }
 
@@ -102,20 +99,18 @@ fn for_tools(point: HookPoint) -> bool {
     matches!(point, HookPoint::PreToolUse | HookPoint::PostToolUse)
 }
 
-/// The compiled matcher of `hook`, anchored to the whole tool name; `None` matches all.
-fn matcher(hook: &Hook) -> Result<Option<Regex>, HookError> {
+/// The compiled matcher of `hook`, the `nth` at its point, anchored to the whole tool name;
+/// `None` matches all.
+fn matcher(hook: &Hook, nth: usize) -> Result<Option<Regex>, HookError> {
     let point = point_name(hook.point);
     if hook.command.trim().is_empty() {
-        return Err(HookError::Empty { point });
+        return Err(HookError::Empty { point, nth });
     }
     let Some(pattern) = hook.matcher.as_deref().map(str::trim) else {
         return Ok(None);
     };
     if !for_tools(hook.point) {
-        return Err(HookError::NoTool {
-            point,
-            command: hook.command.clone(),
-        });
+        return Err(HookError::NoTool { point, nth });
     }
     if pattern.is_empty() || pattern == "*" {
         return Ok(None);
@@ -124,7 +119,7 @@ fn matcher(hook: &Hook) -> Result<Option<Regex>, HookError> {
         .map(Some)
         .map_err(|error| HookError::Matcher {
             point,
-            command: hook.command.clone(),
+            nth,
             matcher: pattern.to_owned(),
             why: error.to_string(),
         })
