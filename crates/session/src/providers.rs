@@ -5,7 +5,7 @@
 
 use std::sync::PoisonError;
 
-use glave_event::{AuthMethod, ProviderId, ProviderKind, Secret};
+use glave_event::{AuthMethod, PrincipalId, ProviderId, ProviderKind, Secret};
 use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, ModelInfo, ProviderInfo, Reply, code};
@@ -61,25 +61,28 @@ pub trait Providers: Send + Sync {
     fn models(&self) -> BoxFuture<'_, Result<Models, ApiError>>;
 }
 
-/// Whether `caller` is the person on this computer: over a local transport, or signed in with
-/// the local token from a browser here.
-pub(crate) fn local(caller: &Caller) -> bool {
-    caller
+/// Whether `caller` is the person on this computer, `own`: over a local transport, or signed in
+/// with the local token from a browser here. Never anyone else, however they call: a caller
+/// naming another person is not them, signed in or not.
+pub(crate) fn local(caller: &Caller, own: Option<PrincipalId>) -> bool {
+    let theirs = caller
         .auth
         .as_ref()
-        .is_none_or(|auth| auth.method == AuthMethod::Local)
+        .is_none_or(|auth| auth.method == AuthMethod::Local);
+    theirs && caller.person.is_none_or(|person| Some(person) == own)
 }
 
 /// What the host keeps for the person on this computer, `kept`, for `caller`: refused with
 /// `missing` where the host keeps none, and with `elsewhere` for anyone but that person.
 pub(crate) fn theirs<'a, T: ?Sized>(
     caller: &Caller,
+    own: Option<PrincipalId>,
     kept: Option<&'a T>,
     missing: Sentence,
     elsewhere: Sentence,
 ) -> Result<&'a T, ApiError> {
     let kept = kept.ok_or_else(|| ApiError::new(code::NOT_AVAILABLE, missing))?;
-    if !local(caller) {
+    if !local(caller, own) {
         return Err(ApiError::new(code::NOT_ALLOWED, elsewhere));
     }
     Ok(kept)
@@ -96,7 +99,7 @@ where
     pub(crate) fn providers_for(&self, caller: &Caller) -> Result<&dyn Providers, ApiError> {
         let providers = self.inner.providers.as_deref();
         let elsewhere = Sentence::ModelAccountsOnItsComputer;
-        theirs(caller, providers, Sentence::ModelsNotHere, elsewhere)
+        theirs(caller, self.inner.person, providers, Sentence::ModelsNotHere, elsewhere)
     }
 
     /// Answers `provider/connect`.

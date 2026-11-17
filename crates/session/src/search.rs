@@ -25,7 +25,7 @@ where
     /// Why web search is not `caller`'s to choose, if it is not: they are not the person on
     /// this computer, or the server searches nothing.
     fn search_refused(&self, caller: &Caller) -> Option<ApiError> {
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Some(ApiError::new(
                 code::NOT_ALLOWED,
                 Sentence::SearchOnItsComputer,
