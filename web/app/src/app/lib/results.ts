@@ -55,6 +55,8 @@ export interface Working {
  */
 export interface TurnResults {
   readonly key: string;
+  /** For a schedule's run, when it was due, as the server recorded it; `null` for any other turn. */
+  readonly scheduled: string | null;
   readonly prompt: MessageItem | null;
   /** What it did, in order, but for what waits for the person. */
   readonly parts: readonly TurnPart[];
@@ -250,6 +252,7 @@ export function turnResults(
   ];
   return {
     key: turn.key,
+    scheduled: turn.scheduled,
     prompt,
     parts,
     live,

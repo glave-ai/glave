@@ -1,7 +1,7 @@
 import type { Project, ThreadSummary } from '@glave/client';
 import { TriangleAlert } from 'lucide';
 
-import { record, thread } from '../testing/fixtures';
+import { record, schedule, thread } from '../testing/fixtures';
 import {
   CHATS_LIST,
   type NavSections,
@@ -107,6 +107,20 @@ describe('nav', () => {
     expect(titles(sections.chats.list)).toEqual(['New chat', 'Café ideas']);
     expect(sections.projects).toMatchObject({ expanded: true, mark: null });
     expect(sections.chats).toMatchObject({ expanded: true, mark: null });
+  });
+
+  it('marks a schedule’s own chat as one that repeats', () => {
+    const projects: readonly ProjectWithThreads[] = [
+      {
+        project: made('p1', 'Alpha', 0),
+        threads: [
+          line('a1', 'Morning check', 2, { schedule: schedule('s1', null) }),
+          line('a2', 'Plan the launch', 1),
+        ],
+      },
+    ];
+    const { projects: listed } = navSections(projects, VIEW);
+    expect(listed.list[0]?.threads.map((each) => each.repeats)).toEqual([true, false]);
   });
 
   it('gives each thread when it was last active, counted from the view’s moment', () => {

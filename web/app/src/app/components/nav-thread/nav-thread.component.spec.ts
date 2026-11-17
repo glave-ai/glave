@@ -13,6 +13,7 @@ function line(id: string, title: string, more: Partial<NavThread> = {}): NavThre
     link: ['/t', id],
     title,
     running: false,
+    repeats: false,
     line: null,
     since: SINCE,
     current: false,
@@ -55,6 +56,15 @@ describe('NavThreadComponent', () => {
     expect(find(root, 'nav-thread-running')).toBeNull();
     // Nothing under its title: it neither waits nor is listed away from its project.
     expect(find(root, 'nav-thread-line')).toBeNull();
+    expect(find(root, 'nav-thread-repeats')).toBeNull();
+    await expectAccessible(root);
+  });
+
+  it('marks a schedule’s own chat at its start, said to screen readers', async () => {
+    const { root } = await render(line('t1', 'Morning email summary', { repeats: true }));
+    const mark = find(root, 'nav-thread-repeats');
+    expect(mark?.getAttribute('aria-label')).toBe('Repeats');
+    expect(find(root, 'nav-thread')?.contains(mark ?? null)).toBe(true);
     await expectAccessible(root);
   });
 

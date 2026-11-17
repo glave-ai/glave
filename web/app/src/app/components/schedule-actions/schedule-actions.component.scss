@@ -1,0 +1,18 @@
+:host {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-1);
+}
+
+// Remove destroys the schedule: a quiet button in the danger tone, set through its own colour.
+.remove {
+  --glz-button-fg: var(--glz-color-danger);
+}
+
+// On a phone, each control is a finger's size: the small control height is the touch one here.
+@media (width <= 48rem) {
+  :host {
+    --glz-control-height-sm: var(--glz-control-height-touch);
+  }
+}

@@ -24,6 +24,7 @@ describe('runs', () => {
       took: null,
       started: null,
       model: null,
+      scheduled: null,
       result: ended ? { outcome: 'completed' } : null,
       ended: null,
     });

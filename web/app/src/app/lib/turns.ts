@@ -30,6 +30,11 @@ export interface Turn {
   /** The model it started with, by the id its `turn.started` records; `null` with none. */
   readonly model: string | null;
   /**
+   * For a schedule's run, when the run was due, as its `turn.started` records it (`scheduled`);
+   * `null` for any other turn.
+   */
+  readonly scheduled: string | null;
+  /**
    * How it ended and what it did and cost, as the server says in its `turn.ended`; `null` until
    * it has ended.
    */
@@ -125,6 +130,11 @@ function modelOf(model: unknown): string | null {
   return typeof name === 'string' && name !== '' ? name : null;
 }
 
+/** When a schedule's run was due, as a `turn.started` records it (`scheduled`); else `null`. */
+function dueOf(scheduled: unknown): string | null {
+  return typeof scheduled === 'string' && scheduled !== '' ? scheduled : null;
+}
+
 function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn {
   const started = events.find((event) => event.type === 'turn.started');
   const ended = events.filter((event) => event.type === 'turn.ended').at(-1);
@@ -140,6 +150,7 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
     took: Number.isNaN(took) ? null : took,
     started: started?.at ?? null,
     model: modelOf(started?.data['model']),
+    scheduled: dueOf(started?.data['scheduled']),
     result: ended === undefined ? null : resultOf(ended.data),
     ended: ended === undefined ? null : { seq: ended.seq, at: ended.at },
   };
@@ -198,6 +209,7 @@ function startingTurn(prompt: string, key: string): Turn {
     took: null,
     started: null,
     model: null,
+    scheduled: null,
     result: null,
     ended: null,
   };
