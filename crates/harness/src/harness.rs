@@ -471,7 +471,13 @@ where
             sources.insert(after, Arc::clone(web));
         }
         if let (None, Some(skills)) = (&thread.home, &self.skills) {
-            sources.push(Arc::clone(skills) as Arc<dyn ToolSource>);
+            // The skills found on this computer are its person's own: anyone else's thread
+            // here is offered glave's alone, as on a computer of their own.
+            if self.trusting(thread.for_) {
+                sources.push(Arc::clone(skills) as Arc<dyn ToolSource>);
+            } else if let Some(built_in) = Skills::offer(skills.built_in().collect()) {
+                sources.push(Arc::new(built_in));
+            }
         }
         // Where someone can choose where it goes, and the thread works on this computer.
         if thread.home.is_none() && self.someone_answers(thread) {

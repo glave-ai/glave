@@ -14,7 +14,7 @@ use glave_ports::computer::{
     Bytes, ComputerError, ComputerId, Computers, Environment, Home, Screenful, Sources, TerminalId,
     TerminalSize,
 };
-use glave_ports::testing::{TempDir, read_program};
+use glave_ports::testing::{ManualClock, TempDir, read_program};
 use glave_ports::{block_on, conformance};
 use glave_process::Processes;
 use glave_provider_openai::fake::FakeServer;
@@ -121,7 +121,9 @@ fn held(home: &Home, stands: &Arc<AtomicU8>, wakes: &Arc<AtomicUsize>) -> Home {
         };
         Box::pin(std::future::ready(now))
     });
-    Waking::home((wake, peek), None, home.home.clone(), "/nowhere")
+    // A clock that stands still: a call that went through keeps it taken as awake.
+    let still = Arc::new(ManualClock::at_second(1_791_001_000));
+    Waking::home((wake, peek), None, home.home.clone(), "/nowhere", still)
 }
 
 /// What `terminal` on `computer` printed until it printed `marker`.

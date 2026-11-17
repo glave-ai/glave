@@ -70,6 +70,14 @@ pub(crate) fn local(caller: &Caller) -> bool {
         .is_none_or(|auth| auth.method == AuthMethod::Local)
 }
 
+/// Whether `caller` came over the network with no sign-in, for what is open to anyone
+/// (`server/discover`, an invite's link, signing in). They are no one: the transport hands
+/// them on as it does the person on this computer, so what reads that person's own must ask
+/// this first.
+pub(crate) fn unsigned(caller: &Caller) -> bool {
+    caller.auth.is_none() && caller.from.is_some()
+}
+
 /// What the host keeps for the person on this computer, `kept`, for `caller`: refused with
 /// `missing` where the host keeps none, and with `elsewhere` for anyone but that person.
 pub(crate) fn theirs<'a, T: ?Sized>(
@@ -162,10 +170,12 @@ where
                 },
             };
             if let Some(failed) = &refreshed.failed {
-                tracing::warn!("could not refresh the models' catalogs: {}", failed.message);
+                let error = &failed.message;
+                tracing::warn!(%error, "could not refresh the models' catalogs");
             }
             if let Err(error) = server.rerun(providers.as_ref(), refreshed.changed).await {
-                tracing::warn!("could not run the refreshed models: {}", error.message);
+                let error = error.message;
+                tracing::warn!(%error, "could not run the refreshed models");
             }
         });
         let before = self

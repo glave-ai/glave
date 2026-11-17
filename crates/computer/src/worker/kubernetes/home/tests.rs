@@ -39,6 +39,18 @@ const FENCED: &str = "echo kept > kept.txt; echo \"home=$HOME\"; echo \"user=$(i
     echo \"pods=$(reach kube-dns.kube-system.svc.cluster.local 9153)\"; \
     echo \"internet=$(reach 1.1.1.1 443)\"; echo \"named=$(reach example.com 443)\"";
 
+/// Programs planted first on the person's `PATH` (`~/.local/bin`, on their disk), under the
+/// names the server's own steps in a computer use before glave serves: each leaves a mark in
+/// the home when it runs, then does what the real one does. As Full access or the person's
+/// Terminal could.
+const PLANT: &str = r#"mkdir -p ~/.local/bin && for p in tar sleep cat ln; do
+printf '#!/bin/sh\ntouch %s/.planted-%s\nPATH=/usr/bin:/bin exec %s "$@"\n' "$HOME" "$p" "$p" \
+> ~/.local/bin/$p && chmod +x ~/.local/bin/$p; done && echo planted"#;
+
+/// Which planted programs ran, by their marks, read with the shell's own builtins alone.
+const PLANTED: &str =
+    "for p in tar sleep cat ln; do [ -e ~/.planted-$p ] && echo \"ran=$p\"; done; echo checked";
+
 /// The SHA-256 of the computer's token, never the token: which one it holds now.
 const TOKEN_HELD: &str = "sha256sum /opt/glave/secret/token | cut -c1-64";
 
@@ -165,11 +177,20 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             format!("{FENCED}; echo \"pod=$(reach {pod} 9153)\"; echo \"dns53=$(reach {pod} 53)\"");
 
         let named = (&cluster, key.as_str());
-        let wrote = awake(&computers, named, &environment, &[&fenced]).await;
+        let wrote = awake(&computers, named, &environment, &[&fenced, PLANT]).await;
         // Asleep in between: its Pod gone, its disk kept. Awake, its bridges drop (the call
         // carried on one is lost) and the next call reaches it through a new one, signed in
-        // with a fresh token.
-        let after = [TOKEN_HELD, DROP_BRIDGES, TOKEN_HELD, "cat kept.txt"];
+        // with a fresh token. What was planted ran neither at the wake nor at the new token;
+        // the person's own `cat` does, as theirs.
+        let after = [
+            PLANTED,
+            TOKEN_HELD,
+            DROP_BRIDGES,
+            TOKEN_HELD,
+            PLANTED,
+            "cat kept.txt",
+            "rm -f ~/.planted-*",
+        ];
         let read = awake(&computers, named, &environment, &after).await;
         // Given another glave than its image's, the same computer has it copied in.
         let copied = {
@@ -179,7 +200,13 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             let computers = WorkerComputers::new(person, limits.clone());
             let which = "echo \"link=$(readlink /opt/glave/glave)\"; \
                 test -x /opt/glave/glave && echo copied";
-            awake(&computers, (&cluster, &key), &environment, &[which]).await
+            awake(
+                &computers,
+                (&cluster, &key),
+                &environment,
+                &[PLANTED, which],
+            )
+            .await
         };
         let destroyed = PersonComputer::new(cluster.clone(), &key, 1)
             .unwrap()
@@ -194,32 +221,64 @@ fn a_persons_computer_keeps_its_disk_while_it_sleeps() {
             took(&read),
             took(&copied)
         );
-        assert_eq!(last(&copied).unwrap().trim(), "link=\ncopied");
-        assert_eq!(
-            last(&wrote).unwrap().trim(),
-            "home=/home/glave\nuser=65532\nglave=/usr/libexec/glave/glave\n\
-             name=nonroot at /home/glave\ntmp=writable\nroot=read-only\ndns=no\n\
-             api=refused\npods=refused\ninternet=reached\nnamed=reached\npod=refused\n\
-             dns53=refused",
-            "its own home, glave's image's glave and tools, never root, nothing written \
-             outside it but /tmp, and the internet but nothing in the cluster, its DNS neither"
-        );
-        assert_eq!(
-            wrote.as_ref().unwrap().class,
-            runtime_class,
-            "it runs under the runtime class set"
-        );
+        fenced_planted_and_copied(&wrote, &copied, runtime_class.as_deref());
         renewed_and_kept(&read.unwrap());
         destroyed.unwrap();
         assert_eq!(left, Vec::<String>::new());
     });
 }
 
-/// What the second wake said: the token it held before its bridges dropped, then the one the
-/// next bridge brought, and the file kept on its disk.
+/// What the first wake said, and the one with glave copied in: its own home, glave's image's
+/// glave and tools, never root, nothing written outside it but `/tmp`, the internet but nothing
+/// in the cluster, under the runtime class set, and the programs planted; and that none of them
+/// ran as glave was copied in.
+fn fenced_planted_and_copied(
+    wrote: &Result<Woke, String>,
+    copied: &Result<Woke, String>,
+    class: Option<&str>,
+) {
+    let first = |woke: &Result<Woke, String>| {
+        let said = woke
+            .as_ref()
+            .ok()
+            .and_then(|woke| woke.said.first().cloned());
+        said.map(|said| said.map(|text| text.trim().to_owned()))
+    };
+    assert_eq!(last(copied).unwrap().trim(), "link=\ncopied");
+    assert_eq!(
+        first(copied),
+        Some(Ok("checked".to_owned())),
+        "nothing planted ran as glave was copied in"
+    );
+    assert_eq!(last(wrote).unwrap().trim(), "planted");
+    assert_eq!(
+        first(wrote).unwrap().unwrap(),
+        "home=/home/glave\nuser=65532\nglave=/usr/libexec/glave/glave\n\
+         name=nonroot at /home/glave\ntmp=writable\nroot=read-only\ndns=no\n\
+         api=refused\npods=refused\ninternet=reached\nnamed=reached\npod=refused\n\
+         dns53=refused",
+        "its own home, glave's image's glave and tools, never root, nothing written outside it \
+         but /tmp, and the internet but nothing in the cluster, its DNS neither, from its first \
+         command"
+    );
+    assert_eq!(
+        wrote.as_ref().unwrap().class.as_deref(),
+        class,
+        "it runs under the runtime class set"
+    );
+}
+
+/// What the second wake said: nothing planted ran as it woke or took a new token, the token it
+/// held before its bridges dropped, then the one the next bridge brought, and the file kept on
+/// its disk.
 fn renewed_and_kept(read: &Woke) {
     let held = |at: usize| read.said.get(at).cloned().unwrap().unwrap();
-    let (before, renewed) = (held(0), held(2));
+    assert_eq!(
+        (held(0).trim(), held(4).trim()),
+        ("checked", "checked"),
+        "nothing planted on the person's PATH ran at the wake or the new token"
+    );
+    let (before, renewed) = (held(1), held(3));
     assert_eq!(
         (before.len(), renewed.len()),
         (64, 64),
@@ -229,7 +288,7 @@ fn renewed_and_kept(read: &Woke) {
         before, renewed,
         "the new bridge is signed in with a fresh token"
     );
-    assert_eq!(held(3).trim(), "kept");
+    assert_eq!(held(5).trim(), "kept");
 }
 
 /// The computers suite, on a person's computer reached through bridges into its Pod as the
