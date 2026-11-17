@@ -81,9 +81,9 @@ pub enum Reserved {
     /// made in (`library.kept`, `library.removed`).
     Library,
     /// `…0010`: where schedules are, which every server that fires schedules reads to find
-    /// them: in an organization's own scope ([`Scope::of_organization`]), its projects where
-    /// someone made one (`schedule.placed`); in the server's own organization's, the
-    /// organizations where someone did (`schedule.organization`), naming no project.
+    /// them: in each organization's own scope ([`Scope::of_organization`]), its projects with
+    /// schedules now (`schedule.placed`, then `schedule.unplaced` as a project's last one
+    /// goes).
     Scheduled,
 }
 

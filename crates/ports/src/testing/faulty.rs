@@ -29,6 +29,9 @@ struct Faults {
     blip: Mutex<Option<&'static str>>,
     /// The kind of event whose next append is held, until one is.
     hold: Mutex<Option<&'static str>>,
+    /// The kind of event whose next read is held, what it read answered once let go, until one
+    /// is.
+    hold_read: Mutex<Option<&'static str>>,
     /// The kind of event whose next append lands but is answered with a failure, until one is.
     lost: Mutex<Option<&'static str>>,
     /// Told when an append is held.
@@ -73,18 +76,25 @@ impl FaultyLog {
         *lock(&self.faults.hold) = Some(kind);
     }
 
+    /// Holds the next read that finds an event of `kind`, answering what it found once
+    /// [`FaultyLog::release`] lets it go, as a store slow to answer one page of a long read is;
+    /// [`FaultyLog::held`] says when one is.
+    pub fn hold_read(&self, kind: &'static str) {
+        *lock(&self.faults.hold_read) = Some(kind);
+    }
+
     /// Lands the next append that holds an event of `kind`, then answers it with a failure,
     /// as a store whose acknowledgement is lost does.
     pub fn lose_answer(&self, kind: &'static str) {
         *lock(&self.faults.lost) = Some(kind);
     }
 
-    /// Waits until an append is held.
+    /// Waits until an append, or a read, is held.
     pub async fn held(&self) {
         self.faults.held.notified().await;
     }
 
-    /// Lets the held append go on and land.
+    /// Lets the held append go on and land, or the held read answer.
     pub fn release(&self) {
         self.faults.released.notify_one();
     }
@@ -176,6 +186,10 @@ impl EventLog for FaultyLog {
             let events = read.await?;
             if strikes(&self.faults.blip, &events) {
                 return Err(blipped());
+            }
+            if strikes(&self.faults.hold_read, &events) {
+                self.faults.held.notify_one();
+                self.faults.released.notified().await;
             }
             Ok(events)
         }
