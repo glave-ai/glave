@@ -39,7 +39,7 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
                 search: SearchInfo::Never { reason },
             }
             | Reply::Awake {
-                awake: AwakeInfo::Cannot { reason },
+                awake: AwakeInfo::Cannot { reason } | AwakeInfo::Never { reason },
             }
             | Reply::Push {
                 push: PushInfo::Never { reason },
@@ -109,7 +109,7 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
                 search: SearchInfo::Never { reason },
             }
             | Reply::Awake {
-                awake: AwakeInfo::Cannot { reason },
+                awake: AwakeInfo::Cannot { reason } | AwakeInfo::Never { reason },
             }
             | Reply::Push {
                 push: PushInfo::Never { reason },
