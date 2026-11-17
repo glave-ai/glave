@@ -296,8 +296,9 @@ impl<L: EventLog> Credits<L> {
         drop(turn);
         match appended {
             Ok(appended) => self.took(org, appended.map(|(events, ())| events)),
+            // The store failing: calls are made that no ledger records yet.
             Err(error) => {
-                tracing::warn!(%org, "could not write the organization's charges yet: {error}");
+                tracing::error!(%org, %error, "could not write the organization's charges yet");
             }
         }
     }
@@ -423,9 +424,9 @@ impl<L: EventLog> Credits<L> {
 }
 
 /// Why a call is refused when `org`'s credits could not be read or saved, which pay for
-/// nothing; the store may answer later.
+/// nothing; the store may answer later. An error in the log: every call is refused until then.
 fn unreachable_credits(org: OrgId, error: &dyn fmt::Display) -> ProviderError {
-    tracing::warn!(%org, "the organization's credits are out of reach: {error}");
+    tracing::error!(%org, %error, "the organization's credits are out of reach");
     ProviderError::Unserved {
         failure: Failure::Rejected,
         reason: "glave could not reach your credits just now: try again".to_owned(),

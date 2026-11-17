@@ -35,6 +35,13 @@ const IMAGE: &str =
 const STUB: &[u8] = b"#!/bin/sh\necho \"args: $*\"\ncase \"$2\" in bridge) exec cat ;; esac\n\
 ls -l /opt/glave/secret/token\nexec sleep 300\n";
 
+/// A stub that never serves, as glave ends when its fence never holds: serving, it says why in
+/// the computer's log, with an address inside, and ends with glave's code for it (3,
+/// `UNFENCED`); as a bridge, it ends without a word, as a bridge to a glave that never served
+/// does.
+const NEVER_SERVES: &[u8] = b"#!/bin/sh\ncase \"$2\" in bridge) exit 1 ;; esac\n\
+echo 'glave: this computer still reaches 10.0.0.1:10250 inside the cluster'\nexit 3\n";
+
 /// The run's label value: CI's run id, or this process's.
 fn run_id() -> String {
     std::env::var("GITHUB_RUN_ID").unwrap_or_else(|_| format!("local-{}", std::process::id()))
@@ -308,9 +315,13 @@ fn served_and_reached(seen: &Seen) {
     assert!(
         said.contains(
             "args: computer serve --socket /opt/glave/glave.sock /opt/glave/secret --idle \
-             120 --keep-disk"
+             120 --keep-disk --fence "
         ),
         "{said}"
+    );
+    assert!(
+        said.contains(":10250\n"),
+        "the fence is its node's kubelet, its address filled in: {said}"
     );
     assert!(
         said.contains("-rw-------"),
@@ -321,6 +332,51 @@ fn served_and_reached(seen: &Seen) {
         "hello".to_owned(),
     ];
     assert_eq!(seen.bridges, (echoed.clone(), echoed));
+}
+
+/// A computer that wakes but never serves, as one whose fence never holds ends, tells the person
+/// plainly that it couldn't start safely, and nothing of the cluster: its node's address and
+/// its plugin's ways stay in the server's log.
+#[test]
+fn a_computer_whose_fence_never_holds_says_so_plainly() {
+    let Ok(image) = std::env::var("GLAVE_TEST_COMPUTER_IMAGE") else {
+        eprintln!("skipped: set GLAVE_TEST_COMPUTER_IMAGE to wake a person's computer");
+        return;
+    };
+    block_on!(async {
+        let class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
+        let Some(cluster) = cluster(class.as_deref(), "never-serves").await else {
+            return;
+        };
+        let folder = glave_ports::testing::TempDir::new("stub").unwrap();
+        let key = key("never");
+        let stubbed = with_glave(&cluster, &folder, NEVER_SERVES);
+        let person = PersonComputer::new(stubbed, &key, 1).unwrap();
+        let limits = Limits {
+            isolation: cluster.isolation(),
+            ..Limits::default()
+        };
+        let environment = Environment {
+            image: Image::Oci(image),
+            ..Environment::host()
+        };
+        let woke = WorkerComputers::new(person, limits)
+            .create(&environment)
+            .await;
+        let destroyed = PersonComputer::new(cluster.clone(), &key, 1)
+            .unwrap()
+            .destroy()
+            .await;
+        let left = left_behind(&cluster).await;
+        let message = woke.map(|_| ()).unwrap_err().message().to_owned();
+        assert_eq!(
+            message, "your computer couldn't start safely; it will try again",
+            "one plain sentence, no address or policy"
+        );
+        assert_eq!(super::objects::UNFENCED, 3, "the stub ends as glave does");
+        destroyed.unwrap();
+        assert_eq!(left, Vec::<String>::new());
+    });
 }
 
 #[test]

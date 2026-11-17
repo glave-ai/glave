@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use anyhow::{Context as _, bail};
 use glave_process::Processes;
 
+use crate::said::Said;
+
 /// glave's folder: `$GLAVE_HOME`, or `~/.glave`.
 pub(crate) fn folder() -> anyhow::Result<PathBuf> {
     match std::env::var_os("GLAVE_HOME") {
@@ -19,8 +21,8 @@ pub(crate) fn folder() -> anyhow::Result<PathBuf> {
 /// Where this glave's processes are recorded while they run: its folder's `run`, once what a
 /// glave that ended without stopping them left running is stopped, as glave starts. What it
 /// starts is tied to it by the lifeline: this program, started again as its helper, stops it
-/// at once if glave is killed outright.
-pub(crate) async fn reaped() -> anyhow::Result<Processes> {
+/// at once if glave is killed outright. What it stopped, or could not, it says as `said`.
+pub(crate) async fn reaped(said: Said) -> anyhow::Result<Processes> {
     let helper =
         glave_process::this_program().context("could not find this glave to start its helper")?;
     let recorded = Processes::recorded(folder()?.join("run"));
@@ -28,10 +30,10 @@ pub(crate) async fn reaped() -> anyhow::Result<Processes> {
     let (tied, reaped) = tokio::join!(recorded.clone().with_lifeline(helper), recorded.reap());
     match reaped {
         Ok(0) => {}
-        Ok(stopped) => {
-            eprintln!("glave: stopped {stopped} programs a glave that ended had left running");
-        }
-        Err(error) => eprintln!("glave: {error}"),
+        Ok(stopped) => said.info(&format!(
+            "stopped {stopped} programs a glave that ended had left running"
+        )),
+        Err(error) => said.warn(&error.to_string()),
     }
     Ok(tied?)
 }

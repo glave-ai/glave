@@ -11,6 +11,7 @@ use glave_ports::EndUsers;
 use uuid::Uuid;
 
 use crate::data::Data;
+use crate::said::Said;
 
 /// The keychain item that holds the root: the service and account names.
 const KEYCHAIN: (&str, &str) = ("glave", "root key");
@@ -49,26 +50,35 @@ pub(crate) async fn end_users(store: &Data) -> anyhow::Result<EndUsers> {
 
 /// Keys for the database in `home`, glave's folder. The root lives in the OS keychain for the
 /// default folder. A key file in the folder is used instead when the folder was moved with
-/// `GLAVE_HOME` (each folder its own root), when one is already there, or, with a warning,
-/// when this machine has no keychain.
-pub(crate) async fn settings(home: &Path, relocated: bool) -> anyhow::Result<KeySettings> {
+/// `GLAVE_HOME` (each folder its own root), when one is already there, or, with a warning said
+/// as `said`, when this machine has no keychain.
+pub(crate) async fn settings(
+    home: &Path,
+    relocated: bool,
+    said: Said,
+) -> anyhow::Result<KeySettings> {
     let file = home.join(KEY_FILE);
-    let root = tokio::task::spawn_blocking(move || -> anyhow::Result<Arc<dyn Root>> {
+    let (root, no_keychain) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
         if relocated || file.exists() {
-            return key_file(&file);
+            return Ok((key_file(&file)?, None));
         }
         if !KeychainRoot::available() {
-            eprintln!(
-                "glave: warning: no OS keychain here, so the root key is kept in {}, readable only by you",
-                file.display()
-            );
-            return key_file(&file);
+            return Ok((key_file(&file)?, Some(file)));
         }
-        let root = KeychainRoot::open_or_create(KEYCHAIN.0, KEYCHAIN.1)
-            .context("could not read glave's root key from the OS keychain")?;
-        Ok(Arc::new(root))
+        let root: Arc<dyn Root> = Arc::new(
+            KeychainRoot::open_or_create(KEYCHAIN.0, KEYCHAIN.1)
+                .context("could not read glave's root key from the OS keychain")?,
+        );
+        Ok((root, None))
     })
     .await??;
+    // Said here, not on the thread that read it, which the log is not set up on.
+    if let Some(file) = no_keychain {
+        said.warned(
+            "no OS keychain here, so the root key is kept in a file readable only by you",
+            &file.display(),
+        );
+    }
     Ok(KeySettings::new(root))
 }
 
