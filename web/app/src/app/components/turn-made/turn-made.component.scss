@@ -1,0 +1,15 @@
+// Its cards and note are the turn's blocks, spaced by the turn as its others are.
+:host {
+  display: contents;
+}
+
+// The cards and the note, unseen, keeping their room until the server describes them.
+.room {
+  visibility: hidden;
+}
+
+// What the files leave out, in the server's words, under their cards.
+.note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}

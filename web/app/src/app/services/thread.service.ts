@@ -53,7 +53,8 @@ export class ThreadService {
   private readonly firstTurns = inject(FirstTurnService);
   private readonly id = signal<ThreadId | null>(null);
   private readonly history = new History();
-  private readonly events = this.history.events;
+  /** The open thread's events, as its history has them so far. */
+  readonly events = this.history.events;
   private readonly draft = signal<Draft>(NO_DRAFT);
   /** The steps the running turn takes now, in the server's words, as its live updates say. */
   private readonly doing = signal<readonly string[]>([]);

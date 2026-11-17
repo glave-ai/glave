@@ -40,6 +40,7 @@ import { PlanService } from '../../services/plan.service';
 import { ProjectsService } from '../../services/projects.service';
 import { SearchService } from '../../services/search.service';
 import { ChangedFilesService } from '../../services/changed-files.service';
+import { MadeFilesService } from '../../services/made-files.service';
 import { SourcesService } from '../../services/sources.service';
 import { StepsService } from '../../services/steps.service';
 import { ThreadService } from '../../services/thread.service';
@@ -102,6 +103,7 @@ import { TurnComponent } from '../turn/turn.component';
     CommandsService,
     SourcesService,
     ChangedFilesService,
+    MadeFilesService,
     StepsService,
     PlanService,
     AttachmentsService,
@@ -188,6 +190,7 @@ export class ThreadComponent {
   protected readonly trustAsk = computed(() => (this.drawn() ? this.service.trust() : null));
   private readonly sources = inject(SourcesService);
   private readonly changed = inject(ChangedFilesService);
+  private readonly madeFiles = inject(MadeFilesService);
   private readonly steps = inject(StepsService);
   /** Each model's own name, as the server gives it, by its id. */
   private readonly modelNames = computed<ReadonlyMap<string, string>>(
@@ -197,6 +200,9 @@ export class ThreadComponent {
   private readonly turnFacts = computed<TurnFacts>(() => ({
     sourced: this.sources.byReply(),
     changed: this.changed.byTurn(),
+    made: this.madeFiles.byTurn(),
+    madeLater: this.madeFiles.later(),
+    madeFailed: this.madeFiles.failed(),
     steps: this.steps.steps(),
     models: this.modelNames(),
   }));

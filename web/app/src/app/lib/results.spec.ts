@@ -1,4 +1,4 @@
-import type { Outcome, TurnResult } from '@glave/client';
+import type { MadeFile, Outcome, TurnResult } from '@glave/client';
 
 import {
   NO_THOUGHT,
@@ -154,7 +154,16 @@ function told(
     ),
     replies: new Set(replies),
   };
-  return { sourced: new Map(), changed: new Map(), steps, models: new Map(), ...more };
+  return {
+    sourced: new Map(),
+    changed: new Map(),
+    made: new Map(),
+    madeLater: new Map(),
+    madeFailed: false,
+    steps,
+    models: new Map(),
+    ...more,
+  };
 }
 
 /** Each part in a line: a run as its line (`untold` until told) and what it holds, else its key. */
@@ -284,6 +293,74 @@ describe('results', () => {
     const unknown = told([], [], { changed: null });
     const opening = turnResults(turn(items, { startSeq: 7 }), null, null, false, 'en-US', unknown);
     expect(opening.files).toBeNull();
+  });
+
+  it('keeps a card’s room for each file a turn’s end names until the server describes them', () => {
+    const made = [{ path: 'out/plan.pdf', bytes: 9, kept: 'too_large' as const }];
+    const items = [ask, call(8), say(9, 'Done')];
+    const shown = (
+      facts: ReturnType<typeof told>,
+    ): readonly [readonly string[], boolean, string | null] => {
+      const result = turn(items, { startSeq: 7, result: ended('completed', { made }) });
+      const drawn = turnResults(result, null, null, false, 'en-US', facts);
+      return [drawn.made.map((file) => file.file_name), drawn.madeRoom, drawn.madeNote];
+    };
+    expect(shown(told([], [], { made: null }))).toEqual([['plan.pdf'], true, null]);
+    const described: MadeFile = {
+      kind: 'pdf',
+      name: 'Lisbon plan',
+      file_name: 'plan.pdf',
+      media_type: 'application/pdf',
+      bytes: 9,
+      previews: true,
+      kept: 'Kept with this chat',
+      sentence: 'Made a PDF: Lisbon plan',
+    };
+    const note = '2 more files were made than a chat keeps: they stay on the computer';
+    const files = { turn: 7, files: [described], note };
+    expect(shown(told([], [], { made: new Map([[7, files]]) }))).toEqual([
+      ['plan.pdf'],
+      false,
+      note,
+    ]);
+    expect(turnResults(turn(items), null, null, false, 'en-US', told([])).made).toEqual([]);
+  });
+
+  it('keeps room for what later look-overs made and for a note, and none once the server fails', () => {
+    const items = [ask, call(8), say(9, 'Done')];
+    const madeLeft = { kind: 'more' as const, files: 1 };
+    const ending = turn(items, {
+      startSeq: 7,
+      result: ended('completed', { made_left: madeLeft }),
+    });
+    const later = new Map([
+      [7, { files: [{ path: 'deck.pptx', bytes: 4, kept: 'secret' as const }], left: false }],
+    ]);
+    const shown = (
+      facts: ReturnType<typeof told>,
+      at = ending,
+    ): readonly [readonly string[], boolean, string | null] => {
+      const drawn = turnResults(at, null, null, false, 'en-US', facts);
+      return [drawn.made.map((file) => file.file_name), drawn.madeRoom, drawn.madeNote];
+    };
+    // The note's room is a line that doesn't collapse, unseen until the server's words fill it.
+    expect(shown(told([], [], { made: null }))).toEqual([[], true, '\u00a0']);
+    expect(shown(told([], [], { made: null, madeLater: later }))).toEqual([
+      ['deck.pptx'],
+      true,
+      '\u00a0',
+    ]);
+    const quiet = turn(items, { startSeq: 7, result: ended('completed') });
+    expect(shown(told([], [], { made: null, madeLater: later }), quiet)).toEqual([
+      ['deck.pptx'],
+      true,
+      null,
+    ]);
+    expect(shown(told([], [], { made: null, madeLater: later, madeFailed: true }))).toEqual([
+      [],
+      false,
+      null,
+    ]);
   });
 
   it('says how many commands ran outside the sandbox as the server counted them', () => {

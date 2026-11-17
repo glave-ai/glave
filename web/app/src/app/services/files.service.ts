@@ -1,4 +1,13 @@
-import { DestroyRef, Service, type Signal, effect, inject, signal, untracked } from '@angular/core';
+import {
+  DOCUMENT,
+  DestroyRef,
+  Service,
+  type Signal,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import type { FilePiece } from '@glave/client';
 
 import { fromBase64url } from '../lib/passkeys';
@@ -9,6 +18,12 @@ const MOST_UNUSED = 48;
 
 /** The most of a file read back, in bytes: more than any file glave keeps (10 MB). */
 const MOST_BYTES = 32 * 1024 * 1024;
+
+/**
+ * How long a download's address is kept once the download has started, in milliseconds: a
+ * phone's browser asks where to save it after the click, and reads it only then.
+ */
+const KEPT_FOR_SAVING = 60_000;
 
 /** The most files read at once: past it, a read waits for one to end, the first asked first. */
 const MOST_READING = 4;
@@ -85,11 +100,13 @@ interface Kept {
  * read at all, so pictures scrolled past never keep those in view waiting. An address is kept
  * while anything holds it; of those nothing holds, at most `MOST_UNUSED` are kept for when
  * they are drawn again, the one let go of first going first. One that could not be read is
- * read again when next asked for.
+ * read again when next asked for. A download reads a thread's file apart, and lets go of its
+ * address a minute after the download started.
  */
 @Service()
 export class FilesService {
   private readonly session = inject(SessionService);
+  private readonly document = inject(DOCUMENT);
   /**
    * Each file's address, by its thread and hash or its Library item, the one held or let go of
    * longest ago first.
@@ -111,9 +128,29 @@ export class FilesService {
 
   /** The file `sha256` that `thread` holds, of `mediaType`, held as an address until released. */
   hold(thread: string, sha256: string, mediaType: string): HeldFile {
-    return this.holdAs(`${thread}/${sha256}`, mediaType, (offset) =>
-      this.session.call('file/read', { thread, sha256, ...(offset === 0 ? {} : { offset }) }),
-    );
+    return this.holdAs(`${thread}/${sha256}`, mediaType, this.fileRead(thread, sha256));
+  }
+
+  /**
+   * Saves the file `sha256` that `thread` holds, of `mediaType`, to the person's drive under
+   * `name`, as the browser saves a download, and lets go of its address a minute after the
+   * download started; rejects, saying why, when it can't be read.
+   */
+  async save(thread: string, sha256: string, mediaType: string, name: string): Promise<void> {
+    const url = URL.createObjectURL(await read(this.fileRead(thread, sha256), mediaType));
+    const link = this.document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, KEPT_FOR_SAVING);
+  }
+
+  /** How the file `sha256` that `thread` holds is read, a piece at a time. */
+  private fileRead(thread: string, sha256: string): ReadPiece {
+    return (offset) =>
+      this.session.call('file/read', { thread, sha256, ...(offset === 0 ? {} : { offset }) });
   }
 
   /**
@@ -133,7 +170,7 @@ export class FilesService {
       found?.url ??
       this.inTurn(
         () => this.holds(key, url),
-        () => read(readPiece, mediaType),
+        async () => URL.createObjectURL(await read(readPiece, mediaType)),
       );
     this.kept.delete(key);
     this.kept.set(key, { url, users: (found?.users ?? 0) + 1 });
@@ -219,10 +256,10 @@ export class FilesService {
 }
 
 /**
- * The file `readPiece` reads, read whole a piece at a time, as an address the page made. A piece
- * that does not end where the next starts, or a file larger than `MOST_BYTES`, is not read on.
+ * The file `readPiece` reads, read whole a piece at a time. A piece that does not end where the
+ * next starts, or a file larger than `MOST_BYTES`, is not read on.
  */
-async function read(readPiece: ReadPiece, mediaType: string): Promise<string> {
+async function read(readPiece: ReadPiece, mediaType: string): Promise<Blob> {
   const unreadable = (): Error =>
     new Error($localize`:@@files.unreadable:This file could not be read`);
   const pieces: Uint8Array<ArrayBuffer>[] = [];
@@ -239,7 +276,7 @@ async function read(readPiece: ReadPiece, mediaType: string): Promise<string> {
     pieces.push(bytes);
     offset = next;
   }
-  return URL.createObjectURL(new Blob(pieces, { type: mediaType }));
+  return new Blob(pieces, { type: mediaType });
 }
 
 /** Lets go of the address `url` will be, once it is made. */

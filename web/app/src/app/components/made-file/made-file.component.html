@@ -1,0 +1,21 @@
+<div class="file" data-testid="made-file">
+  <glz-icon class="mark" [icon]="mark()" />
+  <span class="text">
+    <span class="title" dir="auto" data-testid="made-file-title">{{ file().name }}</span>
+    <span class="line" data-testid="made-file-line">{{ line() }}</span>
+  </span>
+  <span class="actions">
+    @if (kept()) {
+      <button
+        glzIconButton
+        size="sm"
+        class="download"
+        data-testid="made-file-download"
+        [label]="downloadLabel()"
+        (click)="download()"
+      >
+        <glz-icon [icon]="icons.download" />
+      </button>
+    }
+  </span>
+</div>

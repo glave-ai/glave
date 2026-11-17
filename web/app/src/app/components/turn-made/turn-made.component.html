@@ -1,0 +1,7 @@
+@for (file of files(); track $index) {
+  <!-- Until the server describes them, each card's room, and the note's, unseen. -->
+  <app-made-file [class.room]="room()" [file]="file" />
+}
+@if (note(); as note) {
+  <p class="note" data-testid="turn-made-note" [class.room]="room()">{{ note }}</p>
+}

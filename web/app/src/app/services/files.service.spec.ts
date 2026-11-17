@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type FileReadParams } from '@glave/client';
 
 import { settle } from '@glave/glaze/testing/settle';
+import { onTestFinished } from 'vitest';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { objectUrls } from '../testing/object-urls';
@@ -143,6 +144,27 @@ describe('FilesService', () => {
     // Of the 60 nothing draws, the first 12 let go of go; the one drawn all along stays.
     expect(urls.revoked).toEqual(urls.made.slice(1, 13));
     expect(await files.hold('t1', SHA, 'image/png').url).toBe(urls.made[0]);
+  });
+
+  it('saves a file under its name, and lets go of its address a minute after', async () => {
+    const urls = objectUrls();
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const files = setUp(new FakeSession().answer('file/read', inPieces('ok')));
+    const clicked: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicked.push(`${this.download} ${this.href}`);
+    });
+    await files.save('t1', SHA, 'text/csv', 'budget.csv');
+    expect(clicked).toEqual([`budget.csv ${urls.made[0] ?? ''}`]);
+    vi.advanceTimersByTime(59_000);
+    expect(urls.revoked).toEqual([]);
+    vi.advanceTimersByTime(1_000);
+    expect(urls.revoked).toEqual(urls.made);
   });
 
   it('reads no further than a piece that does not lead on, or a file larger than any kept', async () => {

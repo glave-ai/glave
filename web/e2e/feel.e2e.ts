@@ -2,6 +2,7 @@ import { type Page } from '@playwright/test';
 
 import { PROJECT, THREAD, fakeApi } from './fake-api';
 import { FORMATTED } from './fake-formatted';
+import { MORE, madeTheFiles } from './fake-made';
 import { LONG, LONG_TURNS } from './fake-long';
 import { PHOTOS } from './fake-photos';
 import {
@@ -103,6 +104,28 @@ test('nothing moves on opening a thread in a repository when its folder says, la
   held.letGo();
   await expect(byTestId(page, 'panel-changes-count')).toHaveText('2 files');
   await expect(byTestId(page, 'panel-running')).toBeVisible();
+  await atRest(page);
+  expectStill(await feltOn(page));
+});
+
+test('nothing moves on opening a thread as the files its turn made are described late', async ({
+  page,
+}) => {
+  await watchFeel(page);
+  await fakeApi(page);
+  await madeTheFiles(page);
+  const held = await hold(page, '/', 'thread/files');
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await held.sent;
+  await expect(byTestId(page, 'thread-message').last()).toBeVisible();
+  // Each card's room is kept, unseen, from the turn's end alone, and so is the note's, which it
+  // says leaves a file out; the turn below stays where it is.
+  await expect(byTestId(page, 'made-file')).toHaveCount(2);
+  await expect(byTestId(page, 'turn-made-note')).toHaveCount(1);
+  await atRest(page);
+  held.letGo();
+  await expect(byTestId(page, 'made-file-title').first()).toHaveText('Trip budget');
+  await expect(byTestId(page, 'turn-made-note')).toHaveText(MORE);
   await atRest(page);
   expectStill(await feltOn(page));
 });
