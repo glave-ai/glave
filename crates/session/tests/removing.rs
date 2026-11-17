@@ -514,6 +514,7 @@ fn someone_removed_has_their_schedules_deleted() {
         let schedule = Request::ScheduleCreate {
             project: None,
             when: When::Cron("0 9 * * *".into()),
+            zone: None,
             prompt: "check the build".into(),
             budget: 5_000,
         };

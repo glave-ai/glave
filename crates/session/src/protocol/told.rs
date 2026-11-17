@@ -3,13 +3,14 @@
 use std::fmt;
 use std::ops::Deref;
 
-use glave_event::{Caution, Worded};
+use glave_event::{Caution, When, Worded};
 use glave_ports::ProjectRefusal;
 use glave_ports::computer::{Reason, Refusal};
 use glave_ports::memories::MemoryRefusal;
 use glave_ports::settings::Brings;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::repeats::repeats_in;
 use crate::words::{Language, Sentence, catalogued, caution_in, say, word};
 
 /// A sentence for a person: as they read it, and, when it is the server's own, what it says, so
@@ -36,6 +37,8 @@ enum Said {
     Theirs(Theirs),
     /// A message of glave's catalog of connectors: its id, and its English.
     Catalogued { id: String, english: String },
+    /// When a schedule repeats, opening a line or not, put together in the reader's language.
+    Repeats { when: When, start: bool },
 }
 
 /// Words of another crate's table that the server passes on.
@@ -88,6 +91,14 @@ impl Told {
         }
     }
 
+    /// When a schedule repeats (`when`), in English, opening a line (`start`) or not.
+    pub(crate) fn repeats(when: When, start: bool) -> Self {
+        Self {
+            text: repeats_in(Language::English, &when, start),
+            said: Some(Box::new(Said::Repeats { when, start })),
+        }
+    }
+
     /// Its id, when it is a message of glave's catalog of connectors.
     #[cfg(test)]
     pub(crate) fn message_id(&self) -> Option<&str> {
@@ -109,6 +120,7 @@ impl Told {
             Some(Said::Caution(caution)) => caution_in(language, caution),
             Some(Said::Theirs(theirs)) => Some(word(language, theirs.words())),
             Some(Said::Catalogued { id, english }) => Some(catalogued(language, id, english)),
+            Some(Said::Repeats { when, start }) => Some(repeats_in(language, when, *start)),
             None => None,
         };
         if let Some(written) = written {

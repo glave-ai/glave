@@ -452,6 +452,36 @@ sentences! {
         "{ $kept } schedules are kept, the most policy allows ([tasks] max_schedules = { $most }); delete one first",
     ScheduleNotKept = "schedule-not-kept" "the schedule was not kept",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
+    NoZone { zone: String } = "no-zone"
+        "glave doesn't know the time zone \"{ $zone }\": name one as the world's time zone list does, such as Europe/Lisbon",
+
+    // When a schedule repeats, as a line opens (`start` is `yes`) or within one (`no`).
+    RepeatsOnce { start: String } = "repeats-once"
+        "{ $start ->\n    [yes] Once\n   *[no] once\n }",
+    RepeatsEveryMinutes { start: String, minutes: u64 } = "repeats-every-minutes"
+        "{ $start ->\n    [yes] Every\n   *[no] every\n } { $minutes ->\n    [1] minute\n   *[other] { $minutes } minutes\n }",
+    RepeatsHourly { start: String, past: u64 } = "repeats-hourly"
+        "{ $start ->\n    [yes] Every\n   *[no] every\n } hour{ $past ->\n    [0] {\"\"}\n   *[other] , at { $past } minutes past\n }",
+    RepeatsDaily { start: String, time: String } = "repeats-daily"
+        "{ $start ->\n    [yes] Every\n   *[no] every\n } day at { $time }",
+    RepeatsWeekdays { start: String, time: String } = "repeats-weekdays"
+        "{ $start ->\n    [yes] Every\n   *[no] every\n } weekday at { $time }",
+    RepeatsWeekly { start: String, days: String, time: String } = "repeats-weekly"
+        "{ $start ->\n    [yes] Every\n   *[no] every\n } { $days } at { $time }",
+    RepeatsMonthly { start: String, day: u64, time: String } = "repeats-monthly"
+        "{ $start ->\n    [yes] On\n   *[no] on\n } day { $day } of every month at { $time }",
+    RepeatsOther { start: String } = "repeats-other"
+        "{ $start ->\n    [yes] On\n   *[no] on\n } a repeating schedule",
+    // A time on a clock: `hour` 0 to 23, which English says on a 12-hour clock with `half`
+    // (`am` or `pm`) and a language whose clocks run to 24 as it is; `minute` two digits.
+    Clock { hour: u64, minute: String, half: String } = "clock"
+        "{ $hour ->\n    [0] 12\n    [13] 1\n    [14] 2\n    [15] 3\n    [16] 4\n    [17] 5\n    [18] 6\n    [19] 7\n    [20] 8\n    [21] 9\n    [22] 10\n    [23] 11\n   *[other] { $hour }\n }:{ $minute } { $half ->\n    [am] am\n   *[pm] pm\n }",
+    // A weekday's name, Sunday as 0.
+    Weekday { day: u64 } = "weekday"
+        "{ $day ->\n    [0] Sunday\n    [1] Monday\n    [2] Tuesday\n    [3] Wednesday\n    [4] Thursday\n    [5] Friday\n   *[6] Saturday\n }",
+    // Lists in a sentence: all but the last, joined, then the last.
+    ListComma { all: String, next: String } = "list-comma" "{ $all }, { $next }",
+    ListAnd { all: String, last: String } = "list-and" "{ $all } and { $last }",
 
     // What replies drew on.
     Sources { pages: u64 } = "sources"

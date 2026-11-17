@@ -129,7 +129,7 @@ instant-acme = { version = "0.8.5", default-features = false, features = ["aws-l
 insta = { version = "1", default-features = false }
 # Verifying OIDC tokens, on aws-lc-rs, the crypto rustls already uses.
 jsonwebtoken = { version = "11.1", default-features = false, features = ["aws_lc_rs"] }
-jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
+jiff = { version = "0.2", default-features = false, features = ["std", "serde", "tz-system", "tzdb-zoneinfo"] }
 # The Linux sandbox's Landlock fallback, where bubblewrap cannot start (Linux only).
 landlock = "0.4.7"
 # Syscall numbers and socket families for the Linux sandbox's seccomp filter (already in the

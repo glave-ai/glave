@@ -40,7 +40,7 @@ glave schedule: run a prompt as a task at set times
 Usage:
   glave schedule add \"<cron>\" <prompt> [--budget <tokens>]
                               whenever the five-field cron expression (minute hour day
-                              month weekday, in UTC) matches
+                              month weekday) matches, on this computer's clock
   glave schedule add --at <time> <prompt> [...]
                               once, at an RFC 3339 time such as 2026-10-11T09:00:00Z
   glave schedule list         the schedules, with when each runs next
@@ -287,6 +287,8 @@ fn schedule_request(words: &[String], project: Option<ProjectId>) -> anyhow::Res
     Ok(Request::ScheduleCreate {
         project,
         when,
+        // On this computer's clock, where it has a zone of the world's list.
+        zone: jiff::tz::TimeZone::system().iana_name().map(str::to_owned),
         prompt,
         budget,
     })

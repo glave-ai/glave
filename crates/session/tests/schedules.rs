@@ -56,9 +56,21 @@ async fn create_in<L: EventLog + 'static>(
     when: When,
     budget: u64,
 ) -> Result<ScheduleInfo, i64> {
+    create_zoned(server, project, when, None, budget).await
+}
+
+/// `create_in`, in the time zone `zone` when one is given.
+async fn create_zoned<L: EventLog + 'static>(
+    server: &Tested<L>,
+    project: Option<ProjectId>,
+    when: When,
+    zone: Option<&str>,
+    budget: u64,
+) -> Result<ScheduleInfo, i64> {
     let request = Request::ScheduleCreate {
         project,
         when,
+        zone: zone.map(str::to_owned),
         prompt: "check the build".into(),
         budget,
     };
@@ -247,6 +259,15 @@ fn schedules_need_a_budget_a_valid_time_and_room_under_policy() {
             create(&server, cron("every day"), 10).await.unwrap_err(),
             code::INVALID_PARAMS
         );
+        let project = Some(scope().project());
+        let nowhere = create_zoned(
+            &server,
+            project,
+            cron("0 9 * * *"),
+            Some("Mars/Olympus"),
+            10,
+        );
+        assert_eq!(nowhere.await.unwrap_err(), code::INVALID_PARAMS);
         create(&server, cron("0 9 * * 1-5"), 10).await.unwrap();
         assert_eq!(
             create(&server, cron("0 10 * * *"), 10).await.unwrap_err(),
@@ -361,6 +382,7 @@ fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
         let theirs = Request::ScheduleCreate {
             project: None,
             when: at_time("2026-10-10T10:05:00Z"),
+            zone: None,
             prompt: "check the build".into(),
             budget: 5_000,
         };
@@ -409,5 +431,38 @@ fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
                 "each organization's lease is the first server's"
             );
         }
+    });
+}
+
+#[test]
+fn a_schedule_repeats_on_the_clocks_of_the_person_s_time_zone() {
+    block_on!(async {
+        let (server, now, _, _dir) = on_repository("schedule-zone").await;
+        let unknown = Request::ZoneSet {
+            zone: "Nowhere/Else".into(),
+        };
+        let refused = server.request(unknown).await.unwrap_err();
+        assert_eq!(refused.code, code::INVALID_PARAMS);
+        assert!(refused.message.contains("Europe/Lisbon"), "{refused:?}");
+        let given = Request::ZoneSet {
+            zone: "America/New_York".into(),
+        };
+        server.request(given).await.unwrap();
+        // 10:03 UTC is 6:03 in New York.
+        let project = Some(scope().project());
+        let made = create_in(&server, project, cron("0 8 * * *"), 10)
+            .await
+            .unwrap();
+        assert_eq!(made.zone, "America/New_York");
+        assert_eq!(made.repeats, "Every day at 8:00 am");
+        let noon = At::from("2026-10-10T12:00:00Z".parse::<Timestamp>().unwrap());
+        assert_eq!(made.next, Some(noon));
+        let tokyo = create_zoned(&server, project, cron("0 8 * * *"), Some("Asia/Tokyo"), 10);
+        let eleven = At::from("2026-10-10T23:00:00Z".parse::<Timestamp>().unwrap());
+        assert_eq!(tokyo.await.unwrap().next, Some(eleven), "the zone it names");
+        set(&now, "2026-10-10T11:59:00Z");
+        assert_eq!(tick(&server).await, 0);
+        set(&now, "2026-10-10T12:00:00Z");
+        assert_eq!(tick(&server).await, 1);
     });
 }
