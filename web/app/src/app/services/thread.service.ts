@@ -26,7 +26,6 @@ import type { GlzDecision } from '@glave/glaze';
 import { NO_DRAFT, applyUpdate, stepsAfter, type Draft } from '../lib/conversation';
 import { idempotencyKey } from '../lib/idempotency';
 import { chosenEffort } from '../lib/effort';
-import { madeLater } from '../lib/made';
 import { chosenModel } from '../lib/models';
 import { placeOf } from '../lib/place';
 import { folderGone } from '../lib/projects';
@@ -130,10 +129,8 @@ export class ThreadService {
   readonly sourcing = this.history.sourcing;
   /** What its plan is read again on (`History.planning`). */
   readonly planning = this.history.planning;
-  /** What the files its turns made are read again on (`History.making`). */
-  readonly making = this.history.making;
-  /** What later look-overs said each turn made, by the `seq` of its start, from its log. */
-  readonly madeLater = computed(() => madeLater(this.events()));
+  /** What its turns made, as its log says (`History.made`). */
+  readonly made = this.history.made;
   readonly reply = this.draft.asReadonly();
   /** The step the running turn takes now, in the server's words, while one runs and it said so. */
   readonly step = computed(() => this.doing().at(-1) ?? null);
