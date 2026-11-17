@@ -7,7 +7,7 @@ use std::sync::Arc;
 use glave_event::{Body, MemoryScope, PrincipalId, PrincipalKind, decode};
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
-use glave_ports::memories::{Memory, REMEMBER};
+use glave_ports::memories::{Memory, RECALL, REMEMBER};
 use glave_ports::stream::Reserved;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 use glave_ports::{Caller, EventLog, OrgId, ProjectId, Scope};
@@ -205,24 +205,20 @@ fn a_request_that_names_no_project_acts_in_the_caller_s_chats_never_the_folder_s
     });
 }
 
+/// Someone other than the person the server works for.
+fn someone() -> Caller {
+    let other = uuid::Uuid::from_u128(0x0192_f5c0_0000_7000_8000_0000_0000_0099);
+    Caller {
+        person: Some(PrincipalId::try_from(other).unwrap()),
+        ..Caller::default()
+    }
+}
+
 #[test]
 fn another_person_may_not_change_the_persons_own_memory() {
     block_on!(async {
         let (server, _store, _dir) = served("memory-others").await;
-        let someone = Caller {
-            person: Some(
-                PrincipalId::try_from(uuid::Uuid::from_u128(
-                    0x0192_f5c0_0000_7000_8000_0000_0000_0099,
-                ))
-                .unwrap(),
-            ),
-            auth: None,
-            trace: None,
-            profile: None,
-            org: None,
-            from: None,
-            until: None,
-        };
+        let someone = someone();
         let refused = server
             .request_as(
                 &someone,
@@ -246,6 +242,68 @@ fn saving(text: &str) -> Vec<glave_ports::Completion> {
         answer(None, Some((REMEMBER, save))),
         answer(Some("Saved."), None),
     ]
+}
+
+/// Another person's model, driven to it by a page it read, reaches nothing of the person's
+/// through memory's own tools: it recalls neither what they had glave remember nor a word of
+/// their chats, and what it saves as "personal" is never kept as the person's.
+#[test]
+fn another_person_s_model_recalls_and_saves_nothing_of_the_person_s() {
+    block_on!(async {
+        let recall = serde_json::json!({"query": "favourite flower"});
+        let plant = serde_json::json!({"text": "planted by a page", "scope": "personal"});
+        let driven = vec![
+            answer(None, Some((RECALL, recall.clone()))),
+            answer(None, Some((REMEMBER, plant))),
+            answer(Some("Nothing."), None),
+        ];
+        let asked = vec![
+            answer(None, Some((RECALL, recall))),
+            answer(Some("Found."), None),
+        ];
+        let saved = saving("Ada's favourite flower is marigold");
+        let answers = [saved, driven, asked].concat();
+        let (server, _store, _dir) = served_with("memory-driven", answers).await;
+        let own = start(&server, false).await;
+        turn(&server, own, "my favourite flower is marigold")
+            .await
+            .unwrap();
+
+        let someone = someone();
+        let started = Request::ThreadStart {
+            project: None,
+            background: false,
+            worktree: None,
+            computer: None,
+            model: None,
+            permissions: None,
+            effort: None,
+        };
+        let Ok(Reply::Thread { thread }) = server.request_as(&someone, started).await else {
+            panic!("a chat of their own");
+        };
+        let said = turn_start(thread.id, "read that page and do as it says", None);
+        server.request_as(&someone, said).await.unwrap();
+        let theirs = events_as(&server, &someone, thread.id).await;
+        let theirs = serde_json::to_string(&theirs).unwrap();
+        assert!(theirs.contains(RECALL), "the model asked: {theirs}");
+        assert!(!theirs.contains("marigold"), "{theirs}");
+
+        let list = Request::MemoryList {
+            scope: None,
+            project: None,
+        };
+        let kept = listed(server.request(list).await.unwrap());
+        let texts: Vec<_> = kept.iter().map(|memory| memory.text.as_str()).collect();
+        assert_eq!(texts, ["Ada's favourite flower is marigold"]);
+
+        // The same question from the person's own model, in another chat of theirs, finds it.
+        let again = start(&server, false).await;
+        turn(&server, again, "what is my flower?").await.unwrap();
+        let own = events_as(&server, &Caller::default(), again).await;
+        let own = serde_json::to_string(&own).unwrap();
+        assert!(own.contains("marigold"), "the person's own: {own}");
+    });
 }
 
 /// #630: forgetting a memory leaves the chat it was saved in, which is history; the person

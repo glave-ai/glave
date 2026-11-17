@@ -29,9 +29,10 @@ pub(super) async fn every_organization<B: BlobStore>(
                 tracing::info!(%org, blobs = swept.blobs, orphans = swept.orphans, "blobs swept");
             }
             Ok(None) => tracing::debug!(%org, "another server is sweeping these blobs"),
+            // The store or the bucket failing: what no thread refers to grows until someone acts.
             Err(error) => {
                 let error = format!("{error:#}");
-                tracing::warn!(%org, %error, "the blobs could not be swept");
+                tracing::error!(%org, %error, "the blobs could not be swept");
             }
         }
     }

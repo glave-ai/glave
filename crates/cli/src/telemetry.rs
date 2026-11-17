@@ -46,10 +46,19 @@ impl Telemetry {
     }
 }
 
-/// Starts recording glave's spans to the file `log`, and to the collector `choices` name.
+/// Starts sending glave's spans to the collector `choices` name, the log `log` beside it, over
+/// the log alone the run started with ([`start`], in `session.rs`); nothing more when they
+/// name none.
 pub(crate) fn start_for(log: Option<&Path>, choices: &Choices) -> anyhow::Result<Telemetry> {
-    let otlp = choices.telemetry.as_ref();
-    start(log, otlp.map(|chosen| chosen.value.as_str()))
+    match choices.telemetry.as_ref() {
+        Some(chosen) => start(log, Some(chosen.value.as_str())),
+        None => Ok(Telemetry::off()),
+    }
+}
+
+/// Whether the log `log` is standard error (`-`) rather than a file.
+pub(crate) fn on_standard_error(log: Option<&Path>) -> bool {
+    log.is_some_and(|path| path.as_os_str() == STANDARD_ERROR)
 }
 
 /// Starts recording glave's spans to the file `log`, or to standard error when it is `-`, and
@@ -60,7 +69,7 @@ pub(crate) fn start(log: Option<&Path>, otlp: Option<&str>) -> anyhow::Result<Te
     }
     let level = level()?;
     let (file, standard_error) = match log {
-        Some(path) if path.as_os_str() == STANDARD_ERROR => {
+        Some(path) if on_standard_error(Some(path)) => {
             let layer = json::layer(std::io::stderr, SystemClock).with_filter(filter(level)?);
             (None, Some(layer))
         }
@@ -121,12 +130,18 @@ fn open(path: &Path) -> anyhow::Result<File> {
         .with_context(|| format!("could not open the log {}", path.display()))
 }
 
-/// The level GLAVE_LOG names, or the default.
+/// The level GLAVE_LOG names, or the default. Never `off`, which tracing would take: a log asked
+/// for that records nothing, not even the error glave stops on, is refused.
 fn level() -> anyhow::Result<LevelFilter> {
     match std::env::var("GLAVE_LOG") {
-        Ok(text) if !text.trim().is_empty() => text.trim().parse().map_err(|_| {
-            anyhow::anyhow!("GLAVE_LOG must be error, warn, info, debug or trace, not {text:?}")
-        }),
+        Ok(text) if !text.trim().is_empty() => text
+            .trim()
+            .parse()
+            .ok()
+            .filter(|level| *level != LevelFilter::OFF)
+            .ok_or_else(|| {
+                anyhow::anyhow!("GLAVE_LOG must be error, warn, info, debug or trace, not {text:?}")
+            }),
         _ => Ok(DEFAULT_LEVEL),
     }
 }
