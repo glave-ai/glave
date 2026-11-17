@@ -217,13 +217,7 @@ where
         let server = self.clone();
         let task = tokio::spawn(async move {
             loop {
-                let running = match server.lock().get(&root) {
-                    Some(Slot::Busy { finished, .. }) => Some(finished.clone()),
-                    _ => None,
-                };
-                if let Some(mut running) = running {
-                    let _ = running.wait_for(|done| *done).await;
-                }
+                server.until_free(root).await;
                 let finish = server.inner.followed.take(root);
                 let work = going_on(root, None, caller.clone(), finish.clone(), false);
                 match server
@@ -266,7 +260,20 @@ where
         let work = going_on(thread, None, Caller::default(), finish.clone(), true);
         self.occupy_for(thread, finish, Use::Answer, work).await?;
         let _ = finished(&mut done).await;
+        // Its work lets go of the thread just after the turn ends: answered once it has.
+        self.until_free(thread).await;
         Ok(Reply::Done {})
+    }
+
+    /// Waits until no work of this server holds `thread`.
+    async fn until_free(&self, thread: ThreadId) {
+        let running = match self.lock().get(&thread) {
+            Some(Slot::Busy { finished, .. }) => Some(finished.clone()),
+            _ => None,
+        };
+        if let Some(mut running) = running {
+            let _ = running.wait_for(|done| *done).await;
+        }
     }
 
     /// The thread whose turn `thread`'s wait belongs to: its parent's for a subagent's.

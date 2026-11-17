@@ -10,6 +10,7 @@ mod fire;
 mod info;
 
 use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
+use glave_harness::Change;
 use glave_ports::{
     BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, title_from,
 };
@@ -70,10 +71,9 @@ where
         time_zone(&zone)?;
         let (_, scope) = self.project_for(caller, new.project).await?;
         self.room_for_one_more(caller).await?;
-        let thread = self.schedule_chat(caller, scope).await?;
-        self.rename(caller, thread, name.clone()).await?;
         let now = self.inner.harness.clock().now();
         let schedule = ScheduleId::new(now, self.inner.harness.entropy().bytes()?)?;
+        let thread = self.schedule_chat(caller, scope).await?;
         let created = ScheduleCreated {
             schedule,
             name,
@@ -86,18 +86,39 @@ where
             by: self.someone_else(caller.person),
         };
         let project = scope.located();
-        self.record_in_ledger(project, &created).await?;
+        if let Err(refused) = self.keep_schedule(caller, project, &created).await {
+            // A chat made for a schedule that isn't kept goes, with its copy.
+            if let Err(error) = self.change(caller, thread, Change::Delete).await {
+                tracing::warn!(error = %error.message, %thread, "a schedule's chat was left after the schedule was not kept");
+            }
+            return Err(refused);
+        }
         self.schedule_info(project, schedule)
             .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ScheduleNotKept))
     }
 
+    /// Names `created`'s chat for it, then keeps it in `project`'s ledger, for `caller`.
+    async fn keep_schedule(
+        &self,
+        caller: &Caller,
+        project: Located,
+        created: &ScheduleCreated,
+    ) -> Result<(), ApiError> {
+        if let Some(thread) = created.thread {
+            self.rename(caller, thread, created.name.clone()).await?;
+        }
+        self.record_in_ledger(project, created).await
+    }
+
     /// A new chat in `scope` for a schedule's runs: on a copy of its project's folder where the
-    /// folder is a repository, else where any new chat there works.
+    /// folder is a git repository with a commit, else in the folder itself, or where any new
+    /// chat there works when it has none. Any other reason a copy can't be made refuses it, so
+    /// a repository's runs never land in the person's own folder.
     async fn schedule_chat(&self, caller: &Caller, scope: Scope) -> Result<ThreadId, ApiError> {
         let choice = Choice::default();
         match self.new_thread(caller, scope, None, true, &choice).await {
-            Err(refused) if refused.code == code::WORKSPACE => {
-                self.new_thread(caller, scope, None, false, &choice).await
+            Err(refused) if crate::tasks::is_no_copy(&refused) => {
+                (self.new_thread(caller, scope, Some(false), false, &choice)).await
             }
             made => made,
         }

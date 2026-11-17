@@ -16,6 +16,7 @@ use glave_event::{
     At, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
     TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
+use glave_ports::computer::{Reason, Refusal};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope, title_from};
 
 use crate::choice::Choice;
@@ -64,9 +65,24 @@ pub(crate) fn in_place() -> ApiError {
     ApiError::new(code::INVALID_PARAMS, Sentence::TaskInPlace)
 }
 
-/// Refused: no copy of the project's folder could be made for a task to work on.
+/// Refused: no copy of the project's folder could be made for a task to work on, since the
+/// folder is no git repository with a commit.
 pub(crate) fn no_copy() -> ApiError {
     ApiError::new(code::WORKSPACE, Sentence::TaskNoCopy)
+}
+
+/// Whether `refused` is [`no_copy`]'s, and not any other reason a copy could not be made.
+pub(crate) fn is_no_copy(refused: &ApiError) -> bool {
+    refused.code == code::WORKSPACE && refused.message.is(&Sentence::TaskNoCopy)
+}
+
+/// Whether a computer refused a copy for `reason` as the folder is no git repository with a
+/// commit to copy.
+pub(crate) fn no_repository(reason: &Reason) -> bool {
+    matches!(
+        reason.refusal(),
+        Some(Refusal::NotInRepository { .. } | Refusal::NoCommitsYet { .. })
+    )
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -230,6 +246,7 @@ where
         let Some(running) = self.tasks().remove(&thread) else {
             return;
         };
+        self.inner.tasks_ended.notify_one();
         let ended = settle(&running, &ended, self.is_stopping());
         // Recorded on a best effort: the thread's own events hold the work either way.
         let _ = self.record_in_ledger(running.project, &ended).await;
@@ -300,10 +317,13 @@ where
             running.stopped = true;
             running.stopped_by = caller.person.or(self.inner.person);
         }
-        if let Some(mut finished) = self.cancel_busy(thread) {
-            let _ = finished.wait_for(|done| *done).await;
+        // A schedule's run waiting for the person holds no slot: it goes on stopped, declining
+        // what it waits for, as `turn/cancel` stops it.
+        match self.cancel(thread).await {
+            // Its turn ended meanwhile, and its end is being recorded.
+            Err(refused) if refused.code == code::NO_TURN => Ok(Reply::Done {}),
+            stopped => stopped,
         }
-        Ok(Reply::Done {})
     }
 
     /// Records that `thread`'s task, if it runs one, is stopped by `by`, unless someone
@@ -456,9 +476,19 @@ where
     }
 
     fn running_for(&self, person: Option<PrincipalId>) -> usize {
-        self.tasks()
-            .values()
-            .filter(|task| task.by == person)
+        self.working(|task| task.by == person)
+    }
+
+    /// How many of the tasks `counted` takes are working now: a schedule's run waiting for the
+    /// person holds nothing until they answer, and counts toward no limit.
+    pub(crate) fn working(&self, counted: impl Fn(&Running) -> bool) -> usize {
+        let threads: Vec<ThreadId> = (self.tasks().iter())
+            .filter(|(_, task)| counted(task))
+            .map(|(thread, _)| *thread)
+            .collect();
+        let held = self.lock();
+        (threads.iter())
+            .filter(|thread| matches!(held.get(thread), Some(Slot::Busy { .. })))
             .count()
     }
 

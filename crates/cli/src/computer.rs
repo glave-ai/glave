@@ -22,6 +22,8 @@ use tokio::net::TcpListener;
 
 use crate::home;
 
+mod fence;
+
 pub(crate) const USAGE: &str = "\
 glave computer: this machine as a computer for a harness elsewhere
 
@@ -37,6 +39,7 @@ Usage:
                                      --until-input-ends, it ends when its standard input
                                      does, as it ends with the program that started it
   glave computer serve --socket <path> <folder> [--idle <minutes>] [--keep-disk]
+                       [--fence <address:port>]
                                      serve it on a Unix socket at <path>, open to this user
                                      alone, to clients that first send the token in <folder>
                                      (as for --tls); how a computer in a Pod is reached. With
@@ -47,7 +50,10 @@ Usage:
                                      and no request or command runs, it frees what can be
                                      rebuilt and went untouched for an hour (build outputs
                                      git ignores in its worktrees, caches, then the Trash),
-                                     recorded in $GLAVE_HOME/disk.log
+                                     recorded in $GLAVE_HOME/disk.log. With --fence, it serves
+                                     only once <address:port> (its node's kubelet) is no longer
+                                     reached, so its network policy holds, and stops after 20
+                                     seconds if it still is
   glave computer bridge <path>       carry one connection between standard input and output
                                      and the computer serving on the socket at <path>,
                                      waiting up to 30 seconds for it to be there; it ends
@@ -76,11 +82,13 @@ enum Transport {
 }
 
 /// How a computer on a socket runs as a person's computer in the cloud: the minutes idle
-/// after which it ends, and whether it keeps its disk from filling.
+/// after which it ends, whether it keeps its disk from filling, and the address inside the
+/// cluster it must no longer reach before it serves.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Person {
     idle: Option<u32>,
     keep_disk: bool,
+    fence: Option<SocketAddr>,
 }
 
 /// Until when glave serving over TLS serves.
@@ -92,8 +100,8 @@ enum Until {
     InputEnds,
 }
 
-/// What follows `--socket <path> <folder>`: `--idle <minutes>` and `--keep-disk`, each at
-/// most once, in either order.
+/// What follows `--socket <path> <folder>`: `--idle <minutes>`, `--keep-disk` and
+/// `--fence <address:port>`, each at most once, in any order.
 fn person(mut rest: &[String]) -> Result<Person, String> {
     let mut person = Person::default();
     loop {
@@ -103,6 +111,11 @@ fn person(mut rest: &[String]) -> Result<Person, String> {
                 person.keep_disk = true;
                 more
             }
+            [flag, at, more @ ..] if flag == "--fence" && person.fence.is_none() => {
+                person.fence = Some(fence::address(at)?);
+                more
+            }
+            [flag] if flag == "--fence" => return Err("--fence needs an address:port".into()),
             [flag] if flag == "--idle" => return Err("--idle needs a number of minutes".into()),
             [flag, minutes, more @ ..] if flag == "--idle" && person.idle.is_none() => {
                 match minutes.parse::<u32>() {
@@ -111,7 +124,7 @@ fn person(mut rest: &[String]) -> Result<Person, String> {
                 }
                 more
             }
-            [flag, ..] if flag == "--idle" || flag == "--keep-disk" => {
+            [flag, ..] if ["--idle", "--keep-disk", "--fence"].contains(&flag.as_str()) => {
                 return Err(format!("{flag} is given more than once"));
             }
             [other, ..] => return Err(format!("{other:?} is not an option of serve --socket")),
@@ -200,7 +213,13 @@ pub(crate) fn main(arguments: &[String]) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("glave: {error:#}");
-            ExitCode::FAILURE
+            // A fence that never held ends glave with a code of its own, which the server reads
+            // to tell the person in plain words, keeping why for its log.
+            if error.downcast_ref::<fence::Unfenced>().is_some() {
+                ExitCode::from(glave_computer::UNFENCED)
+            } else {
+                ExitCode::FAILURE
+            }
         }
     }
 }
@@ -214,7 +233,8 @@ async fn read(folder: &Path, name: &str) -> anyhow::Result<String> {
 
 async fn run(transport: Transport) -> anyhow::Result<()> {
     let home = home::folder()?;
-    let processes = home::reaped().await?;
+    // `glave computer serve` writes no log of its own: it says things plainly.
+    let processes = home::reaped(crate::said::Said::Plainly).await?;
     let largest = Largest::default();
     let keeping = Keeping {
         processes: processes.clone(),
@@ -285,6 +305,22 @@ async fn on_socket<C: Computers + 'static>(
     keeping: Keeping,
 ) -> anyhow::Result<()> {
     let token = tokens(folder).await?;
+    if let Some(inside) = person.fence {
+        let fencing = tokio::time::Instant::now();
+        let held = fence::held(inside, fence::HOLD_WITHIN).await?;
+        // How long the cluster's plugin took, and the slowest answer before it, in the computer's
+        // log, so each cluster's is known and the knock's wait can be checked against it.
+        let slowest = held.slowest.map_or_else(
+            || "none".to_owned(),
+            |took| format!("{} ms", took.as_millis()),
+        );
+        eprintln!(
+            "glave: fenced: {inside} unanswered after {} knocks, {} ms; slowest answer before: \
+             {slowest}",
+            held.knocks,
+            fencing.elapsed().as_millis()
+        );
+    }
     let listener =
         listen_socket(path).with_context(|| format!("could not listen on {}", path.display()))?;
     let idle = person.idle.map(|minutes| Idle {
@@ -396,7 +432,8 @@ mod tests {
                 folder(),
                 Person {
                     idle: Some(10),
-                    keep_disk: false
+                    keep_disk: false,
+                    fence: None
                 }
             )))
         );
@@ -409,7 +446,23 @@ mod tests {
                 folder(),
                 Person {
                     idle: Some(10),
-                    keep_disk: true
+                    keep_disk: true,
+                    fence: None
+                }
+            )))
+        );
+        assert_eq!(
+            parse(&words(
+                "serve --socket /opt/glave/glave.sock /opt/glave/secret --keep-disk --fence \
+                 10.0.0.7:10250"
+            )),
+            Ok(Asked::Serve(Transport::Socket(
+                socket(),
+                folder(),
+                Person {
+                    idle: None,
+                    keep_disk: true,
+                    fence: Some(SocketAddr::from(([10, 0, 0, 7], 10250)))
                 }
             )))
         );
@@ -418,6 +471,9 @@ mod tests {
             "--idle",
             "--idle 1 --idle 2",
             "--keep-disk --keep-disk",
+            "--fence",
+            "--fence node:10250",
+            "--fence 10.0.0.7:10250 --fence 10.0.0.8:10250",
             "--other",
         ] {
             let line = format!("serve --socket /opt/glave/glave.sock /opt/glave/secret {wrong}");

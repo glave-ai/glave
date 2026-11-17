@@ -100,8 +100,9 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "crates/session/src/answers.rs",
         "let _ = running.wait_for(|done| *done).await;",
         1,
-        "the turn already running on the thread, whose model, tools and waits for the person \
-         bound it; cancelling it ends it",
+        "the work holding the thread: a turn already running there, whose model, tools and \
+         waits for the person bound it and cancelling ends, or one stopped just before, which \
+         lets go of it at once",
     ),
     // A turn just cancelled, which stops at once: its commands within their grace.
     (
@@ -111,10 +112,10 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "the turn cancelled just before, which stops at once",
     ),
     (
-        "crates/session/src/tasks.rs",
-        "let _ = finished.wait_for(|done| *done).await;",
+        "crates/session/src/schedule/fire.rs",
+        "() = self.inner.tasks_ended.notified() => {}",
         1,
-        "the task's turn, cancelled just before, which stops at once",
+        "a task ending, raced against the scheduler's sleep until its next look, a minute at most",
     ),
     (
         "crates/session/src/stopping.rs",

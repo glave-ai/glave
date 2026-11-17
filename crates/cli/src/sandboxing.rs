@@ -83,7 +83,7 @@ pub(crate) async fn workspace(
         Permissions::Plan | Permissions::FullAccess => false,
     };
     if asks_all && !elsewhere {
-        eprintln!("glave: {}", unsandboxed_notice(&why));
+        setup.said.warn(&unsandboxed_notice(&why));
     }
     Ok(workspace)
 }

@@ -53,8 +53,8 @@ impl<P, L, B> Server<P, L, B> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clear();
-        // Turns waiting for the person are followed no more here: a schedule's run among them
-        // stays open, for the next server to adopt.
+        // Turns waiting for the person are followed no more here, so stopping never waits on
+        // them: a schedule's run among them stays open, for the next server to adopt.
         self.inner.followed.clear();
         let refreshing = self
             .inner
