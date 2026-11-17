@@ -1,6 +1,6 @@
 //! A file a look-over found, kept for the thread: asked for again, read through the computer
 //! port, hashed and looked through for the person's secrets off the async threads, then read
-//! apart from glave, by the look-over's deadline or until the turn is stopped, for its title,
+//! apart from glave, by the look-over's deadline, for its title,
 //! its parts and its preview. What the reader found is looked through for the person's secrets
 //! too, since it is the file's text joined up (a value Word splits across runs, or one written
 //! as character references, shows whole there). A file holding none is kept sealed, its digest
@@ -20,8 +20,8 @@ use crate::harness::{Harness, Thread};
 /// What a preview is kept as.
 const MARKDOWN: &str = "text/markdown";
 
-/// How long the files of a look-over may be read for: until its deadline, or until what it
-/// ends with is stopped, whichever comes first.
+/// How long the files of a look-over may be read for, until its deadline, and what stops the
+/// look-over: the turn it ends with being stopped, which owes the look.
 pub(crate) struct Reading {
     pub(crate) until: Instant,
     pub(crate) cancel: Cancel,
@@ -79,12 +79,9 @@ where
         let read = match (&self.reader, reading) {
             (Some(reader), Some(reading)) => {
                 let read = reader(thread.scope.org(), bytes.clone(), media_type.to_owned());
-                let timed = tokio::time::timeout_at(reading.until, read);
-                reading
-                    .cancel
-                    .run(timed)
+                tokio::time::timeout_at(reading.until, read)
                     .await
-                    .and_then(Result::ok)
+                    .ok()
                     .flatten()
             }
             _ => None,

@@ -1,6 +1,6 @@
 //! The objects a person's computer is on Kubernetes while awake, as the API server takes them: a
-//! Pod that waits for glave and then serves with it on a Unix socket, the ServiceAccount of its own
-//! it runs as, and a NetworkPolicy that keeps its network as policy decided. And the files the
+//! Pod that waits for glave and then serves with it on a Unix socket, the ServiceAccount of its
+//! own it runs as, and a NetworkPolicy that keeps its network as policy decided. And the files the
 //! harness copies in, or the glave its image carries, and how far a starting Pod has got.
 
 use std::collections::BTreeMap;
@@ -155,9 +155,9 @@ impl Shape<'_> {
 
     /// The Pod: the image running the wait, then glave serving on [`SOCKET`], the person's disk as
     /// its home. Limits as requests too, so the computer gets what it is allowed; its own service
-    /// account ([`Shape::service_account`]), with no token; no privilege; every capability dropped;
-    /// the runtime's seccomp profile; never root; a read-only root filesystem; names from the
-    /// internet's resolvers, never the cluster's; and a runtime class when one is set.
+    /// account ([`Shape::service_account`]), with no token; no privilege; every capability
+    /// dropped; the runtime's seccomp profile; never root; a read-only root filesystem; names from
+    /// the internet's resolvers, never the cluster's; and a runtime class when one is set.
     pub(crate) fn pod(&self) -> Value {
         let mut env: Vec<Value> = self
             .spec

@@ -175,7 +175,7 @@ where
         }
         self.reopen_removed(thread).await?;
         self.pass_hooks(thread, prompt, cancel).await?;
-        self.begin(thread, prompt, &toolset).await?;
+        self.begin(thread, prompt, &toolset, cancel).await?;
         let step = Step {
             toolset,
             repeats: Repeats::default(),
