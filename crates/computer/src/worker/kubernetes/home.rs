@@ -376,6 +376,8 @@ fn saying(error: ComputerError, said: &str) -> ComputerError {
 }
 
 #[cfg(test)]
+mod contained;
+#[cfg(test)]
 mod measured;
 #[cfg(test)]
 mod sandboxed;

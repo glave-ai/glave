@@ -519,6 +519,9 @@ jobs:
           GLAVE_TEST_KUBE_RUNTIME_CLASS=glave-test-gvisor cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/persons_computer_passes_the_computers_suite/)'
           # glave's own sandbox inside it, every wall and what it costs.
           GLAVE_TEST_KUBE_RUNTIME_CLASS=glave-test-gvisor cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/sandbox_holds_on_a_persons_computer/)'
+          # Every way out tried from inside it, outside glave's sandbox and in it (the step
+          # above tries them under runc).
+          GLAVE_TEST_KUBE_RUNTIME_CLASS=glave-test-gvisor cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/nothing_gets_out_of_a_persons_computer/)'
           # Each measurement alone on the node.
           GLAVE_TEST_KUBE_RUNTIME_CLASS=glave-test-gvisor cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/measured_under_its_runtime/)'
           cargo nextest run -p glave-computer --all-features --success-output final -E 'test(/measured_under_its_runtime/)'
