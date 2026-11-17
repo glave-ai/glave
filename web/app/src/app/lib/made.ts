@@ -113,6 +113,25 @@ export function madeLeftOf(value: unknown): MadeLeft | null {
   return kind === 'more' && typeof files === 'number' ? { kind, files } : null;
 }
 
+/**
+ * `files` with each path once, as the server tells a turn's files: a later entry for a path, as
+ * a later look-over that found the file again gives, in the place of the first.
+ */
+export function byPath(files: readonly FileMade[]): readonly FileMade[] {
+  const at = new Map<string, number>();
+  const merged: FileMade[] = [];
+  for (const file of files) {
+    const place = at.get(file.path);
+    if (place === undefined) {
+      at.set(file.path, merged.length);
+      merged.push(file);
+    } else {
+      merged[place] = file;
+    }
+  }
+  return merged;
+}
+
 /** What a turn's later look-overs said it made, before the server describes it. */
 export interface MadeLater {
   readonly files: readonly FileMade[];

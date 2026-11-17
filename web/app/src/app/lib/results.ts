@@ -10,7 +10,7 @@ import type {
   ThreadItem,
 } from './conversation';
 import { roomFor } from './files';
-import { type MadeLater, type MadeShown, NO_MADE, madeShown } from './made';
+import { type MadeLater, type MadeShown, NO_MADE, byPath, madeShown } from './made';
 import { plural } from './plural';
 import { NO_STEPS, type Steps, type TurnPart, turnParts } from './runs';
 import type { Turn } from './turns';
@@ -242,7 +242,7 @@ function madeBy(turn: Turn, told: TurnFacts): MadeShown {
     return NO_MADE;
   }
   const later = told.madeLater.get(turn.startSeq);
-  const named = [...(turn.result?.made ?? []), ...(later?.files ?? [])];
+  const named = byPath([...(turn.result?.made ?? []), ...(later?.files ?? [])]);
   const left = turn.result?.made_left != null || later?.left === true;
   return madeShown(named, left, told.made?.get(turn.startSeq), told.madeFailed);
 }

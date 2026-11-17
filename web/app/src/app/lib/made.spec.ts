@@ -11,6 +11,7 @@ import { UnreadableFile } from './files';
 import {
   kindName,
   lastMaking,
+  byPath,
   madeCards,
   madeLater,
   madeLeftOf,
@@ -86,6 +87,13 @@ describe('made', () => {
     ]);
     expect([shown?.sha256, shown?.unread]).toEqual([blob.sha256, null]);
     expect([unread?.sha256, unread?.unread]).toEqual([blob.sha256, '\u00a0']);
+  });
+
+  it('tells each path once, a later look-over’s in the place of the first', () => {
+    const first: FileMade = { path: 'plan.pdf', bytes: 9, kept: 'too_large' };
+    const deck: FileMade = { path: 'deck.pptx', bytes: 4, kept: 'secret' };
+    const again: FileMade = { path: 'plan.pdf', bytes: 12, kept: 'secret' };
+    expect(byPath([first, deck, again])).toEqual([again, deck]);
   });
 
   it('keys each card by its file, two copies of one file apart', () => {
