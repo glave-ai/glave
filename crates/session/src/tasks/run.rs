@@ -8,6 +8,7 @@ use glave_event::{Fired, Outcome, TaskEnded, TaskStarted, ThreadId, TokenCounts}
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, title_from};
 
 use super::Work;
+use crate::leased::elsewhere;
 use crate::ledger::Ledger;
 use crate::protocol::{ApiError, TaskInfo};
 use crate::server::Server;
@@ -54,11 +55,18 @@ where
             schedule: Some(fired),
             by: self.someone_else(caller.person),
         };
+        // Its task's lease first, so a server recovering tasks never takes its claim, made
+        // before its turn starts, for one left by a server that stopped.
+        let lease = (self.take_task(project.org, thread).await).map_err(before)?;
+        let lease = lease.ok_or_else(|| before(elsewhere(thread)))?;
         let there = |ledger: &Ledger| ledger.settled(fired.schedule, fired.due);
-        if !(self.record_unless(project, &started, there).await).map_err(before)? {
-            return Ok(None);
+        let claimed = self.record_unless(project, &started, there).await;
+        if !matches!(claimed, Ok(true)) {
+            self.let_go(&lease).await;
+            return claimed.map(|_| None).map_err(before);
         }
-        let run = self.run_task(caller, (project, thread), work, Some(budget), Some(started));
+        let claim = Some((started, lease));
+        let run = self.run_task(caller, (project, thread), work, Some(budget), claim);
         match run.await {
             Ok(info) => Ok(Some(info)),
             Err(refused) => {

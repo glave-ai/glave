@@ -59,8 +59,13 @@ where
         }
         let projects = self.task_projects().await?;
         for project in &projects {
-            // A ledger that cannot be read now is read again on the next tick.
-            if let Err(error) = self.catch_up(*project).await {
+            // A ledger that cannot be read now is read again on the next tick; a run left open by
+            // a server that stopped, its task's lease lapsed, is recovered now, not at a start.
+            let read = match self.catch_up(*project).await {
+                Ok(()) => self.recover_in(*project).await.map(|_| ()),
+                failed => failed,
+            };
+            if let Err(error) = read {
                 let project = project.project;
                 tracing::warn!(%error, %project, "could not read the project's schedules");
             }
