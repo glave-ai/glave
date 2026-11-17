@@ -53,18 +53,29 @@ fn done() -> Vec<glave_ports::Completion> {
     vec![answer(Some("Done."), None)]
 }
 
+/// Makes `first` a schedule with `budget` whose run, due at 11:00, waits for the person, then
+/// stops it; answers the run's chat and what it waits at.
+async fn waiting_when_it_stops(
+    first: &Tested<Shared>,
+    now: &ManualClock,
+    budget: u64,
+) -> (ThreadId, glave_event::CallId) {
+    let chat = schedule(first, "Careful", "0 11 * * *", budget).await;
+    let chat = chat.thread.unwrap();
+    set(now, "2026-10-10T11:00:00Z");
+    assert_eq!(first.tick().await.unwrap(), vec![chat]);
+    let approval = asked_in(first, chat).await;
+    first.shutdown().await;
+    (chat, approval)
+}
+
 #[test]
 fn a_waiting_run_is_adopted_once_however_many_servers_look() {
     block_on!(async {
         let log = Shared::default();
         let (first, now, repo, _dir) =
             asking("adopted-once", writes_after_asking(), log.clone()).await;
-        let chat = schedule(&first, "Careful", "0 11 * * *", 10_000).await;
-        let chat = chat.thread.unwrap();
-        set(&now, "2026-10-10T11:00:00Z");
-        assert_eq!(first.tick().await.unwrap(), vec![chat]);
-        let approval = asked_in(&first, chat).await;
-        first.shutdown().await;
+        let (chat, approval) = waiting_when_it_stops(&first, &now, 10_000).await;
         let (_, leases) = shared_leases();
         let store = (&log, &leases, &now);
         let second = another(&first, store, &repo, 2, done()).await;
@@ -98,12 +109,7 @@ fn a_server_stops_while_an_adopted_run_waits_and_the_next_adopts_it_again() {
         let log = Shared::default();
         let (first, now, repo, _dir) =
             asking("adopted-again", writes_after_asking(), log.clone()).await;
-        let chat = schedule(&first, "Careful", "0 11 * * *", 10_000).await;
-        let chat = chat.thread.unwrap();
-        set(&now, "2026-10-10T11:00:00Z");
-        assert_eq!(first.tick().await.unwrap(), vec![chat]);
-        asked_in(&first, chat).await;
-        first.shutdown().await;
+        let (chat, _) = waiting_when_it_stops(&first, &now, 10_000).await;
         let (_, leases) = shared_leases();
         let store = (&log, &leases, &now);
         let second = another(&first, store, &repo, 2, done()).await;
@@ -164,12 +170,7 @@ fn an_adopted_run_counts_what_its_subagents_spent_against_its_budget() {
             .await;
         // 50 tokens: 45 spent before it stops, the subagent's 15 among them; the next call's
         // go past, and without the subagent's would not.
-        let chat = schedule(&first, "Careful", "0 11 * * *", 50).await;
-        let chat = chat.thread.unwrap();
-        set(&now, "2026-10-10T11:00:00Z");
-        assert_eq!(first.tick().await.unwrap(), vec![chat]);
-        let approval = asked_in(&first, chat).await;
-        first.shutdown().await;
+        let (chat, approval) = waiting_when_it_stops(&first, &now, 50).await;
         let (_, leases) = shared_leases();
         let last = vec![costing(answer(Some("Done."), None), 10, 5, 1)];
         let second = another(&first, (&log, &leases, &now), &repo, 2, last).await;
