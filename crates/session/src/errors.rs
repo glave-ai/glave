@@ -19,10 +19,10 @@ use crate::server::no_thread;
 use crate::words::Sentence;
 
 impl ApiError {
-    /// A failure of glave's own records, `error`, which goes to the server's log; the client
-    /// is told what to do.
+    /// A failure of glave's own records, `error`, which goes to the server's log as an error,
+    /// since the server is failing until someone acts; the client is told what to do.
     pub fn internal(error: &dyn Display) -> Self {
-        tracing::warn!(%error, "glave's records failed");
+        tracing::error!(%error, "glave's records failed");
         Self::new(code::INTERNAL, Sentence::RecordsFailed)
     }
 }
@@ -146,9 +146,10 @@ impl From<BrowserError> for ApiError {
             },
             BrowserError::NoPasskeys => Self::new(code::NOT_AVAILABLE, Sentence::NoPasskeysHere),
             BrowserError::NoPasskey => Self::new(code::NOT_AVAILABLE, Sentence::NoPasskeyYet),
-            // Where and why go to the server's log; the person is told what to do.
+            // Where and why go to the server's log, as an error: its records or its random source
+            // failed, not the person. The person is told what to do.
             BrowserError::Keep { .. } | BrowserError::Random(_) => {
-                tracing::warn!(%error, "could not sign a browser in");
+                tracing::error!(%error, "could not sign a browser in");
                 Self::new(code::INTERNAL, Sentence::BrowserNotKept)
             }
         }

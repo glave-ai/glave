@@ -19,6 +19,7 @@ use jiff::{SignedDuration, Timestamp};
 
 use crate::client::Session;
 use crate::home;
+use crate::said::Said;
 
 pub(crate) use cleanup::Cleanup;
 
@@ -147,17 +148,18 @@ async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
 }
 
 /// This machine's worktrees as the server lets go of them, with what its log holds, git run as
-/// one of its processes; it says what became of each on standard error, as the daily check does.
-pub(crate) struct OnThisMachine<L>(pub L, pub Processes);
+/// one of its processes; it says what became of each where the server says things, as the
+/// daily check does.
+pub(crate) struct OnThisMachine<L>(pub L, pub Processes, pub Said);
 
 impl<L: EventLog> glave_session::Worktrees for OnThisMachine<L> {
     fn release(&self, scope: Scope, thread: ThreadId) -> BoxFuture<'_, ()> {
         Box::pin(async move {
             match release_archived(&self.0, &self.1, scope, thread).await {
-                Ok(lines) => lines.iter().for_each(|line| eprintln!("glave: {line}")),
-                Err(error) => eprintln!(
-                    "glave: thread {thread}'s worktree, if it has one, is kept: {error:#}"
-                ),
+                Ok(lines) => lines.iter().for_each(|line| self.2.info(line)),
+                Err(error) => self.2.warn(&format!(
+                    "thread {thread}'s worktree, if it has one, is kept: {error:#}"
+                )),
             }
         })
     }
@@ -195,9 +197,9 @@ fn this_machines_trash(now: Timestamp) -> Option<Trash> {
 }
 
 /// Checks this machine's worktrees as glave starts, and in the person's server as it runs, at
-/// most once a day, with what `log` holds, git run as one of `processes`; says what it did on
-/// standard error. Never stops glave.
-pub(crate) async fn check_daily<L: EventLog>(log: &L, processes: &Processes) {
+/// most once a day, with what `log` holds, git run as one of `processes`; says what it did as
+/// `said`. Never stops glave.
+pub(crate) async fn check_daily<L: EventLog>(log: &L, processes: &Processes, said: Said) {
     let Ok(home) = home::folder() else {
         return;
     };
@@ -213,7 +215,7 @@ pub(crate) async fn check_daily<L: EventLog>(log: &L, processes: &Processes) {
         entropy: &OsEntropy,
     };
     for line in check_if_due(&home, &cleanup).await {
-        eprintln!("glave: {line}");
+        said.info(&line);
     }
 }
 
