@@ -13,7 +13,7 @@ fn an_error_shows_where_a_url_is_and_nothing_after() {
             "https://mcp.zapier.com/…",
         ),
         ("https://host/sse?key=v#frag", "https://host/…?…#…"),
-        ("https://host?email=a@b.com&token=private", "https://host?…"),
+        ("https://host?email=a@b.com&token=private", "***"),
         (
             "postgres://glave:s3cret@db.example.com:5432/glave",
             "postgres://***@db.example.com:5432/…",
@@ -30,16 +30,19 @@ fn an_error_shows_where_a_url_is_and_nothing_after() {
             "http://***@collector:4318",
         ),
         ("postgres://glave:a@b@db/glave", "postgres://***@db/…"),
-        // A password nobody encoded, where it ends unclear: none of it is shown.
+        // An `@` past the host, where a name and a password nobody encoded may end: none of it
+        // is shown.
         ("postgres://u:p@ss/word@db/x", "***"),
         ("postgres://glave:s3cret@db/glave?to=a@b", "***"),
         ("postgres://glave:ab/cd@db/glave", "***"),
         ("postgres://glave:ab?cd@db/glave", "***"),
         ("postgres://glave:ab#cd@db/glave", "***"),
-        (
-            "https://server.example/@owner/mcp",
-            "https://server.example/…",
-        ),
+        ("https://server.example/@owner/mcp", "***"),
+        // A name or a password with a `/`, `?`, `#` or `\` that ends the host too soon.
+        ("postgres://glave:2024/Summer@db/glave", "***"),
+        ("postgres://glave:/s3cretpass@db/glave", "***"),
+        ("https://AB/CD+ef@host/x", "***"),
+        ("http://tok\\en@host/x", "***"),
         ("host=db user=glave password=s3cret", "***"),
         ("postgres:/glave:s3cret@db/glave", "***"),
         ("mailto:me@example.com", "***"),
@@ -60,6 +63,10 @@ fn explain_shows_the_path_too_and_nothing_a_query_carries() {
     );
     assert_eq!(shown_with_path("s3://glave-blobs"), "s3://glave-blobs");
     assert_eq!(shown_with_path("not a url"), "***");
+    assert_eq!(
+        shown_with_path("postgres://glave:/s3cretpass@db/glave"),
+        "***"
+    );
 }
 
 #[test]
@@ -98,6 +105,12 @@ fn each_address_in_a_sentence_is_shown_as_it_may_be() {
         ("to http://me:pa ss@collector:4318 now", "to *** now"),
         ("to http://me:p a s s@collector:4318/x).", "to ***)."),
         ("not a url: https://host:port/x", "not a url: ***"),
+        ("http://me:1234\n5678@host now", "*** now"),
+        // An `@` later, before the next address, may end a name: too much hidden is safe.
+        (
+            "could not reach http://h/x for me@example.com, then http://b",
+            "could not reach ***, then http://b",
+        ),
     ] {
         assert_eq!(urls_shown(said), kept, "{said}");
     }
@@ -111,6 +124,8 @@ fn a_password_is_found_where_it_would_be_hidden() {
         "postgres://db/glave?PWD=s3cret",
         "postgres://db/glave?pass=s3cret",
         "postgres://glave:ab/cd@db/glave",
+        "postgres://glave:/s3cretpass@db/glave",
+        "postgres://db:5432/x?application_name=a@b",
         "password=x https://h",
     ] {
         assert!(has_password(url), "{url}");
@@ -118,15 +133,16 @@ fn a_password_is_found_where_it_would_be_hidden() {
     for url in [
         " postgres://glave@db/glave?sslmode=require ",
         "postgres://db/glave",
-        "postgres://db:5432/x?application_name=a@b",
     ] {
         assert!(!has_password(url), "{url}");
     }
 }
 
-/// The first four characters in a row of `secret` that `said` still holds, if any.
+/// The first four characters in a row of `secret` that `said` still holds, if any, in any case:
+/// a host is said in small letters.
 fn survives(secret: &str, said: &str) -> Option<String> {
-    let chars: Vec<char> = secret.chars().collect();
+    let said = said.to_lowercase();
+    let chars: Vec<char> = secret.to_lowercase().chars().collect();
     chars
         .windows(4)
         .map(|four| four.iter().collect::<String>())
@@ -134,12 +150,13 @@ fn survives(secret: &str, said: &str) -> Option<String> {
 }
 
 /// A secret in a query, a fragment or a path, which may hold `@ / ? #`, drawn from characters
-/// that never run four in a row in what is said around it.
-const CARRIED: &str = "[A-Z@/?#]{12,20}";
+/// that never run four in a row, in any case, in what is said around it: its letters are none
+/// of the template's (`a` to `i`, and the schemes' and words' own).
+const CARRIED: &str = "[JLNUZ0-9@/?#]{12,20}";
 
-/// A secret as a name or a password, which may hold spaces, quotes, `)` and `@`, drawn as
-/// [`CARRIED`] is.
-const NAMED: &str = "[A-Z \"')@]{12,20}";
+/// A secret as a name or a password, which may hold spaces, line breaks, quotes, `)`, `@` and
+/// what ends a host too soon (`/ ? # \`), drawn as [`CARRIED`] is.
+const NAMED: &str = "[JLNUZ0-9 \n\"')@/?#\\\\]{12,20}";
 
 /// What closes a sentence's word after an address.
 fn closing() -> impl Strategy<Value = &'static str> {
@@ -153,22 +170,25 @@ proptest! {
     fn what_a_url_carries_never_survives(
         carried in CARRIED,
         named in NAMED,
-        user in "[a-z]{1,8}",
-        host in "[a-z]{1,10}",
-        key in "[a-z]{1,8}",
-        tail in prop::sample::select(vec!["", "/x", "?q=1", "#f", ":4318/x?y=1"]),
+        user in "[a-i]{1,8}",
+        host in "[a-i]{1,10}",
+        key in "[a-i]{1,8}",
+        tail in prop::sample::select(vec!["", "/x", "?q=1", "#f", ":81/x?y=1"]),
     ) {
+        let both = format!("postgres://{user}:{named}@{host}/db?password={carried}");
         let hidden = [
             (format!("https://{host}?{key}={carried}"), &carried),
             (format!("https://{host}#{carried}"), &carried),
-            (format!("https://{host}:4318?{key}={carried}#{carried}"), &carried),
+            (format!("https://{host}:81?{key}={carried}#{carried}"), &carried),
             (format!("http://{user}:{named}@{host}{tail}"), &named),
             (format!("http://{named}@{host}{tail}"), &named),
-            (format!("postgres://{user}:{named}@{host}/db?password={carried}"), &named),
+            (format!("postgres://{user}:{named}@{host}{tail}"), &named),
+            (both.clone(), &named),
+            (both, &carried),
         ];
         for (url, secret) in &hidden {
             for said in [shown(url), shown_with_path(url)] {
-                prop_assert!(survives(secret, &said).is_none(), "{url}: {said}");
+                prop_assert!(survives(secret, &said).is_none(), "{url:?}: {said:?}");
             }
         }
         // A token in the path: hidden in errors and logs; `policy explain` keeps the path.
@@ -180,23 +200,23 @@ proptest! {
     fn an_address_mid_sentence_keeps_the_sentence_and_nothing_it_carries(
         carried in CARRIED,
         named in NAMED,
-        user in "[a-z]{1,8}",
-        host in "[a-z]{1,10}",
-        lead in "[a-z]{0,12}",
-        trail in "[a-z]{0,12}",
+        user in "[a-i]{1,8}",
+        host in "[a-i]{1,10}",
+        lead in "[a-i]{0,12}",
+        trail in "[a-i]{0,12}",
         closing in closing(),
     ) {
         for (url, secret) in [
             (format!("https://{host}/mcp/{carried}"), &carried),
             (format!("https://{host}?k={carried}#{carried}"), &carried),
-            (format!("http://{user}:{named}@{host}:4318/v1"), &named),
+            (format!("http://{user}:{named}@{host}:81/v1"), &named),
             (format!("http://{named}@{host}"), &named),
         ] {
             let text = format!("{lead} {url}{closing} {trail}");
             let said = urls_shown(&text);
-            prop_assert!(survives(secret, &said).is_none(), "{text}: {said}");
-            prop_assert!(said.starts_with(&format!("{lead} ")), "{text}: {said}");
-            prop_assert!(said.ends_with(&format!("{closing} {trail}")), "{text}: {said}");
+            prop_assert!(survives(secret, &said).is_none(), "{text:?}: {said:?}");
+            prop_assert!(said.starts_with(&format!("{lead} ")), "{text:?}: {said:?}");
+            prop_assert!(said.ends_with(&format!("{closing} {trail}")), "{text:?}: {said:?}");
         }
     }
 

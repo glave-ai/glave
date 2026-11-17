@@ -4,8 +4,11 @@
 //! can (an MCP server's address often does). In `policy explain`, to the person whose settings
 //! they are, its path too. Either way a name or a password before the host is `***@`, the place
 //! a token goes, and a query or a fragment is `?…` or `#…`, nothing of what it holds. Text that
-//! does not read as a URL with a host shows as `***`. The one place glave makes a URL safe to
-//! show, alone or in a sentence that names one (an error a library wrote).
+//! does not read as a URL with a host shows as `***`, and so does a URL with an `@` past its
+//! host: a name or a password nobody encoded may hold a `/`, `?`, `#` or `\` that ends the host
+//! too soon, and run on to an `@` later, as Postgres's driver reads a name and password up to the
+//! first `@`. The one place glave makes a URL safe to show, alone or in a sentence that names one
+//! (an error a library wrote).
 
 #[cfg(test)]
 mod tests;
@@ -39,17 +42,10 @@ fn said(text: &str, with_path: bool) -> String {
     let Some(host) = url.host_str() else {
         return HIDDEN.to_owned();
     };
-    let named = !url.username().is_empty() || url.password().is_some();
-    // A password nobody encoded may hold an `@` and run on past the host it seems to name: where
-    // a name ends is unclear when another `@` comes after it.
-    let after = [
-        url.path(),
-        url.query().unwrap_or_default(),
-        url.fragment().unwrap_or_default(),
-    ];
-    if named && after.iter().any(|part| part.contains('@')) {
+    if past_host(&url) {
         return HIDDEN.to_owned();
     }
+    let named = !url.username().is_empty() || url.password().is_some();
     let user = if named { "***@" } else { "" };
     let port = url
         .port()
@@ -68,11 +64,25 @@ fn said(text: &str, with_path: bool) -> String {
     )
 }
 
+/// Whether an `@` comes past `url`'s host, in its path, query or fragment, where a name and a
+/// password nobody encoded may end.
+fn past_host(url: &Url) -> bool {
+    [
+        url.path(),
+        url.query().unwrap_or_default(),
+        url.fragment().unwrap_or_default(),
+    ]
+    .iter()
+    .any(|part| part.contains('@'))
+}
+
 /// Whether `url` holds a password: after a name before its host, or as a query's `password`,
-/// `pass` or `pwd`. Text that does not read as a URL may hold one anywhere.
+/// `pass` or `pwd`. Text that does not read as a URL may hold one anywhere, and so may a URL
+/// with an `@` past its host.
 pub fn has_password(url: &str) -> bool {
     Url::parse(url).map_or(true, |url| {
         url.password().is_some()
+            || past_host(&url)
             || url.query_pairs().any(|(key, _)| {
                 PASSWORD_KEYS
                     .iter()
@@ -84,7 +94,9 @@ pub fn has_password(url: &str) -> bool {
 /// `text` with each address in it as it may be shown in an error ([`shown`]): an error a
 /// library wrote names the address it failed at, as it was asked to reach it. An address is a
 /// scheme (a letter, then letters, digits, `+`, `-` or `.`) and `://`, up to the next space, less
-/// the punctuation that closes the sentence's word, which is kept as it was.
+/// the punctuation that closes the sentence's word, which is kept as it was. When an `@` comes
+/// after it, before the next address, the address and all to the end of that `@`'s word are
+/// `***`, since a name or a password with a space in it may run on to there.
 pub fn urls_shown(text: &str) -> String {
     let mut kept = String::with_capacity(text.len());
     let mut rest = text;
@@ -123,34 +135,24 @@ fn address_said(text: &str) -> (String, &str) {
     let (word, others) = text.split_at(end);
     let url = without_closing(word);
     let closing = word.get(url.len()..).unwrap_or_default();
-    let said = shown(url);
-    // A name or a password with a space in it, cut there: when the address does not read, or
-    // was cut before its host ended, an `@` further on its line may end what went before the
-    // host. All of it, through the word that `@` is in, is hidden.
-    let cut = url
-        .split_once("://")
-        .is_some_and(|(_, rest)| !rest.contains(['/', '?', '#']));
-    if (said == HIDDEN || cut)
-        && let Some(through) = name_ends(others)
-    {
+    // A name or a password with a space or a line break in it is cut there, and an `@` after
+    // the cut, before the next address, may end it: all of it, through the word that `@` is in,
+    // is hidden.
+    if let Some(through) = name_ends(others) {
         let (named, others) = others.split_at(through);
         let closing = named
             .get(without_closing(named).len()..)
             .unwrap_or_default();
         return (format!("{HIDDEN}{closing}"), others);
     }
-    (format!("{said}{closing}"), others)
+    (format!("{}{closing}", shown(url)), others)
 }
 
 /// In `others`, the text after an address cut at a space, where the word ends that holds the
-/// last `@` before the next line or the next address; none when there is no such `@`.
+/// last `@` before the next address; none when there is no such `@`.
 fn name_ends(others: &str) -> Option<usize> {
-    let line = [others.find('\n'), others.find("://")]
-        .into_iter()
-        .flatten()
-        .min()
-        .unwrap_or(others.len());
-    let at = others.get(..line)?.rfind('@')?;
+    let next = others.find("://").unwrap_or(others.len());
+    let at = others.get(..next)?.rfind('@')?;
     let word = others.get(at..)?;
     Some(at + word.find(char::is_whitespace).unwrap_or(word.len()))
 }
