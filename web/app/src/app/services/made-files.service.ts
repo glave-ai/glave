@@ -1,6 +1,7 @@
 import { Service, computed, effect, inject, linkedSignal, untracked } from '@angular/core';
 import type { ThreadId, TurnFiles } from '@glave/client';
 
+import { madeCount } from '../lib/made';
 import { SessionService } from './session.service';
 import { ThreadService } from './thread.service';
 
@@ -35,7 +36,7 @@ export class MadeFilesService {
   constructor() {
     effect(() => {
       const thread = this.thread.thread();
-      const making = this.thread.madeCount();
+      const making = madeCount(this.thread.events());
       if (thread !== null && making > 0) {
         untracked(() => void this.refresh());
       }
