@@ -266,8 +266,9 @@ where
             }
         },
         None => match open(&request, door) {
-            // Neither reads who calls.
-            Ok(()) => glave_ports::Caller::default(),
+            // Open to anyone, so made by no one: never the person on this computer, so nothing
+            // of theirs is read for it, whatever reads the caller's own.
+            Ok(()) => glave_ports::Caller::no_one(from),
             Err(refused) => return unauthorized(&refused, asked.as_deref()),
         },
     };

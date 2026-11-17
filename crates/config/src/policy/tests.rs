@@ -549,3 +549,4 @@ fn people_s_own_mcp_servers_are_refused_when_the_policy_forbids_them() {
 
 mod reading;
 mod sandboxing;
+mod shown;

@@ -227,8 +227,9 @@ fn stand_in(value: Option<String>) -> anyhow::Result<Option<String>> {
     let here = Config::for_url(url.clone(), None).is_some_and(|config| config.is_local());
     anyhow::ensure!(
         here,
-        "{OPENROUTER_STAND_IN} names {url}, which is not on this computer: it only stands in for \
-         OpenRouter here, since people's OpenRouter keys go to it"
+        "{OPENROUTER_STAND_IN} names {}, which is not on this computer: it only stands in for \
+         OpenRouter here, since people's OpenRouter keys go to it",
+        glave_ports::host::shown(&url)
     );
     Ok(Some(url))
 }
