@@ -1,11 +1,16 @@
 //! Logs and telemetry from the real binary: `--log` records turns, model calls, tool calls and
-//! appends with their counts and timings, and never the content: not the prompt, the answer,
-//! a tool's arguments or output, a file, or the key. With the `otlp` feature, the same holds
-//! for what reaches an OpenTelemetry collector.
+//! appends with their counts and timings, to a file or as JSON lines on standard error, and
+//! never the content: not the prompt, the answer, a tool's arguments or output, a file, or the
+//! key. With the `otlp` feature, the same holds for what reaches an OpenTelemetry collector.
+
+use std::process::Output;
+use std::sync::mpsc::RecvTimeoutError;
+use std::time::Duration;
 
 use glave_provider_openai::fake::{FakeServer, Reply};
-use serde_json::json;
+use serde_json::{Value, json};
 
+use crate::http::{Said, serve_http_with};
 use crate::support::*;
 
 /// Strings that are content, by what they are: none may reach a log or a collector, and nor
@@ -34,22 +39,14 @@ fn replies() -> Vec<Reply> {
     ]
 }
 
-#[test]
-fn the_log_has_spans_and_metrics_and_never_content() {
-    let place = place("log");
+/// The turn of [`replies`], its spans and metrics logged to `log` at the finest level: what it
+/// printed, once it showed the answer and sent the prompt.
+fn logged_turn(place: &Place, log: &str) -> Output {
     let server = FakeServer::start(replies()).unwrap();
-    let log = place.home.join("logs/glave.log");
-    let log_arg = log.to_string_lossy().into_owned();
     let mut child = start_with(
-        &place,
+        place,
         &server,
-        &[
-            "--model",
-            "fake-model",
-            "--log",
-            &log_arg,
-            "do it PROMPT-c0ffee",
-        ],
+        &["--model", "fake-model", "--log", log, "do it PROMPT-c0ffee"],
         &[("GLAVE_LOG", "trace")],
     );
     drop(child.stdin.take());
@@ -59,7 +56,109 @@ fn the_log_has_spans_and_metrics_and_never_content() {
     assert!(shown.contains("ANSWER-f00d"), "{shown}");
     let first = &server.received()[0].body;
     assert!(said(first, "user")[0].contains("PROMPT-c0ffee"));
+    output
+}
+
+#[test]
+fn the_log_has_spans_and_metrics_and_never_content() {
+    let place = place("log");
+    let log = place.home.join("logs/glave.log");
+    logged_turn(&place, &log.to_string_lossy());
     let written = std::fs::read_to_string(&log).unwrap();
+    has_spans_and_metrics_and_never_content(&written, &place.key);
+}
+
+#[test]
+fn the_log_on_standard_error_is_json_lines_with_spans_and_metrics_and_never_content() {
+    let place = place("log-stderr");
+    let output = logged_turn(&place, "-");
+    let shown = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<&str> = shown.lines().filter(|line| line.starts_with('{')).collect();
+    for line in &lines {
+        let entry: Value = serde_json::from_str(line).unwrap();
+        assert!(entry["time"].is_string(), "{line}");
+        let severity = entry["severity"].as_str().unwrap_or_default();
+        assert!(
+            ["ERROR", "WARNING", "INFO", "DEBUG", "TRACE"].contains(&severity),
+            "{line}"
+        );
+        let target = entry["target"].as_str().unwrap_or_default();
+        assert!(target.starts_with("glave"), "{line}");
+    }
+    has_spans_and_metrics_and_never_content(&lines.join("\n"), &place.key);
+}
+
+/// The lines of `said`, which a server said as it started, and each after until it stopped.
+fn every_line(said: Said) -> Vec<String> {
+    let mut lines = said.start;
+    loop {
+        match said.later.recv_timeout(Duration::from_secs(30)) {
+            Ok(line) => lines.push(line),
+            Err(RecvTimeoutError::Disconnected) => return lines,
+            Err(RecvTimeoutError::Timeout) => panic!("still talking after 30 s: {lines:#?}"),
+        }
+    }
+}
+
+/// `line` as a line of the log, which every line on standard error is under `--log -`.
+fn logged(line: &str, all: &str) -> Value {
+    let entry: Value = serde_json::from_str(line)
+        .unwrap_or_else(|_| panic!("a plain line among the log's: {line}\n{all}"));
+    assert!(entry["severity"].is_string(), "{line}");
+    entry
+}
+
+#[test]
+fn a_server_with_its_log_on_standard_error_writes_nothing_else_there() {
+    let place = place("log-serve");
+    let model = FakeServer::start(Vec::new()).unwrap();
+    let (running, _, said) = serve_http_with(&place, &model, &["--log", "-"], &[]);
+    let stopped = glave(&place, &model, &["server", "stop"], "");
+    assert!(stopped.status.success(), "{}", text(&stopped));
+    let lines = every_line(said);
+    drop(running);
+    let all = lines.join("\n");
+    let messages: Vec<String> = lines
+        .iter()
+        .map(|line| {
+            logged(line, &all)["message"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect();
+    let serving = "serving the session API on ";
+    assert!(
+        messages.iter().any(|said| said.starts_with(serving)),
+        "{all}"
+    );
+    assert!(messages.iter().any(|said| said == "stopping"), "{all}");
+}
+
+#[test]
+fn a_server_that_cannot_start_says_why_as_an_error_in_its_log() {
+    let place = place("log-fatal");
+    let model = FakeServer::start(Vec::new()).unwrap();
+    std::fs::create_dir_all(&place.home).unwrap();
+    std::fs::write(place.home.join("config.toml"), "this is not = = toml\n").unwrap();
+    let args = ["serve", "--http", "127.0.0.1:0", "--log", "-"];
+    let output = start_with(&place, &model, &args, &[])
+        .wait_with_output()
+        .unwrap();
+    assert!(!output.status.success(), "{}", text(&output));
+    let shown = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<Value> = shown.lines().map(|line| logged(line, &shown)).collect();
+    let last = lines
+        .last()
+        .unwrap_or_else(|| panic!("nothing said: {}", text(&output)));
+    assert_eq!(last["severity"], "ERROR", "{shown}");
+    assert_eq!(last["message"], "glave stopped", "{shown}");
+    let error = last["error"].as_str().unwrap_or_default();
+    assert!(error.contains("config.toml"), "{shown}");
+}
+
+/// `written` has the turn's spans and metrics, and none of its content or the key.
+fn has_spans_and_metrics_and_never_content(written: &str, key: &str) {
     for span in [
         "session.request",
         "turn",
@@ -82,7 +181,7 @@ fn the_log_has_spans_and_metrics_and_never_content() {
     for (what, content) in CONTENT {
         assert!(!written.contains(content), "{what} in the log:\n{written}");
     }
-    assert!(!written.contains(&place.key), "the key in the log");
+    assert!(!written.contains(key), "the key in the log");
 }
 
 #[test]
