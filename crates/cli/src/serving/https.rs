@@ -19,6 +19,7 @@ use tokio::net::TcpListener;
 
 use crate::args::Args;
 use crate::data::{Data, DataLog};
+use crate::said::Said;
 
 /// The port HTTPS of glave's own listens on unless `--https` says.
 const HTTPS_PORT: u16 = 443;
@@ -109,23 +110,24 @@ pub(crate) async fn listen(args: &Args) -> anyhow::Result<TcpListener> {
     Err(error).with_context(|| format!("could not listen on {address} for HTTPS"))
 }
 
-/// Keeps the certificate of `reach`'s HTTPS current until dropped, saying what became of each
-/// order; never ends where glave serves no HTTPS of its own.
-pub(crate) async fn keep(reach: &Reach) {
+/// Keeps the certificate of `reach`'s HTTPS current until dropped, saying as `said` what became
+/// of each order; never ends where glave serves no HTTPS of its own. An order that fails is a
+/// warning: glave tries again, and the certificate it has, if any, serves meanwhile.
+pub(crate) async fn keep(reach: &Reach, said: Said) {
     let (Some(https), Some(origin)) = (&reach.https, &reach.origin) else {
         return pending().await;
     };
     https
         .keep(|attempt| match attempt {
-            Attempt::Issued(issued) => eprintln!(
-                "glave: serving HTTPS at {origin}, its certificate good until {}",
+            Attempt::Issued(issued) => said.info(&format!(
+                "serving HTTPS at {origin}, its certificate good until {}",
                 issued.not_after.strftime("%Y-%m-%d")
-            ),
-            Attempt::Failed { error, again } => eprintln!(
-                "glave: could not get a certificate for {}: {error}; trying again in {} minutes",
+            )),
+            Attempt::Failed { error, again } => said.warn(&format!(
+                "could not get a certificate for {}: {error}; trying again in {} minutes",
                 origin.authority(),
                 again.as_secs() / 60
-            ),
+            )),
         })
         .await;
 }
