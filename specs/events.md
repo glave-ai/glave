@@ -237,7 +237,7 @@ A principal is anyone or anything that can act, written as a reference:
 | | `agent` | the agent profile that runs the thread (kind `agent`) |
 | | `origin` | what started the thread: `kind` (open string; known values `prompt`, `voice`, `schedule`, `webhook`, `chat`, `subagent`, `fork`, `assistant`), optional `ref` (an opaque pointer, such as a schedule or a chat thread), optional `by` (the principal who started it, when that differs from `for`) |
 | `turn.started` v1 | optional `trace` | the W3C trace ID (32 lowercase hex digits) the turn belongs to, linking the event to OpenTelemetry spans |
-| | optional `auth` | how the caller who started the turn signed in: `method` (`local`, `oidc`, `saml` or `account`, a glave account's passkey or session), and for `oidc` and `saml` the `issuer`, `subject` and `session`. Never a token or any other secret |
+| | optional `auth` | how the caller who started the turn signed in: `method` (`local`, `oidc`, `saml` or `account`, a glave account's passkey or session; or `on_behalf`, signed in by no one, as glave acts for someone other than the person on its computer on its own; an open kind, so a reader that does not know it reads it as another), and for `oidc` and `saml` the `issuer`, `subject` and `session`. Never a token or any other secret |
 | `message.added` v1 | optional `author` | who wrote the message. Absent: the thread's `for` for a user message, its `agent` for an assistant message |
 | `message.added` v1 | optional `key` | the idempotency key it was sent with. Absent: sent with none |
 | `approval.decided` v1 | optional `by` | who decided. Absent: the thread's `for`. `no_one_there` and `cancelled` are decided by `{"kind": "glave"}` |
