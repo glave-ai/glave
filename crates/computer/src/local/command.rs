@@ -2,6 +2,8 @@
 //! command carries, output streamed as it arrives; at a cancel stopped with everything it
 //! started, and at a timeout stopped too, or kept running in the background when it asks.
 
+mod started;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -15,6 +17,7 @@ use glave_ports::computer::{
 };
 use glave_process::{Child, Program};
 use tokio::io::AsyncWriteExt as _;
+use tokio::process::ChildStderr;
 use tokio::time::Instant;
 
 use super::background::Backgrounds;
@@ -22,6 +25,7 @@ use super::credentials::{Offered, offer};
 use super::process::Stream;
 use super::registry::{Opened, new_id};
 use super::sandbox::{Launch, Prepared};
+use started::Started;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
@@ -120,17 +124,37 @@ pub(crate) struct Spawned {
     pub(crate) started: Instant,
 }
 
-/// What a running command holds: the sandbox it was prepared in, and its own temp folder and
-/// what launching it left in the workspace, both removed once it ends.
-#[derive(Debug)]
+impl Spawned {
+    /// `child`, just started, holding `held` while it runs.
+    fn of(mut child: Child, held: Held) -> Self {
+        let stream = Stream::of(&mut child);
+        Self {
+            child,
+            stream,
+            held,
+            started: Instant::now(),
+        }
+    }
+}
+
+/// What a running command holds: the sandbox it was prepared in, its own temp folder and what
+/// launching it left in the workspace, both removed once it ends, and the sandbox's own error
+/// output.
+#[derive(Debug, Default)]
 pub(crate) struct Held {
     _launch: Option<Launch>,
     _sandbox: Option<Arc<Prepared>>,
+    _said: Option<ChildStderr>,
 }
+
+/// How many sandboxes are made for one command, each from a fresh look, while the last
+/// started nothing: a place it hid went away as it was made (`started.rs`).
+const SANDBOXES: usize = 3;
 
 /// Starts `command` by bash in `opened`, in its sandbox when it has one, its git asking
 /// `offered`'s helper when given. `helper` runs the Linux sandbox's helper, if this machine
-/// has one.
+/// has one. A sandboxed command is started only once the sandbox says it runs; one that never
+/// does fails, saying what the sandbox said.
 pub(crate) async fn spawn(
     opened: &Opened,
     command: &Command,
@@ -140,34 +164,58 @@ pub(crate) async fn spawn(
     if command.script.trim().is_empty() {
         return Err(ComputerError::Refused(Refusal::EmptyCommand.into()));
     }
-    let prepared = match &command.sandbox {
-        Some(sandbox) => Some(opened.sandbox(sandbox, helper).await?),
-        None => None,
+    let Some(sandbox) = &command.sandbox else {
+        let child = start(opened, &mut bash(opened, command, None, offered), None).await?;
+        return Ok(Spawned::of(child, Held::default()));
     };
-    let launch = match &prepared {
-        Some(prepared) => Some(prepared.launch().await?),
-        None => None,
-    };
-    let confined = launch.as_ref().zip(prepared.as_deref());
-    let mut bash = bash(opened, command, confined, offered);
-    let mut child = (opened.processes.spawn(&mut bash).await)
+    let prepared = opened.sandbox(sandbox, helper).await?;
+    let mut said = String::new();
+    for _ in 0..SANDBOXES {
+        // Planned afresh: a place gone since the last was made is no longer hidden.
+        let launch = prepared.launch().await?;
+        let mut bash = bash(opened, command, Some((&launch, prepared.as_ref())), offered);
+        let mut child = start(opened, &mut bash, launch.input.as_deref()).await?;
+        match started::wait(&mut child).await {
+            Started::Yes(output) => {
+                let held = Held {
+                    _launch: Some(launch),
+                    _sandbox: Some(prepared),
+                    _said: output,
+                };
+                return Ok(Spawned::of(child, held));
+            }
+            Started::Ended(ended) => {
+                child.stop().await;
+                said = ended;
+            }
+            Started::Late => {
+                child.stop().await;
+                return Err(ComputerError::Failed(format!(
+                    "the sandbox did not start the command within {}",
+                    glave_ports::spoken(started::WITHIN)
+                )));
+            }
+        }
+    }
+    Err(ComputerError::Failed(format!(
+        "the sandbox could not start the command: {said}"
+    )))
+}
+
+/// `bash` started in `opened`, given `input` on its standard input, which then closes.
+async fn start(
+    opened: &Opened,
+    bash: &mut Program,
+    input: Option<&[u8]>,
+) -> Result<Child, ComputerError> {
+    let mut child = (opened.processes.spawn(bash).await)
         .map_err(|error| ComputerError::Failed(error.to_string()))?;
-    let input = launch.as_ref().and_then(|launch| launch.input.as_deref());
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         // Small (a seccomp filter), so it fits the pipe; a wrapper that failed early and
-        // never reads it is reported by its own output.
+        // never reads it says why on its own output.
         let _ = stdin.write_all(input).await;
     }
-    let stream = Stream::of(&mut child);
-    Ok(Spawned {
-        child,
-        stream,
-        held: Held {
-            _launch: launch,
-            _sandbox: prepared,
-        },
-        started: Instant::now(),
-    })
+    Ok(child)
 }
 
 /// Where a command that reaches its timeout is kept running, when it asks to be: this
@@ -305,7 +353,10 @@ fn bash(
         .any(|(name, value)| name == TOOLCHAINS_IN_SANDBOX && value == "1");
     command
         .arg("-c")
-        .arg(format!("exec 2>&1\n{script}"))
+        .arg(format!(
+            "{}exec 2>&1\n{script}",
+            said_first(sandbox.is_some())
+        ))
         .current_dir(&opened.root)
         .env_clear()
         .envs(own.iter().map(|(name, value)| (name, value.expose())))
@@ -354,13 +405,28 @@ fn bash(
         .env("PAGER", "cat")
         .env("GIT_PAGER", "cat")
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(sandbox_says(sandbox.is_some()));
     if input {
         command.piped_input();
     } else {
         command.no_input();
     }
     command
+}
+
+/// What a sandboxed command's shell says first: that the sandbox started it (`started.rs`).
+fn said_first(sandboxed: bool) -> &'static str {
+    if sandboxed { started::SAY_STARTED } else { "" }
+}
+
+/// Where the shell's own error output goes before it sends it to standard output: to glave,
+/// which hears there whether a sandbox started the command; else nowhere.
+fn sandbox_says(sandboxed: bool) -> Stdio {
+    if sandboxed {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    }
 }
 
 /// How waiting for a command ended.
