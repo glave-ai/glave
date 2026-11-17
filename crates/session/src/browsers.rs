@@ -232,7 +232,7 @@ where
         if let (true, Some(person)) = (with_account(caller), caller.person) {
             return Ok(self.accounts()?.browsers(person).await?);
         }
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
                 Sentence::PasskeysOnlyTheirs,

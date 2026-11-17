@@ -12,22 +12,23 @@ use crate::payload::{
     BrowserSignedIn, BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued,
     CommandEnded, CommandStarted, ConnectionConnected, ConnectionRemoved, ConnectorConnected,
     ConnectorDisconnected, CredentialConnected, CredentialRemoved, CreditsAdded, CreditsCharged,
-    CreditsHeld, CreditsLimitSet, EffortChosen, FiltersSet, GroupingSet, HookRan, InstructionsRead,
-    InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, LibraryKept, LibraryRemoved,
-    MailAsked, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied,
-    MessageAdded, ModelChosen, ModelResponded, OrganizationMade, PasskeyAdded, PasskeyRemoved,
-    PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated,
-    ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, PushClaimed, PushKeyMade,
-    PushSubscribed, PushUnsubscribed, RoleSet, ScheduleCreated, ScheduleDeleted,
-    ScheduleOrganization, SchedulePaused, SchedulePlaced, ScheduleSkipped, SearchSet, SecretAdded,
-    SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted, TaskEnded,
-    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked, ThreadRenamed,
-    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted,
-    TrustDecided, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance,
-    approval, awake, browser, catalog, certificate, chosen, command, connection, connector,
-    credential, credits, filters, fork, grouping, hook, instructions, language, library, memory,
-    message, model, passkey, people, plan, project, provider, push, remembering, search, secrets,
-    service, signup, standing, task, thread, tool, trust, turn, workspace, zone,
+    CreditsHeld, CreditsLimitSet, EffortChosen, FiltersSet, Fired, GroupingSet, HookRan,
+    InstructionsRead, InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, LibraryKept,
+    LibraryRemoved, MailAsked, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved,
+    MemorySet, MemoryTidied, MessageAdded, ModelChosen, ModelResponded, OrganizationMade,
+    PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved,
+    PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved, ProviderConnected,
+    ProviderRemoved, PushClaimed, PushKeyMade, PushSubscribed, PushUnsubscribed, RoleSet,
+    ScheduleCreated, ScheduleDeleted, ScheduleOrganization, SchedulePaused, SchedulePlaced,
+    ScheduleSkipped, SearchSet, SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked,
+    SignupFinished, SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
+    ThreadDeleted, ThreadForked, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
+    ToolCallRequested, ToolCallStarted, TrustDecided, TurnResult, TurnStarted, WorkspaceBound,
+    WorkspaceRemoved, ZoneSet, appearance, approval, awake, browser, catalog, certificate, chosen,
+    command, connection, connector, credential, credits, filters, fork, grouping, hook,
+    instructions, language, library, memory, message, model, passkey, people, plan, project,
+    provider, push, remembering, search, secrets, service, signup, standing, task, thread, tool,
+    trust, turn, workspace, zone,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -82,6 +83,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (task::PAUSED, 1),
     (task::PLACED, 1),
     (task::ORGANIZATION, 1),
+    (task::FIRED, 1),
     (memory::SAVED, 1),
     (memory::EDITED, 1),
     (memory::FORGOTTEN, 1),
@@ -191,6 +193,7 @@ pub enum Body {
     SchedulePaused(SchedulePaused),
     SchedulePlaced(SchedulePlaced),
     ScheduleOrganization(ScheduleOrganization),
+    ScheduleFired(Fired),
     MemorySaved(MemorySaved),
     MemoryEdited(MemoryEdited),
     MemoryForgotten(MemoryForgotten),
@@ -415,6 +418,7 @@ impl Event {
             Body::SchedulePaused(payload) => encode(header, payload),
             Body::SchedulePlaced(payload) => encode(header, payload),
             Body::ScheduleOrganization(payload) => encode(header, payload),
+            Body::ScheduleFired(payload) => encode(header, payload),
             Body::MemorySaved(payload) => encode(header, payload),
             Body::MemoryEdited(payload) => encode(header, payload),
             Body::MemoryForgotten(payload) => encode(header, payload),
@@ -514,10 +518,8 @@ fn decode_connection(
     }
 }
 
-/// Decodes commands in the background, the choices made for a thread, its plan, and the memory, accounts
-/// and project ledgers' types;
-/// `None` for any type that is not one of them.
-/// A schedule's event, by its type; `None` for any other type.
+/// Decodes a schedule's events, and the schedules' index's, by their type; `None` for any other
+/// type.
 fn decode_schedules(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
     match kind {
         task::CREATED => task::decode_created(version, data).map(|r| r.map(Body::ScheduleCreated)),
@@ -528,10 +530,14 @@ fn decode_schedules(kind: &str, version: u32, data: &RawValue) -> Option<serde_j
         task::ORGANIZATION => {
             task::decode_organization(version, data).map(|r| r.map(Body::ScheduleOrganization))
         }
+        task::FIRED => task::decode_fired(version, data).map(|r| r.map(Body::ScheduleFired)),
         _ => None,
     }
 }
 
+/// Decodes commands in the background, the choices made for a thread, its plan, and the memory, accounts
+/// and project ledgers' types;
+/// `None` for any type that is not one of them.
 fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
     match kind {
         command::STARTED => {

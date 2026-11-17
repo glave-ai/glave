@@ -18,8 +18,8 @@ use glave_ports::{BlobStore, EventLog, Located, ModelProvider, OrgId, ProjectId,
 use crate::protocol::ApiError;
 use crate::server::Server;
 
-/// The most projects a server reads from the index: past it, a project's schedules fire once
-/// its person asks this server for anything, as before the index.
+/// The most projects, and the most organizations, a server reads from the index: past it, a
+/// project's schedules fire once its person asks this server for anything, as before the index.
 const MOST_PLACED: usize = 100_000;
 
 /// One stream of the index, as far as this server has read it: what it lists, in order.
@@ -55,33 +55,42 @@ impl<T: Copy + Eq + Hash> Listed<T> {
         }
     }
 
-    /// The `seq` the next event takes, when `item` is not listed yet.
-    fn absent(&self, item: T) -> Option<u64> {
-        (!self.held.contains(&item)).then_some(self.next.max(1))
+    /// The `seq` the next event takes, when `item` is not listed yet and there is `room` for
+    /// it: past the most read, nothing more is listed, since no server would read it.
+    fn absent(&self, item: T, room: bool) -> Option<u64> {
+        (room && !self.held.contains(&item)).then_some(self.next.max(1))
     }
 }
 
-/// The index as far as this server has read it.
+/// The index as far as this server has read it, and how many ticks of the scheduler read it.
 #[derive(Debug, Default)]
 pub(crate) struct Placed {
     organizations: Listed<OrgId>,
     projects: HashMap<OrgId, Listed<ProjectId>>,
+    ticks: usize,
 }
 
 impl Placed {
+    /// Whether what `stream` lists has room for one more, as read so far: organizations, and
+    /// projects across every organization, up to [`MOST_PLACED`] each.
+    fn room(&self, stream: Stream) -> bool {
+        let listed = match stream {
+            Stream::Organizations => self.organizations.items.len(),
+            Stream::Projects(_) => self.projects.values().map(|it| it.items.len()).sum(),
+        };
+        listed < MOST_PLACED
+    }
+
     fn apply(&mut self, stream: Stream, raw: RawEvent) {
+        let room = self.room(stream);
         match stream {
-            Stream::Organizations => self.organizations.apply(raw, true, |body| match body {
-                Body::ScheduleOrganization(listed) => Some(OrgId::from_uuid(listed.org)),
-                _ => None,
-            }),
+            Stream::Organizations => {
+                self.organizations.apply(raw, room, |body| match body {
+                    Body::ScheduleOrganization(listed) => Some(OrgId::from_uuid(listed.org)),
+                    _ => None,
+                });
+            }
             Stream::Projects(org) => {
-                let room = self
-                    .projects
-                    .values()
-                    .map(|it| it.items.len())
-                    .sum::<usize>()
-                    < MOST_PLACED;
                 let listed = self.projects.entry(org).or_default();
                 listed.apply(raw, room, |body| match body {
                     Body::SchedulePlaced(placed) => Some(ProjectId::from_uuid(placed.project)),
@@ -140,6 +149,16 @@ where
         }))
     }
 
+    /// Which organization, counting from the first, this tick of the scheduler starts from:
+    /// one further on each time, so none waits behind the others every time.
+    pub(crate) fn next_turn(&self) -> usize {
+        self.held_placed(|held| {
+            let turn = held.ticks;
+            held.ticks = turn.wrapping_add(1);
+            turn
+        })
+    }
+
     /// Lists the project `at` in its organization's index, and the organization in the store's
     /// list, unless they are listed already: the organization first, so a listed project is
     /// always found.
@@ -147,14 +166,19 @@ where
         let organization = ScheduleOrganization {
             org: at.org.as_uuid(),
         };
-        let listed = |held: &Placed| held.organizations.absent(at.org);
+        let listed = |held: &Placed| {
+            let room = held.room(Stream::Organizations);
+            held.organizations.absent(at.org, room)
+        };
         self.list_once(Stream::Organizations, &organization, listed)
             .await?;
         let placed = SchedulePlaced {
             project: at.project.as_uuid(),
         };
         let listed = |held: &Placed| {
-            (held.projects.get(&at.org)).map_or(Some(1), |listed| listed.absent(at.project))
+            let room = held.room(Stream::Projects(at.org));
+            (held.projects.get(&at.org))
+                .map_or(room.then_some(1), |listed| listed.absent(at.project, room))
         };
         self.list_once(Stream::Projects(at.org), &placed, listed)
             .await

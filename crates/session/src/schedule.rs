@@ -68,7 +68,7 @@ where
             ));
         }
         if let When::Cron(text) = &new.when {
-            Cron::parse(text).map_err(|why| ApiError::new(code::INVALID_PARAMS, why))?;
+            Cron::for_a_schedule(text).map_err(|why| ApiError::new(code::INVALID_PARAMS, why))?;
         }
         if new.budget == 0 {
             return Err(ApiError::new(
@@ -127,12 +127,20 @@ where
     }
 
     /// Reads the task ledger of the project `at` where anyone made a schedule, so the
-    /// summaries of its chats say their schedules.
-    pub(crate) async fn read_schedules_in(&self, at: Located) -> Result<(), ApiError> {
-        if self.has_schedules(at).await? {
-            self.catch_up(at).await?;
+    /// summaries of its chats say their schedules: on a best effort, as a summary of a chat
+    /// whose schedule can't be read now says what was read before, or none, and the chat still
+    /// reads.
+    pub(crate) async fn read_schedules_in(&self, at: Located) {
+        let read = async {
+            if self.has_schedules(at).await? {
+                self.catch_up(at).await?;
+            }
+            Ok::<_, ApiError>(())
+        };
+        if let Err(error) = read.await {
+            let project = at.project;
+            tracing::warn!(%error, %project, "could not read the project's schedules");
         }
-        Ok(())
     }
 
     /// The schedule `chat` is the chat of, in the project `at`, as lists show it: as far as

@@ -31,13 +31,17 @@ use crate::steer::{Message, Sent};
 use crate::turn::{TurnItem, TurnStream};
 use crate::words::Sentence;
 
-/// What a person may run at once and keep scheduled (`[tasks]` in `policy.toml`): no limit
-/// when `None`.
+/// What a person may run at once and keep scheduled (`[tasks]` in `policy.toml`): with no rule,
+/// four tasks at once and any number of schedules.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TaskLimits {
     pub max_running: Option<usize>,
     pub max_schedules: Option<usize>,
 }
+
+/// The tasks a person runs at once where policy sets no `max_running`, decided: each is a copy
+/// of a folder, model calls and commands on one computer (`specs/one-server.md`).
+const MOST_RUNNING: usize = 4;
 
 /// What a task does: one turn with this prompt, with the model and mode chosen with it, if any.
 pub(crate) struct Work(pub(crate) String, pub(crate) Choice);
@@ -89,10 +93,17 @@ pub(crate) fn acting_for(person: Option<PrincipalId>, org: OrgId) -> Caller {
 }
 
 /// The person `by` names, as a task's or a schedule's events record them: none for the server's
-/// own person, whom they leave implied.
-pub(crate) fn whose(by: Option<&Principal>) -> Option<PrincipalId> {
-    by.filter(|by| by.kind == PrincipalKind::Person)
-        .and_then(|by| by.id)
+/// own person, whom they leave implied. Refused for anything but a person with an id, whom glave
+/// could act for only as someone else.
+pub(crate) fn whose(by: Option<&Principal>) -> Result<Option<PrincipalId>, ApiError> {
+    match by {
+        None => Ok(None),
+        Some(Principal {
+            kind: PrincipalKind::Person,
+            id: Some(person),
+        }) => Ok(Some(*person)),
+        Some(_) => Err(ApiError::new(code::NOT_ALLOWED, Sentence::MakerUnknown)),
+    }
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -117,14 +128,13 @@ where
                 Sentence::TaskThreadInFolder,
             ));
         }
-        if let Some(max) = self.inner.limits.max_running {
-            let running = self.running_for(caller.person);
-            if running >= max {
-                return Err(ApiError::new(
-                    code::LIMIT,
-                    Sentence::TooManyTasks { running, most: max },
-                ));
-            }
+        let (running, most) = (self.running_for(caller.person), self.most_running());
+        if running >= most {
+            let said = match self.inner.limits.max_running {
+                Some(_) => Sentence::TooManyTasks { running, most },
+                None => Sentence::TooManyTasksAtOnce { running, most },
+            };
+            return Err(ApiError::new(code::LIMIT, said));
         }
         // Checked before no one answers for the thread, so a turn someone follows keeps its
         // answers.
@@ -480,6 +490,28 @@ where
         person
             .filter(|person| Some(*person) != self.inner.person)
             .map(Principal::person)
+    }
+
+    /// Who glave acts as for `person` on its own, in `org`: [`acting_for`] anyone but the
+    /// server's own person, who stays the person on this computer.
+    pub(crate) fn acting_as(&self, person: Option<PrincipalId>, org: OrgId) -> Caller {
+        acting_for(self.someone_else(person).and_then(|by| by.id), org)
+    }
+
+    /// Whether `caller`, someone glave acts for on its own, was removed from their
+    /// organization: never the server's own person. Refused while its people can't be read,
+    /// never taken for still there.
+    pub(crate) async fn removed_from_org(&self, caller: &Caller) -> Result<bool, ApiError> {
+        let (Some(person), Some(org)) = (caller.person, caller.org) else {
+            return Ok(false);
+        };
+        self.catch_up_people(org).await?;
+        Ok(self.people(org, |people| people.removed(person)))
+    }
+
+    /// The tasks one person may run at once here: policy's `max_running`, else four.
+    pub(crate) fn most_running(&self) -> usize {
+        self.inner.limits.max_running.unwrap_or(MOST_RUNNING)
     }
 
     /// How many tasks of `person`'s this server runs: none for the server's own person.

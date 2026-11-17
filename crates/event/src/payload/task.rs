@@ -2,7 +2,8 @@
 //! project's tasks
 //! (threads that run with no one attached) and the schedules that start them. They are kept in
 //! the project's task ledger, glave's own stream under a reserved id (`specs/events.md`), never
-//! in a conversation. `schedule.placed`: a project with schedules, in its organization's index of
+//! in a conversation. `schedule.fired`: a run a server claimed, before starting it.
+//! `schedule.placed`: a project with schedules, in its organization's index of
 //! them; `schedule.organization`: an organization with schedules, in the store's list of them.
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,7 @@ pub(crate) const SKIPPED: &str = "schedule.skipped";
 pub(crate) const PAUSED: &str = "schedule.paused";
 pub(crate) const PLACED: &str = "schedule.placed";
 pub(crate) const ORGANIZATION: &str = "schedule.organization";
+pub(crate) const FIRED: &str = "schedule.fired";
 
 /// A thread began running as a task, with no one attached.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,7 +48,9 @@ pub struct TaskStarted {
     pub by: Option<Principal>,
 }
 
-/// A schedule's run: which schedule, and when it was due.
+/// A schedule's run: which schedule, and when it was due. As `schedule.fired`, in the task
+/// ledger, a server claimed that run before starting its turn: only the server whose append
+/// lands starts it, so servers on one store never both do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Fired {
@@ -237,6 +241,11 @@ impl Payload for ScheduleDeleted {
     const VERSION: u32 = 1;
 }
 
+impl Payload for Fired {
+    const TYPE: &'static str = FIRED;
+    const VERSION: u32 = 1;
+}
+
 impl Payload for SchedulePlaced {
     const TYPE: &'static str = PLACED;
     const VERSION: u32 = 1;
@@ -287,6 +296,10 @@ pub(crate) fn decode_deleted(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<ScheduleDeleted>> {
+    (version == 1).then(|| parse(data))
+}
+
+pub(crate) fn decode_fired(version: u32, data: &RawValue) -> Option<serde_json::Result<Fired>> {
     (version == 1).then(|| parse(data))
 }
 

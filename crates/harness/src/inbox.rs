@@ -269,6 +269,8 @@ where
                 by_glave: false,
                 id: Some(next.id),
                 key: next.key.as_deref(),
+                // A message sent while a turn ran is someone's, never a schedule's run.
+                scheduled: None,
             };
             let ran = self.run_prompt(thread, prompt, cancel, live).await;
             match ran {

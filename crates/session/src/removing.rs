@@ -99,10 +99,12 @@ where
         self.stop_commands(commands).await;
         // Their terminals too: their shells, on their own computer, which no one could reach.
         self.close_terminals_of(org, person).await;
+        // Their schedules go first, so a failure after them leaves none to fire; asking again
+        // finishes the rest.
+        self.delete_schedules_of(org, person, &by).await?;
         if let Some(accounts) = self.inner.accounts.as_deref() {
             accounts.leave(person, org).await?;
         }
-        self.delete_schedules_of(org, person, &by).await?;
         Ok(Reply::Done {})
     }
 

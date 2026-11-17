@@ -164,7 +164,7 @@ where
         organization: Option<OrgId>,
     ) -> Result<Reply, ApiError> {
         let credits = self.credits()?;
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
                 Sentence::OperatorAddsCredits,
@@ -212,7 +212,7 @@ where
     /// made, the newest [`MOST_LISTED`], each with its person's name and its balance.
     pub(crate) async fn list_credits(&self, caller: &Caller) -> Result<Reply, ApiError> {
         let credits = self.credits()?;
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
                 Sentence::OperatorAddsCredits,

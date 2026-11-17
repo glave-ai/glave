@@ -63,6 +63,7 @@ where
             by_glave,
             id,
             key,
+            scheduled,
         } = prompt;
         // Where it works now that its project's folder moved, before the turn that works there.
         if let Some(bound) = thread.rebound.take() {
@@ -72,8 +73,7 @@ where
         }
         // What ended in the background since the last turn is recorded before this one.
         self.check_commands(thread).await?;
-        let sent_to = self.model_for(thread);
-        let provider = self.current_default().provider;
+        let (sent_to, provider) = (self.model_for(thread), self.current_default().provider);
         let config = self
             .store_config(thread, offer, &sent_to, &provider)
             .await?;
@@ -94,7 +94,7 @@ where
             text: prompt.to_owned(),
         });
         parts.extend_from_slice(files);
-        let (mut events, scheduled) = (Vec::new(), thread.due.take());
+        let mut events = Vec::new();
         self.stage(
             thread,
             &mut events,
