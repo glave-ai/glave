@@ -23,6 +23,8 @@ mod nested_repository;
 
 mod own_settings;
 
+mod startup;
+
 mod stores;
 
 pub(super) mod terminals;

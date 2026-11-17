@@ -229,9 +229,11 @@ impl Workspace {
             )));
         }
         if finished.ending != (Ending::Exited { code: 0 }) || temp.is_empty() {
-            return Err(ComputerError::Failed(format!(
-                "a command in the sandbox did not run: {temp}"
-            )));
+            return Err(ComputerError::Failed(if temp.is_empty() {
+                "a command in the sandbox did not run, and said nothing".to_owned()
+            } else {
+                format!("a command in the sandbox did not run: {temp}")
+            }));
         }
         self.temp = Some(PathBuf::from(temp));
         self.sandbox = Some(sandbox.clone());

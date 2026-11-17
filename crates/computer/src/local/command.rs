@@ -10,11 +10,11 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_ports::Cancellation;
 use glave_ports::computer::{
     Command, CommandId, ComputerError, Ending, Finished, GitCredentials, OnTimeout, Output,
     Refusal, WorkspaceId,
 };
+use glave_ports::{Cancellation, OsEntropy};
 use glave_process::{Child, Program};
 use tokio::io::AsyncWriteExt as _;
 use tokio::process::ChildStderr;
@@ -25,7 +25,7 @@ use super::credentials::{Offered, offer};
 use super::process::Stream;
 use super::registry::{Opened, new_id};
 use super::sandbox::{Launch, Prepared};
-use started::Started;
+use started::{Line, Start, Tried};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
@@ -147,19 +147,18 @@ pub(crate) struct Held {
     _said: Option<ChildStderr>,
 }
 
-/// How many sandboxes are made for one command, each from a fresh look, while the last
-/// started nothing: a place it hid went away as it was made (`started.rs`).
-const SANDBOXES: usize = 3;
-
 /// Starts `command` by bash in `opened`, in its sandbox when it has one, its git asking
 /// `offered`'s helper when given. `helper` runs the Linux sandbox's helper, if this machine
-/// has one. A sandboxed command is started only once the sandbox says it runs; one that never
-/// does fails, saying what the sandbox said.
+/// has one. A sandboxed command is handed back once its shell says it runs inside, or may
+/// (`started.rs`); one its sandbox says it could not start fails, saying what the sandbox said,
+/// unless bubblewrap's, made again from a fresh look, starts it. A cancel meanwhile hands it
+/// back as it is, for whoever waits on it to stop.
 pub(crate) async fn spawn(
     opened: &Opened,
     command: &Command,
     helper: Option<&Path>,
     offered: Option<&Offered>,
+    cancel: &dyn Cancellation,
 ) -> Result<Spawned, ComputerError> {
     if command.script.trim().is_empty() {
         return Err(ComputerError::Refused(Refusal::EmptyCommand.into()));
@@ -168,38 +167,42 @@ pub(crate) async fn spawn(
         let child = start(opened, &mut bash(opened, command, None, offered), None).await?;
         return Ok(Spawned::of(child, Held::default()));
     };
-    let prepared = opened.sandbox(sandbox, helper).await?;
-    let mut said = String::new();
-    for _ in 0..SANDBOXES {
-        // Planned afresh: a place gone since the last was made is no longer hidden.
-        let launch = prepared.launch().await?;
-        let mut bash = bash(opened, command, Some((&launch, prepared.as_ref())), offered);
-        let mut child = start(opened, &mut bash, launch.input.as_deref()).await?;
-        match started::wait(&mut child).await {
-            Started::Yes(output) => {
-                let held = Held {
-                    _launch: Some(launch),
-                    _sandbox: Some(prepared),
-                    _said: output,
-                };
-                return Ok(Spawned::of(child, held));
-            }
-            Started::Ended(ended) => {
-                child.stop().await;
-                said = ended;
-            }
-            Started::Late => {
-                child.stop().await;
-                return Err(ComputerError::Failed(format!(
-                    "the sandbox did not start the command within {}",
-                    glave_ports::spoken(started::WITHIN)
-                )));
-            }
+    let prepared = &opened.sandbox(sandbox, helper).await?;
+    started::until_started(move || launched(opened, command, prepared, offered, cancel)).await
+}
+
+/// One try at starting `command` in `prepared`, made from a fresh look: a place gone since the
+/// last try is no longer hidden.
+async fn launched(
+    opened: &Opened,
+    command: &Command,
+    prepared: &Arc<Prepared>,
+    offered: Option<&Offered>,
+    cancel: &dyn Cancellation,
+) -> Result<Tried<Spawned>, ComputerError> {
+    let launch = prepared.launch().await?;
+    let line = Line::new(&OsEntropy).map_err(|error| ComputerError::Failed(error.to_string()))?;
+    let mut bash = bash(opened, command, Some((&launch, prepared, &line)), offered);
+    let mut child = start(opened, &mut bash, launch.input.as_deref()).await?;
+    let mut said = child.stderr.take();
+    // None when cancelled meanwhile, or when there is no output to hear it on.
+    let heard = match said.as_mut() {
+        Some(said) => {
+            let waited = started::wait(said, &line, launch.refuses, started::WITHIN);
+            glave_ports::unless_cancelled(cancel, waited).await
         }
+        None => None,
+    };
+    if let Some(Start::NeverRan { said, again }) = heard {
+        child.stop().await;
+        return Ok(Tried::NeverRan { said, again });
     }
-    Err(ComputerError::Failed(format!(
-        "the sandbox could not start the command: {said}"
-    )))
+    let held = Held {
+        _launch: Some(launch),
+        _sandbox: Some(Arc::clone(prepared)),
+        _said: said,
+    };
+    Ok(Tried::Runs(Spawned::of(child, held)))
 }
 
 /// `bash` started in `opened`, given `input` on its standard input, which then closes.
@@ -260,7 +263,7 @@ pub(crate) async fn run(
         .then(|| new_id().map(CommandId::from_uuid))
         .transpose()?;
     let before = super::pressure::counted(keep.cgroup).await;
-    let mut spawned = spawn(opened, command, helper, offered.as_ref()).await?;
+    let mut spawned = spawn(opened, command, helper, offered.as_ref(), cancel).await?;
     let waited = {
         let pump = spawned.stream.pump(output);
         let waiting = answering(
@@ -330,12 +333,12 @@ async fn answering<T>(
 fn bash(
     opened: &Opened,
     command: &Command,
-    sandbox: Option<(&Launch, &Prepared)>,
+    sandbox: Option<(&Launch, &Prepared, &Line)>,
     offered: Option<&Offered>,
 ) -> Program {
     let (script, own) = (&command.script, &command.env);
     let mut command = match sandbox {
-        Some((launch, _)) => {
+        Some((launch, _, _)) => {
             let mut command = Program::new(&launch.program);
             command.args(&launch.args).arg("bash");
             if launch.own_session {
@@ -345,8 +348,8 @@ fn bash(
         }
         None => Program::new("bash"),
     };
-    let input = sandbox.is_some_and(|(launch, _)| launch.input.is_some());
-    let caches = sandbox.map(|(launch, prepared)| prepared.caches(launch));
+    let input = sandbox.is_some_and(|(launch, _, _)| launch.input.is_some());
+    let caches = sandbox.map(|(launch, prepared, _)| prepared.caches(launch));
     let toolchains = opened
         .environment
         .iter()
@@ -355,13 +358,13 @@ fn bash(
         .arg("-c")
         .arg(format!(
             "{}exec 2>&1\n{script}",
-            said_first(sandbox.is_some())
+            said_first(sandbox.map(|(_, _, line)| line))
         ))
         .current_dir(&opened.root)
         .env_clear()
         .envs(own.iter().map(|(name, value)| (name, value.expose())))
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
-        .envs(sandbox.map(|(launch, _)| ("TMPDIR", launch.temp.path().to_path_buf())))
+        .envs(sandbox.map(|(launch, _, _)| ("TMPDIR", launch.temp.path().to_path_buf())))
         .envs(caches.iter().flat_map(|caches| {
             CACHES
                 .iter()
@@ -414,9 +417,9 @@ fn bash(
     command
 }
 
-/// What a sandboxed command's shell says first: that the sandbox started it (`started.rs`).
-fn said_first(sandboxed: bool) -> &'static str {
-    if sandboxed { started::SAY_STARTED } else { "" }
+/// What a sandboxed command's shell says first, `line`: that it runs inside (`started.rs`).
+fn said_first(line: Option<&Line>) -> String {
+    line.map(Line::said_first).unwrap_or_default()
 }
 
 /// Where the shell's own error output goes before it sends it to standard output: to glave,
