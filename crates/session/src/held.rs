@@ -365,6 +365,9 @@ where
             // anything still waiting, which only work that ended early leaves, is given back.
             // A turn that stopped at a wait keeps what was sent to it for when it goes on.
             let waits = matches!(result, Err(HarnessError::Waits(_)));
+            // A turn the person stopped owes the look over what it made: made once it has ended,
+            // so its files don't wait for their next message.
+            let owes = matches!(purpose, Use::Steered | Use::Answer) && held.owes_look();
             let (unread, gone) = {
                 let mut threads = inner.threads.lock().unwrap_or_else(PoisonError::into_inner);
                 let unread = if matches!(purpose, Use::Steered | Use::Answer) && !waits {
@@ -384,6 +387,9 @@ where
             // Kept even when no one is following any more: a retry may still ask for it.
             done.send_replace(Some(Arc::new(result)));
             server.let_go_of(gone).await;
+            if owes && !server.is_stopping() {
+                server.record_idle(thread, true).await;
+            }
         });
         let mut tasks = self
             .inner

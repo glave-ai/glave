@@ -22,7 +22,7 @@ use std::time::Duration;
 use glave_event::AssetKind;
 use glave_event::{FileMade, MadeLeft, RawEvent, TurnMade};
 use glave_ports::computer::Glob;
-use glave_ports::{BlobStore, EventLog, ModelProvider, Standing};
+use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::time::Instant;
 
 use crate::approval::Approver;
@@ -91,7 +91,7 @@ where
     /// The files `thread`'s turn made, as it ends: none unless it called a tool that can change
     /// files there. Where it stops, and whether the rest is owed, becomes the thread's mark. Read
     /// apart from glave until the look-over's deadline; once `cancel` stops the turn, the look is
-    /// owed, and the next turn's start makes it.
+    /// owed, made once the turn has ended (`Thread::owes_look`) or at the next turn's start.
     pub(crate) async fn made_by_turn(&self, thread: &mut Thread, cancel: &Cancel) -> Found {
         let Some(turn) = thread.turn_open.take().filter(|turn| turn.works) else {
             return Found::default();
@@ -135,10 +135,7 @@ where
         events: &mut Vec<RawEvent>,
         cancel: &Cancel,
     ) -> Result<(), HarnessError> {
-        let looks = thread.home.is_none()
-            && thread.standing == Standing::Active
-            && !thread.commands.any_running();
-        let Some(mark) = thread.made_mark.filter(|mark| mark.owed && looks) else {
+        let Some(mark) = thread.owed_mark() else {
             return Ok(());
         };
         let reading = self.reading(cancel.clone());
@@ -172,7 +169,7 @@ where
         let _place = stop
             .run(tokio::time::timeout(WAITS_TO_LOOK, place))
             .await?
-            .ok()?;
+            .ok()??;
         if thread.commands.any_running() {
             thread.commands.check().await;
         }

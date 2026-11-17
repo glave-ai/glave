@@ -5,11 +5,17 @@
 pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     (
         "crates/harness/src/shares.rs",
+        "let place = self.places.acquire().await.ok()?;",
+        1,
+        "a server's place, which every caller waits for within its own limit: a look-over \
+         within WAITS_TO_LOOK (glave-harness's made.rs)",
+    ),
+    (
+        "crates/harness/src/shares.rs",
         "let freed = self.freed.notified();",
         1,
         "a place among the server's, which every caller waits for within its own limit: a \
-         look-over within WAITS_TO_LOOK (glave-harness's made.rs), a reader of a file a turn \
-         made within its look-over's deadline (READING_FOR there)",
+         look-over within WAITS_TO_LOOK (glave-harness's made.rs)",
     ),
     (
         "crates/cli/src/providers/endpoints.rs",

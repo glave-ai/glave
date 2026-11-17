@@ -44,7 +44,7 @@ export class MadeFilesService {
   constructor() {
     effect(() => {
       const thread = this.thread.thread();
-      const making = this.thread.making();
+      const making = this.thread.made.changed();
       untracked(() => {
         if (thread !== null && making !== null) {
           void this.refresh();

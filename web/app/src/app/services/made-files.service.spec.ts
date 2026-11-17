@@ -160,6 +160,6 @@ describe('MadeFilesService', () => {
     await settle();
     expect(made.failed()).toBe(true);
     expect(made.byTurn()).toBeNull();
-    expect(thread.madeLater().get(1)?.files).toEqual(later.made);
+    expect(thread.made.later().get(1)?.files).toEqual(later.made);
   });
 });

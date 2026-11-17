@@ -8,7 +8,7 @@ use std::sync::Arc;
 use glave_event::Parts;
 use serde::{Deserialize, Serialize};
 
-use crate::{BoxFuture, OrgId};
+use crate::BoxFuture;
 
 /// What reading a file a turn made found, as the process that read it prints it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,8 +28,7 @@ pub struct MadeRead {
     pub cut: bool,
 }
 
-/// Reads a file a turn made in an organization, given its bytes and its media type: `None` when
-/// it couldn't be read, in time or at all. The organization is whose share of the readers it
-/// takes.
+/// Reads a file a turn made, given its bytes and its media type: `None` when it couldn't be
+/// read, in time or at all.
 pub type ReadMade =
-    Arc<dyn Fn(OrgId, Vec<u8>, String) -> BoxFuture<'static, Option<MadeRead>> + Send + Sync>;
+    Arc<dyn Fn(Vec<u8>, String) -> BoxFuture<'static, Option<MadeRead>> + Send + Sync>;

@@ -56,7 +56,7 @@ fn what_is_read_of_a_file_is_kept_with_it_and_a_file_that_could_not_be_read_is_k
     std::fs::write(dir.join("plan.csv"), "Item,Total\nFlights,780\n").unwrap();
     std::fs::write(dir.join("broken.csv"), "unreadable").unwrap();
     block_on!(async {
-        let reader: ReadMade = Arc::new(|_, bytes, media_type| {
+        let reader: ReadMade = Arc::new(|bytes, media_type| {
             Box::pin(async move {
                 let readable = bytes.starts_with(b"Item") && media_type == "text/csv";
                 readable.then(|| MadeRead {
@@ -128,7 +128,7 @@ fn a_file_whose_reading_shows_a_secret_its_bytes_never_held_whole_is_left_on_the
     std::fs::write(dir.join("clean.docx"), "<w:t>nothing to hide</w:t>").unwrap();
     block_on!(async {
         let shown = value.clone();
-        let reader: ReadMade = Arc::new(move |_, bytes, _| {
+        let reader: ReadMade = Arc::new(move |bytes, _| {
             let shown = shown.clone();
             Box::pin(async move {
                 let text = String::from_utf8(bytes).ok()?;
@@ -198,7 +198,7 @@ impl ModelProvider for WritesThenStops {
 
 /// A reader that reads every file, as far as it is asked to.
 fn reads_all() -> ReadMade {
-    Arc::new(|_, _, _| Box::pin(async { Some(MadeRead::default()) }))
+    Arc::new(|_, _| Box::pin(async { Some(MadeRead::default()) }))
 }
 
 #[test]
@@ -247,7 +247,7 @@ fn a_turn_stopped_while_its_files_are_read_ends_at_once_owing_its_look() {
         let cancel = Cancel::new();
         // The person stops the turn while its file is read, by a reader that never ends.
         let stopping = cancel.clone();
-        let reader: ReadMade = Arc::new(move |_, _, _| {
+        let reader: ReadMade = Arc::new(move |_, _| {
             stopping.cancel();
             Box::pin(pending())
         });
@@ -277,7 +277,7 @@ fn files_past_the_look_over_s_deadline_are_kept_unread() {
     let dir = folder("made-deadline");
     std::fs::write(dir.join("plan.csv"), "Item,Total\n").unwrap();
     block_on!(async {
-        let hangs: ReadMade = Arc::new(|_, _, _| Box::pin(pending()));
+        let hangs: ReadMade = Arc::new(|_, _| Box::pin(pending()));
         let (harness, _) = harness_with(
             workspace(&dir).await,
             vec![bash("true"), done()],

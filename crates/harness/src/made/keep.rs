@@ -78,7 +78,7 @@ where
         }
         let read = match (&self.reader, reading) {
             (Some(reader), Some(reading)) => {
-                let read = reader(thread.scope.org(), bytes.clone(), media_type.to_owned());
+                let read = reader(bytes.clone(), media_type.to_owned());
                 tokio::time::timeout_at(reading.until, read)
                     .await
                     .ok()
