@@ -50,7 +50,7 @@ export type ApiError = {
 export type AssetId = string;
 
 /** What kind of thing a Library item is, which a client filters by. */
-export type AssetKind = "picture";
+export type AssetKind = "pdf" | "picture" | "document" | "spreadsheet" | "deck" | "other";
 
 /**
  * When an event was recorded, in UTC at millisecond precision. For people only: events are
@@ -78,6 +78,13 @@ export type AwakeInfo = {
 } | {
   readonly kind: "cannot";
   readonly reason: string;
+};
+
+/** Points to content held in the blob store instead of inside an event. */
+export type BlobRef = {
+  readonly bytes: number;
+  readonly media_type: string;
+  readonly sha256: string;
 };
 
 /** Links a tool call to its result: 1 to 128 printable ASCII characters. */
@@ -538,6 +545,21 @@ export type FileInfo = {
 };
 
 /**
+ * A file a turn made, as its `turn.ended` records it: where it was made, its size, its content
+ * kept for the thread or why it was not, and what glave read of it. The model never sees it;
+ * the person opens and downloads it.
+ */
+export type FileMade = {
+  /** Its size on the computer. */
+  readonly bytes: number;
+  readonly kept: Kept;
+  /** Where it was made, relative to the thread's folder. */
+  readonly path: string;
+  /** What glave read of it apart from itself, once kept; absent when it couldn't be read. */
+  readonly read?: FileRead | null;
+};
+
+/**
  * A piece of a file a thread holds, as `file/read` answers it: read a piece at a time, so a
  * file of any size comes within the 16 MiB a message may be on every transport.
  */
@@ -552,6 +574,23 @@ export type FilePiece = {
   readonly next?: number | null;
   /** Where in the file this piece starts. */
   readonly offset: number;
+};
+
+/** A file a thread made, as a person previews it. */
+export type FilePreview = {
+  /** What was left out, in the server's sentence, when the preview is not the whole file. */
+  readonly cut?: string | null;
+  readonly markdown: string;
+};
+
+/** What glave read of a file a turn made, in a process of its own. */
+export type FileRead = {
+  /** How many pages, sheets or slides it has, when that is known. */
+  readonly parts?: Parts | null;
+  /** Its preview, when glave previews a file of its kind. */
+  readonly preview?: MadePreview | null;
+  /** The title its own properties give it, when they give one that names it. */
+  readonly title?: string | null;
 };
 
 /**
@@ -642,6 +681,11 @@ export type InviteInfo = {
 /** How the one who holds an invite joins the organization it is to. */
 export type JoinWay = "passkey" | "company" | "accept" | "member";
 
+/** Whether a file a turn made was kept for the thread. */
+export type Kept = {
+  readonly blob: BlobRef;
+} | "too_large" | "secret" | "unchecked";
+
 /** The chat a Library item was made in. */
 export type LibraryChat = {
   readonly thread: ThreadId;
@@ -703,6 +747,58 @@ export type Logo = {
   readonly data: string;
   readonly media_type: string;
   readonly sha256: string;
+};
+
+/**
+ * A file a turn made for the person: kept with the thread, so it opens and downloads after the
+ * computer that made it is gone, or left there, said why.
+ */
+export type MadeFile = {
+  /** Its size. */
+  readonly bytes: number;
+  /** The name its file is saved as. */
+  readonly file_name: string;
+  /** Where it is kept, or why it was not, in a sentence: "Kept with this chat". */
+  readonly kept: string;
+  readonly kind: AssetKind;
+  /** Its media type, such as `application/pdf`. */
+  readonly media_type: string;
+  /** What it is called: the title it gives itself, else its file's name without its end. */
+  readonly name: string;
+  /** How many pages, sheets or slides it has, in a phrase ("2 sheets"), when that is known. */
+  readonly parts?: string | null;
+  /**
+   * Whether `file/preview` previews it (a spreadsheet, a CSV file, a document or a deck
+   * glave read), or a client draws it (a PDF glave read); false for any other, which only
+   * downloads.
+   */
+  readonly previews: boolean;
+  /** What was made, in one line: "Made a spreadsheet: Trip budget (2 sheets)". */
+  readonly sentence: string;
+  /**
+   * Its content's SHA-256, which `file/read` and `file/preview` read it by; absent when it
+   * was not kept.
+   */
+  readonly sha256?: string | null;
+  /** Why it can't be shown, only downloaded, when glave kept it but couldn't read it. */
+  readonly unread?: string | null;
+};
+
+/** What the files a turn made leave out. */
+export type MadeLeft = {
+  readonly files: number;
+  readonly kind: "more";
+} | {
+  readonly kind: "too_many";
+} | {
+  readonly kind: "waits";
+};
+
+/** A file's preview: Markdown, kept for the thread as the file is. */
+export type MadePreview = {
+  readonly blob: BlobRef;
+  /** Whether it leaves out some of the file. */
+  readonly cut?: boolean;
 };
 
 /** The most a provider's tokens may cost, in billionths of a US dollar per million tokens. */
@@ -872,6 +968,15 @@ export type OriginKind = string;
 
 /** How a turn ended. */
 export type Outcome = "completed" | "cancelled" | "failed" | "interrupted" | "limit_reached";
+
+/** How many of its parts a file has: a document's pages, a workbook's sheets, a deck's slides. */
+export type Parts = {
+  readonly pages: number;
+} | {
+  readonly sheets: number;
+} | {
+  readonly slides: number;
+};
 
 /** A passkey that signs the person in. */
 export type PasskeySummary = {
@@ -1589,6 +1694,17 @@ export type TurnChanges = {
   readonly turn: Seq;
 };
 
+/** The files one turn made, in path order, by the `seq` of its `turn.started`. */
+export type TurnFiles = {
+  readonly files: readonly (MadeFile)[];
+  /**
+   * What `files` leave out, in a sentence, when they leave something out: more than a turn
+   * keeps, a folder too large to look over, or what a command still running may make.
+   */
+  readonly note?: string | null;
+  readonly turn: Seq;
+};
+
 /**
  * A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.
  * It is what a client that ran the turn is answered with too, so every client reads the same.
@@ -1611,6 +1727,18 @@ export type TurnResult = {
    * reported it.
    */
   readonly estimated?: boolean;
+  /**
+   * The files it made for the person: each document, spreadsheet, deck or PDF in no hidden
+   * folder of the thread's, changed since it started, in path order, kept for the thread or
+   * said why not (`session.md`, "Files it made"). Absent when it made none.
+   */
+  readonly made?: readonly (FileMade)[];
+  /**
+   * What `made` leaves out, when it leaves something out: more files than a turn keeps, a
+   * folder too large to look over, or a command still running in the background, which a
+   * `turn.made` follows up.
+   */
+  readonly made_left?: MadeLeft | null;
   readonly model_calls?: number;
   readonly outcome: Outcome;
   /** The commands that ran outside the sandbox, each one allowed. */
@@ -2087,6 +2215,16 @@ export type CreditsListParams = Readonly<Record<string, never>>;
 /** The personal spaces sign-ups made, newest first, with their balances. */
 export type CreditsListResult = {
   readonly spaces: readonly (SpaceCredits)[];
+};
+
+export type FilePreviewParams = {
+  readonly sha256: string;
+  readonly thread: ThreadId;
+};
+
+/** A file a thread made, as a person previews it. */
+export type FilePreviewResult = {
+  readonly preview: FilePreview;
 };
 
 export type FileReadParams = {
@@ -3018,6 +3156,15 @@ export type ThreadEventsResult = {
   readonly next?: Seq | null;
 };
 
+export type ThreadFilesParams = {
+  readonly thread: ThreadId;
+};
+
+/** The files a thread's turns made for the person. */
+export type ThreadFilesResult = {
+  readonly made: readonly (TurnFiles)[];
+};
+
 export type ThreadForkParams = {
   readonly at?: Seq | null;
   readonly thread: ThreadId;
@@ -3290,6 +3437,7 @@ export interface Methods {
   readonly "credits/get": { readonly params: CreditsGetParams; readonly result: CreditsGetResult };
   readonly "credits/limit": { readonly params: CreditsLimitParams; readonly result: CreditsLimitResult };
   readonly "credits/list": { readonly params: CreditsListParams; readonly result: CreditsListResult };
+  readonly "file/preview": { readonly params: FilePreviewParams; readonly result: FilePreviewResult };
   readonly "file/read": { readonly params: FileReadParams; readonly result: FileReadResult };
   readonly "file/upload": { readonly params: FileUploadParams; readonly result: FileUploadResult };
   readonly "filters/get": { readonly params: FiltersGetParams; readonly result: FiltersGetResult };
@@ -3379,6 +3527,7 @@ export interface Methods {
   readonly "thread/compact": { readonly params: ThreadCompactParams; readonly result: ThreadCompactResult };
   readonly "thread/delete": { readonly params: ThreadDeleteParams; readonly result: ThreadDeleteResult };
   readonly "thread/events": { readonly params: ThreadEventsParams; readonly result: ThreadEventsResult };
+  readonly "thread/files": { readonly params: ThreadFilesParams; readonly result: ThreadFilesResult };
   readonly "thread/fork": { readonly params: ThreadForkParams; readonly result: ThreadForkResult };
   readonly "thread/get": { readonly params: ThreadGetParams; readonly result: ThreadGetResult };
   readonly "thread/list": { readonly params: ThreadListParams; readonly result: ThreadListResult };

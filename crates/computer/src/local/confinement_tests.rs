@@ -196,6 +196,7 @@ fn leaks(computers: &LocalComputers, at: WorkspaceId, rt: &tokio::runtime::Runti
         pattern: "*".into(),
         path: ".".into(),
         limit: 1_000,
+        ..Glob::default()
     };
     if let Ok(globbed) = rt.block_on(computers.glob(at, &glob)) {
         seen.extend(globbed.files);

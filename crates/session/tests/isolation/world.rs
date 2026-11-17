@@ -158,13 +158,17 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     );
     let browsers = Arc::new(browsers.await.unwrap());
     // A task for each person it serves (the first serves the third organization's two too),
-    // a picture each draws in their Chats, then two held turns in the first organization: one
-    // asks to run a command, one asks a question.
+    // a picture each draws in their Chats and a sheet each makes there, then two held turns in
+    // the first organization: one asks to run a command, one asks a question.
     let people = if n == 1 { 4 } else { 2 };
     let mut answers: Vec<_> = (0..people).map(|_| answer(Some("Done."), None)).collect();
-    for _ in 0..people {
+    for each in 0..people {
         let draw = json!({"prompt": "a fox"});
         answers.push(answer(None, Some(("image_generate", draw))));
+        // Each sheet its own, so no two people's files are one blob.
+        let content = format!("Item,Total\nsheet {n}-{each}");
+        let sheet = json!({"path": "sheet.csv", "content": content});
+        answers.push(answer(None, Some(("write", sheet))));
         answers.push(answer(Some("Here it is."), None));
     }
     if n == 1 {
@@ -184,6 +188,7 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     setup.memory = Some(Arc::new(GlaveMemory::start(memories).await.unwrap()));
     setup.browsers = Some(Arc::clone(&browsers));
     setup.identity_provider = true;
+    setup.reader = Some(previews());
     let pusher = glave_push::Pusher::new("mailto:ops@example.com").unwrap();
     let pushing = glave_session::Pushing::new(pusher, Arc::clone(&parts.eraser));
     setup.push = Some(Arc::new(pushing));
@@ -357,8 +362,20 @@ pub(super) fn words_of(name: &str) -> [String; 7] {
     ]
 }
 
-/// A picture `person` has glave draw in their Chats, its call approved as they would, kept in
-/// their Library.
+/// What reads the files a turn makes in the world: each is previewed as its text.
+fn previews() -> glave_ports::ReadMade {
+    Arc::new(|_, bytes, _| {
+        Box::pin(async move {
+            Some(glave_ports::MadeRead {
+                markdown: Some(String::from_utf8_lossy(&bytes).into_owned()),
+                ..glave_ports::MadeRead::default()
+            })
+        })
+    })
+}
+
+/// A picture `person` has glave draw in their Chats and a sheet it makes there, each call
+/// approved as they would; the picture kept in their Library, the sheet with the chat.
 async fn draw<L: EventLog + 'static>(org: &Org<L>, person: &mut Person) {
     let chat = person.ids[&Kind::Thread][1].clone();
     let prompt = format!("draw {}'s fox", person.name);
@@ -367,10 +384,29 @@ async fn draw<L: EventLog + 'static>(org: &Org<L>, person: &mut Person) {
     else {
         panic!("{} draws in a turn of its own", person.name);
     };
-    let approval = waiting(&mut stream).await;
-    let allow = json!({"thread": chat, "approval": approval, "decision": "allow_once"});
-    called(org, &person.caller, "approval/decide", allow).await;
-    stream.finish().await.unwrap();
+    // Each call that asks is allowed, as the person would: the picture always asks.
+    while let Some(item) = stream.next().await {
+        let note = match item {
+            TurnItem::Note(note) => note,
+            TurnItem::Ended(ended) => {
+                ended.unwrap();
+                break;
+            }
+            TurnItem::Missed(_) => continue,
+        };
+        if let Notification::Live {
+            update: Update::ApprovalPending { approval },
+            ..
+        } = note.as_ref()
+        {
+            let allow = json!({"thread": chat, "approval": approval, "decision": "allow_once"});
+            called(org, &person.caller, "approval/decide", allow).await;
+        }
+    }
+    let files = called(org, &person.caller, "thread/files", json!({"thread": chat})).await;
+    let made = files["made"][0]["files"][0]["sha256"].clone();
+    assert!(made.is_string(), "{} made no sheet: {files}", person.name);
+    person.keep(Kind::Made, made);
     let listed = called(org, &person.caller, "library/list", json!({})).await;
     let asset = listed["items"][0]["asset"].clone();
     assert!(asset.is_string(), "{} drew no picture", person.name);

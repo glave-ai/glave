@@ -17,7 +17,7 @@ use glave_ports::computer::{ComputerId, WorkspaceId};
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{BlobStore, Caller, EventLog, Message, ModelProvider, Scope, ToolSource};
-use glave_ports::{Clock, Entropy, Payer, Standing};
+use glave_ports::{Clock, Entropy, Payer, ReadMade, Standing};
 use jiff::Timestamp;
 
 use crate::approval::Approver;
@@ -107,6 +107,11 @@ pub struct Harness<P, L, B, A> {
     /// Where the commands on each person's own computer ask for credentials: theirs. None by
     /// default, so only the harness's person's computer gets the workspace's.
     pub(crate) credentials_of: Option<CredentialsOf>,
+    /// What reads each file a turn made apart from glave, for its title, parts and preview;
+    /// none by default, so files are kept unread.
+    pub(crate) reader: Option<ReadMade>,
+    /// The longest the files of one look-over are read for, in all (`made.rs`).
+    pub(crate) reading_for: std::time::Duration,
     /// What threads remember from one to the next; none by default, so the model is sent
     /// exactly what it is sent without memory.
     pub(crate) memory: Option<Arc<dyn Memory>>,
@@ -193,6 +198,11 @@ pub struct Thread {
     /// How its log, as it was read, left its turn: waiting, or left open by a glave that
     /// stopped (`waits.rs`); `None` when no turn was open.
     pub(crate) opened: Option<Opened>,
+    /// The turn open on it, as what the turn made is told (`made.rs`): as its log has it.
+    pub(crate) turn_open: Option<crate::made::TurnOpen>,
+    /// Where its last look-over stopped while a command of its still ran, which the next starts
+    /// from (`made.rs`): as its log has it.
+    pub(crate) made_mark: Option<crate::made::Mark>,
     /// Where it works now that its project's folder moved, which its next turn records.
     pub(crate) rebound: Option<WorkspaceBound>,
     /// Where it works on its person's own computer, when it does: opened there again at a
@@ -330,6 +340,8 @@ where
             learned_windows: LearnedWindows::default(),
             homes: None,
             credentials_of: None,
+            reader: None,
+            reading_for: crate::made::READING_FOR,
             memory: None,
             project_folders: None,
             lingering: Mutex::default(),
@@ -380,6 +392,22 @@ where
         let sandbox = homes.as_ref().and_then(|homes| homes.sandbox());
         self.change_defaults(|defaults| defaults.home_sandbox = sandbox);
         self.homes = homes;
+        self
+    }
+
+    /// Reads each file a turn made with `reader`, apart from glave, for its title, its parts
+    /// and its preview.
+    #[must_use]
+    pub fn with_reader(mut self, reader: Option<ReadMade>) -> Self {
+        self.reader = reader;
+        self
+    }
+
+    /// Reads the files of one look-over for at most `within`, in all, in place of 30 seconds:
+    /// past it, the rest are kept unread.
+    #[must_use]
+    pub fn reading_within(mut self, within: std::time::Duration) -> Self {
+        self.reading_for = within;
         self
     }
 
@@ -624,6 +652,8 @@ where
             inbox: Inbox::default(),
             commands: Arc::default(),
             opened: None,
+            turn_open: None,
+            made_mark: None,
             rebound: None,
             home: crate::homes::at_home(bound.as_ref()),
             prefix: Prefixed::None,

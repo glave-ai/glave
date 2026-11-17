@@ -53,10 +53,12 @@ pub(super) enum Kind {
     Asset,
     /// A file a person keeps, by its content's hash, as `file/read` names one a thread holds.
     Sha,
+    /// A file a person's turn made, kept with its preview.
+    Made,
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 22] = [
+    pub(super) const ALL: [Self; 23] = [
         Self::Thread,
         Self::Project,
         Self::Approval,
@@ -79,6 +81,7 @@ impl Kind {
         Self::Device,
         Self::Asset,
         Self::Sha,
+        Self::Made,
     ];
 
     /// How a template writes it.
@@ -106,6 +109,7 @@ impl Kind {
             Self::Device => "@device",
             Self::Asset => "@asset",
             Self::Sha => "@sha",
+            Self::Made => "@made",
         }
     }
 
@@ -140,6 +144,7 @@ impl Kind {
             | Self::Session
             | Self::Files
             | Self::Sha => None,
+            Self::Made => None,
         }
     }
 
@@ -171,6 +176,7 @@ impl Kind {
             Self::Device => uuid(0xdead_000d),
             Self::Asset => uuid(0xdead_000e),
             Self::Sha => "e".repeat(64),
+            Self::Made => "e".repeat(64),
             Self::Files => String::new(),
         })
     }
@@ -365,6 +371,7 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         ("thread/fork", on_thread()),
         ("thread/sources", on_thread()),
         ("thread/changes", on_thread()),
+        ("thread/files", on_thread()),
         ("thread/steps", on_thread()),
         ("thread/plan", on_thread()),
         (
@@ -425,6 +432,10 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         (
             "file/read",
             vec![json!({"thread": "@thread", "sha256": "@sha", "offset": 0})],
+        ),
+        (
+            "file/preview",
+            vec![json!({"thread": "@thread", "sha256": "@made"})],
         ),
         ("library/list", vec![json!({})]),
         (

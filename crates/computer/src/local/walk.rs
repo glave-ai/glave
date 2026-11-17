@@ -7,9 +7,9 @@ use glave_ports::computer::EntryKind;
 use globset::{GlobBuilder, GlobMatcher};
 use ignore::{Walk, WalkBuilder};
 
-fn walker(root: &Path, depth: Option<usize>) -> Walk {
+fn walker(root: &Path, depth: Option<usize>, visible: bool) -> Walk {
     WalkBuilder::new(root)
-        .hidden(false)
+        .hidden(visible)
         .require_git(false)
         .follow_links(false)
         .max_depth(depth)
@@ -22,10 +22,22 @@ fn walker(root: &Path, depth: Option<usize>) -> Walk {
 /// order. Hidden files such as `.github/` are included; the `.git` folder is not. A file
 /// given as `root` is returned as is.
 pub(crate) fn files(root: &Path) -> impl Iterator<Item = PathBuf> {
-    walker(root, None)
+    walker(root, None, false)
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_file()))
         .map(ignore::DirEntry::into_path)
+}
+
+/// Every entry under `root` that git would not ignore, folders too, in path order, each with
+/// whether it is a file; with `visible`, what is hidden is left out and its folders are not
+/// looked in. The `.git` folder never is.
+pub(crate) fn everything(root: &Path, visible: bool) -> impl Iterator<Item = (PathBuf, bool)> {
+    walker(root, None, visible)
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let file = entry.file_type().is_some_and(|kind| kind.is_file());
+            (entry.into_path(), file)
+        })
 }
 
 /// The entries directly inside `dir` that git would not ignore, in path order, each with its
@@ -35,7 +47,7 @@ pub(crate) fn entries(dir: &Path) -> std::io::Result<(Vec<(PathBuf, EntryKind)>,
         .filter_map(Result::ok)
         .filter(|entry| entry.file_name() != ".git")
         .count();
-    let names: Vec<(PathBuf, EntryKind)> = walker(dir, Some(1))
+    let names: Vec<(PathBuf, EntryKind)> = walker(dir, Some(1), false)
         .filter_map(Result::ok)
         .filter(|entry| entry.depth() == 1)
         .map(|entry| {

@@ -8,7 +8,6 @@
 )]
 
 mod accounts;
-#[cfg(target_env = "musl")]
 mod allocator;
 mod app;
 mod args;
@@ -43,6 +42,7 @@ mod project_folders;
 mod projects;
 mod providers;
 mod reach;
+mod reading;
 mod remote;
 mod reread;
 mod said;

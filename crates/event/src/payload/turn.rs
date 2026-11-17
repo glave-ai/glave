@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use super::approval::Lifted;
+use super::made::{FileMade, MadeLeft};
 use super::model::{ModelRef, ModelResponded, TokenCounts};
 use super::tool::ToolError;
 use crate::blob::BlobRef;
@@ -154,6 +155,20 @@ pub struct TurnResult {
     /// room before it has read them. Absent when it changed none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed: Vec<String>,
+    /// The files it made for the person: each document, spreadsheet, deck or PDF in no hidden
+    /// folder of the thread's, changed since it started, in path order, kept for the thread or
+    /// said why not (`session.md`, "Files it made"). Absent when it made none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub made: Vec<FileMade>,
+    /// What `made` leaves out, when it leaves something out: more files than a turn keeps, or a
+    /// folder too large to look over.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub made_left: Option<MadeLeft>,
+    /// Where its look-over stopped, a command of the thread's still running in the background,
+    /// in nanoseconds since 1970 by the computer's clock: the next look-over starts there.
+    /// Absent when it looked up to its end, or did not look.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub made_until_ns: Option<u64>,
 }
 
 impl TurnResult {
@@ -173,6 +188,9 @@ impl TurnResult {
             estimated: false,
             via: Vec::new(),
             changed: Vec::new(),
+            made: Vec::new(),
+            made_left: None,
+            made_until_ns: None,
         }
     }
 
@@ -254,7 +272,9 @@ pub enum Outcome {
 
 impl Payload for TurnResult {
     const TYPE: &'static str = ENDED;
-    const VERSION: u32 = 1;
+    // 2 names the files the turn made (`made`, `made_left`, `made_until_ns`); a version 1 end
+    // made none, and reads as one that made none.
+    const VERSION: u32 = 2;
 }
 
 pub(crate) fn decode_ended(
@@ -262,7 +282,7 @@ pub(crate) fn decode_ended(
     data: &RawValue,
 ) -> Option<serde_json::Result<TurnResult>> {
     match version {
-        1 => Some(parse(data)),
+        1 | 2 => Some(parse(data)),
         _ => None,
     }
 }

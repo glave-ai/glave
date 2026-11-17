@@ -21,6 +21,7 @@ impl Request {
             | Self::ThreadTurns { thread, .. }
             | Self::ThreadSources { thread }
             | Self::ThreadChanges { thread }
+            | Self::ThreadFiles { thread }
             | Self::ThreadSteps { thread }
             | Self::ThreadPlan { thread }
             | Self::PlanEdit { thread, .. }
@@ -31,6 +32,7 @@ impl Request {
             | Self::TurnCancel { thread }
             | Self::ThreadCompact { thread }
             | Self::FileRead { thread, .. }
+            | Self::FilePreview { thread, .. }
             | Self::ApprovalDecide { thread, .. }
             | Self::QuestionAnswer { thread, .. }
             | Self::ServiceAnswer { thread, .. }

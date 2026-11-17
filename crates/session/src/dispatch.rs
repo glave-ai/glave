@@ -343,6 +343,7 @@ where
             Request::ThreadTurns { thread, before } => boxed(|| self.turns(thread, before)).await,
             Request::ThreadSources { thread } => boxed(|| self.sources(thread)).await,
             Request::ThreadChanges { thread } => boxed(|| self.changes(thread)).await,
+            Request::ThreadFiles { thread } => boxed(|| self.made_files(thread)).await,
             Request::ThreadSteps { thread } => boxed(|| self.steps(thread)).await,
             Request::ThreadPlan { thread } => boxed(|| self.plan(thread)).await,
             Request::PlanEdit { thread, steps } => {
@@ -453,6 +454,9 @@ where
                 sha256,
                 offset,
             } => boxed(|| self.read_file(thread, &sha256, offset.unwrap_or(0))).await,
+            Request::FilePreview { thread, sha256 } => {
+                boxed(|| self.preview_file(thread, &sha256)).await
+            }
             Request::ApprovalDecide {
                 thread,
                 approval,

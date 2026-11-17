@@ -319,6 +319,18 @@ where
         Ok(())
     }
 
+    /// Records what the thread's commands are waiting to have recorded, as one ends while the
+    /// thread is idle: once the last has ended, with what the look-over a turn left a mark for
+    /// made since (`made.rs`).
+    pub async fn record_ended(&self, thread: &mut Thread) -> Result<(), HarnessError> {
+        let mut events = Vec::new();
+        let staged = self.stage_commands(thread, &mut events)?;
+        self.stage_marked(thread, &mut events).await?;
+        self.commit(thread, events).await?;
+        staged.recorded(thread);
+        Ok(())
+    }
+
     /// Asks the computers how the thread's commands in the background are, and records what
     /// ended meanwhile: as a turn starts, and as a thread resumes.
     pub(crate) async fn check_commands(&self, thread: &mut Thread) -> Result<(), HarnessError> {

@@ -16,6 +16,7 @@ pub use super::error::{ApiError, ErrorData};
 pub use super::files::{AttachedFile, FileInfo, FilePiece};
 pub use super::library::{LibraryChat, LibraryItem};
 pub use super::live::Update;
+pub use super::made::{FilePreview, MadeFile, TurnFiles};
 pub use super::meta::{IdempotencyKey, Meta};
 pub use super::models::{EndpointInfo, ModelInfo};
 pub use super::notification::{Notification, WatchEnd};

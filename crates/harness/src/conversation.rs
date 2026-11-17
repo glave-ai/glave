@@ -109,6 +109,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::PushClaimed(_)
         | Body::LibraryKept(_)
         | Body::LibraryRemoved(_)
+        | Body::TurnMade(_)
         | Body::PersonJoined(_)
         | Body::RoleSet(_)
         | Body::OrganizationMade(_)

@@ -23,7 +23,6 @@
 
 #![expect(clippy::print_stdout, reason = "a benchmark: its table is its output")]
 
-#[cfg(target_env = "musl")]
 #[path = "../../cli/src/allocator.rs"]
 mod allocator;
 
