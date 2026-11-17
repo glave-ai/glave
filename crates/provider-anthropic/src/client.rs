@@ -3,9 +3,12 @@
 
 use std::time::Duration;
 
-use glave_ports::auth::{Auth, ERROR_BODY_BYTES, KeyHeader, Outgoing};
-use glave_ports::{Completion, Delta, EndUser, ModelProvider, ModelRequest, ProviderError, spoken};
-use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
+use glave_ports::auth::{
+    Auth, CONNECT_TIMEOUT, KeyHeader, Outgoing, credential_header, not_json, request_failed,
+    send_signed,
+};
+use glave_ports::{Completion, Delta, EndUser, ModelProvider, ModelRequest, ProviderError};
+use reqwest::header::CONTENT_TYPE;
 
 use crate::api::Api;
 use crate::assemble::Assembler;
@@ -20,9 +23,6 @@ const MOST_LISTED: usize = 8 << 20;
 
 /// The default idle timeout, the same as the OpenAI-compatible provider's.
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
-
-/// The longest a connection to the provider may take to open, its TLS handshake included.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Where and how to reach the Messages API.
 #[derive(Clone)]
@@ -75,7 +75,7 @@ impl Anthropic {
             .build()
             .map_err(|e| ProviderError::Transport(e.to_string()))?;
         if let Some(key) = config.auth.fixed_key() {
-            header_pair("x-api-key", key.expose())?;
+            credential_header("x-api-key", key.expose())?;
         }
         Ok(Self {
             http,
@@ -126,16 +126,7 @@ impl ModelProvider for Anthropic {
             call = call.header("anthropic-version", version);
         }
         let sent = self.auth.headers(&outgoing).await?;
-        for header in &sent {
-            let (name, value) = header_pair(&header.name, header.value.expose())?;
-            call = call.header(name, value);
-        }
-        let response = call.body(body).send().await.map_err(|e| self.failed(e))?;
-        let status = response.status();
-        if !status.is_success() {
-            let body = error_body(response).await;
-            return Err(ProviderError::from_response(status.as_u16(), &body, &sent));
-        }
+        let response = send_signed(call.body(body), &sent, self.idle_timeout).await?;
         let mut assembler = Assembler::new(&self.provider, &request.model);
         match self.stream(response, &mut assembler, on_delta).await {
             Ok(()) => assembler.finish(),
@@ -191,90 +182,27 @@ impl Anthropic {
             headers: &sent,
             body: &[],
         };
-        let mut call = self.http.get(&url).header("anthropic-version", version);
+        let call = self.http.get(&url).header("anthropic-version", version);
         let sent = self.auth.headers(&outgoing).await?;
-        for header in &sent {
-            let (name, value) = header_pair(&header.name, header.value.expose())?;
-            call = call.header(name, value);
-        }
-        let mut response = call.send().await.map_err(|e| self.failed(e))?;
-        let status = response.status();
-        if !status.is_success() {
-            let body = error_body(response).await;
-            return Err(ProviderError::from_response(status.as_u16(), &body, &sent));
-        }
+        let mut response = send_signed(call, &sent, self.idle_timeout).await?;
         let mut body = Vec::new();
         while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
             if body.len().saturating_add(bytes.len()) > MOST_LISTED {
                 return Err(ProviderError::Protocol(format!(
-                    "{url} answered with more than {MOST_LISTED} bytes"
+                    "{} answered with more than {MOST_LISTED} bytes",
+                    glave_ports::host::shown(&url)
                 )));
             }
             body.extend_from_slice(&bytes);
         }
-        serde_json::from_slice(&body)
-            .map_err(|e| ProviderError::Protocol(format!("{url} did not answer with JSON: {e}")))
+        serde_json::from_slice(&body).map_err(|e| not_json(&url, &e))
     }
 
     /// What a failed request means: no connection in time, a silence past the idle timeout, or a
     /// broken connection. A connection that never opened sent nothing, so it is the provider
     /// unreached, not silent.
     fn failed(&self, error: reqwest::Error) -> ProviderError {
-        if error.is_connect() && error.is_timeout() {
-            let host = error
-                .url()
-                .and_then(reqwest::Url::host_str)
-                .unwrap_or("the provider");
-            ProviderError::Transport(format!(
-                "no connection to {host} within {}",
-                spoken(CONNECT_TIMEOUT)
-            ))
-        } else if error.is_timeout() {
-            ProviderError::Timeout {
-                seconds: self.idle_timeout.as_secs(),
-            }
-        } else {
-            ProviderError::Transport(cause_of(error))
-        }
-    }
-}
-
-/// A header that proves who is calling, its value marked sensitive so it is never shown. An
-/// invalid one is refused without showing it.
-fn header_pair(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), ProviderError> {
-    let name = HeaderName::from_bytes(name.as_bytes())
-        .map_err(|_| ProviderError::Credentials(format!("{name:?} is not a header name")))?;
-    let mut value = HeaderValue::from_str(value).map_err(|_| {
-        ProviderError::Credentials(format!("the value for {name} is not a valid header value"))
-    })?;
-    value.set_sensitive(true);
-    Ok((name, value))
-}
-
-/// The start of an error response's body: as much as [`ProviderError::from_response`] reads,
-/// and no more.
-async fn error_body(mut response: reqwest::Response) -> Vec<u8> {
-    let mut body = Vec::new();
-    while body.len() < ERROR_BODY_BYTES
-        && let Ok(Some(bytes)) = response.chunk().await
-    {
-        body.extend_from_slice(&bytes);
-    }
-    body
-}
-
-/// What went wrong underneath a failed request, such as `Connection refused (os error 61)`:
-/// the innermost cause, which says more than "error sending request".
-fn cause_of(error: reqwest::Error) -> String {
-    let mut cause: &dyn std::error::Error = &error;
-    while let Some(inner) = cause.source() {
-        cause = inner;
-    }
-    let cause = cause.to_string();
-    if error.is_connect() && !cause.is_empty() {
-        cause
-    } else {
-        error.without_url().to_string()
+        request_failed(error, self.idle_timeout)
     }
 }
 
