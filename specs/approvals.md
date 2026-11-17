@@ -34,7 +34,7 @@ Full access asks no one for approval, whether or not someone is there, as Claude
 
 These are what a person would want kept even with no limits on changes, and none of them stops a task.
 
-One question is the person's in every mode: whether to repeat work on its own (`schedule`, `session.md`, "Schedules"). Setting up a schedule is something the person confirms, not an action they guard, so Full access asks it too, the judge never clears it, and it is offered only where someone can answer. Removing one is an ordinary change.
+One question is the person's in every mode: whether to repeat work on its own (`schedule`, `session.md`, "Schedules"). Setting up a schedule is something the person confirms, not an action they guard, so Full access asks it too, the judge never clears it, and it is offered only where someone can answer. Removing one is an ordinary change. A schedule's own run never sets one up or removes one, whoever could answer it.
 
 ## Plan mode
 

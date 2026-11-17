@@ -464,6 +464,8 @@ sentences! {
         "glave can't tell who made it, so it doesn't run it for anyone",
     CronTooOften { minutes: u16 } = "cron-too-often"
         "a schedule runs at most once every { $minutes } minutes: choose times further apart",
+    CronNever { text: String } = "cron-never"
+        "\"{ $text }\" never runs: no date on the calendar matches it",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
     ScheduleNoChat = "schedule-no-chat"
         "Made before schedules had chats of their own, so it runs no more: set it up again to run it",
@@ -507,14 +509,29 @@ sentences! {
     // A month's name, January as 1.
     Month { month: u64 } = "month"
         "{ $month ->\n    [1] January\n    [2] February\n    [3] March\n    [4] April\n    [5] May\n    [6] June\n    [7] July\n    [8] August\n    [9] September\n    [10] October\n    [11] November\n   *[12] December\n }",
+    // A date: `Tuesday 17 November`.
+    DateOn { weekday: String, day: u64, month: String } = "date-on"
+        "{ $weekday } { $day } { $month }",
     // A date and its time: `Tuesday 17 November at 8:00 am`.
     DateAt { weekday: String, day: u64, month: String, time: String } = "date-at"
         "{ $weekday } { $day } { $month } at { $time }",
-    // What the card that confirms a schedule says below its question.
-    RunsFirst { when: String } = "runs-first" "First run: { $when }, your time.",
-    RunsNext { when: String } = "runs-next" "Next runs: { $when }, your time.",
+    // The days a schedule runs on, as a line opens.
+    DaysEvery = "days-every" "Every day",
+    DaysWeekdays = "days-weekdays" "Monday to Friday",
+    DaysMonthly { day: u64 } = "days-monthly" "Day { $day } of every month",
+    // What the card that confirms a schedule says below its question: when it runs, on whose
+    // clock (`zone` is `yours`, or the zone it names, for someone who never gave theirs), the
+    // chat its runs go to, and what each run starts with.
+    RunsOn { days: String, time: String, zone: String, first: String } = "runs-on"
+        "{ $days }, { $time } { $zone ->\n    [yours] your time\n   *[other] { $zone }\n }. First run: { $first }.",
+    RunsFirst { when: String, zone: String } = "runs-first"
+        "First run: { $when }, { $zone ->\n    [yours] your time\n   *[other] { $zone }\n }.",
+    RunsTimes { zone: String } = "runs-times"
+        "{ $zone ->\n    [yours] Times are in your time zone.\n   *[other] Times are in { $zone }.\n }",
     RunsInChat { name: String } = "runs-in-chat"
         "Each run is added to its own chat, \u{201c}{ $name }\u{201d}.",
+    RunsPrompt { prompt: String } = "runs-prompt"
+        "Each run starts with: \u{201c}{ $prompt }\u{201d}",
     // Lists in a sentence: all but the last, joined, then the last.
     ListComma { all: String, next: String } = "list-comma" "{ $all }, { $next }",
     ListAnd { all: String, last: String } = "list-and" "{ $all } and { $last }",

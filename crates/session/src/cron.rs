@@ -115,7 +115,7 @@ impl Cron {
 
     /// The fewest minutes between two of its times on the clocks: within a day, and from a
     /// day's last to the next day's first, as if every day matched.
-    fn shortest_gap(&self) -> u32 {
+    pub(crate) fn shortest_gap(&self) -> u32 {
         let times: Vec<u32> = (0..24i8)
             .flat_map(|hour| (0..60i8).map(move |minute| (hour, minute)))
             .filter(|(hour, minute)| self.matches_time(*hour, *minute))
