@@ -105,7 +105,11 @@ fn told(mut glave: Running, model: &FakeServer, log: &Path) -> String {
         .map(|asked| {
             let last = asked.body["messages"].as_array().and_then(|all| all.last());
             let content = last.map_or_else(String::new, |last| last["content"].to_string());
-            format!("{} {}", asked.line, content.chars().take(400).collect::<String>())
+            format!(
+                "{} {}",
+                asked.line,
+                content.chars().take(400).collect::<String>()
+            )
         })
         .collect();
     format!(
