@@ -62,12 +62,13 @@ pub trait Providers: Send + Sync {
 }
 
 /// Whether `caller` is the person on this computer: over a local transport, or signed in with
-/// the local token from a browser here.
+/// the local token from a browser here. Never no one, who did not sign in.
 pub(crate) fn local(caller: &Caller) -> bool {
-    caller
-        .auth
-        .as_ref()
-        .is_none_or(|auth| auth.method == AuthMethod::Local)
+    !caller.is_no_one()
+        && caller
+            .auth
+            .as_ref()
+            .is_none_or(|auth| auth.method == AuthMethod::Local)
 }
 
 /// What the host keeps for the person on this computer, `kept`, for `caller`: refused with
