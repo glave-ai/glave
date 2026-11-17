@@ -117,7 +117,7 @@ Options:
   --log <file>       append glave's spans and metrics to this file: ids, names, counts and
                      timings, never prompts, answers, file contents or secrets; --log -
                      writes them to standard error instead, one JSON object a line, for
-                     whatever collects a server's output
+                     whatever collects a server's output, with what glave would say there
   --help             show this help
   --version          show the version
 

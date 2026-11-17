@@ -34,6 +34,7 @@ use tokio::net::TcpListener;
 use crate::args::Args;
 use crate::client::Glave;
 use crate::data::Data;
+use crate::said::Said;
 use crate::system::random_uuid;
 
 mod https;
@@ -60,6 +61,8 @@ pub(crate) struct Http {
     token: LocalToken,
     /// glave's folder, where `serve.token` and `serve.url` are kept.
     folder: PathBuf,
+    /// Where it says how to sign in.
+    said: Said,
 }
 
 /// Serves HTTP on what `listening` holds for the server `args` choose, reached from elsewhere
@@ -97,37 +100,37 @@ pub(crate) async fn open(args: &Args, listening: Listening, reach: &Reach) -> an
         _ => format!("http://{}", here(bound)),
     };
     keep(&folder.join(crate::app::URL_FILE), &reached)?;
-    eprintln!("glave: serving the session API on http://{bound}");
+    let said = Said::of(args.log.as_deref());
+    said.info(&format!("serving the session API on http://{bound}"));
     if let Some(origin) = reach.origin.as_ref().filter(|_| shared) {
-        eprintln!(
-            "glave: people who share this computer reach it at {origin}, each in a browser of \
-             their own"
-        );
+        said.info(&format!(
+            "people who share this computer reach it at {origin}, each in a browser of their own"
+        ));
     } else if let Some(origin) = reach.behind() {
-        eprintln!(
-            "glave: reached from elsewhere at {origin}, through the tunnel or proxy that serves \
-             HTTPS for it"
-        );
+        said.info(&format!(
+            "reached from elsewhere at {origin}, through the tunnel or proxy that serves HTTPS \
+             for it"
+        ));
     }
     let secure = match (&reach.https, &reach.origin) {
         (Some(own), Some(origin)) => {
             let listener = https::listen(args).await?;
             let bound = listener.local_addr()?;
             if own.ready() {
-                eprintln!("glave: serving HTTPS at {origin} on {bound}");
+                said.info(&format!("serving HTTPS at {origin} on {bound}"));
             } else {
-                eprintln!(
-                    "glave: serving HTTPS at {origin} on {bound} once its certificate is in hand, \
-                     which glave is getting now"
-                );
+                said.info(&format!(
+                    "serving HTTPS at {origin} on {bound} once its certificate is in hand, which \
+                     glave is getting now"
+                ));
             }
             Some((listener, Arc::clone(own)))
         }
         _ => None,
     };
     if site.is_none() {
-        eprintln!(
-            "glave: no web app beside glave; build it (npm run build in web/) and pass --web <folder>"
+        said.warn(
+            "no web app beside glave; build it (npm run build in web/) and pass --web <folder>",
         );
     }
     Ok(Http {
@@ -137,6 +140,7 @@ pub(crate) async fn open(args: &Args, listening: Listening, reach: &Reach) -> an
         site,
         token,
         folder,
+        said,
     })
 }
 
@@ -148,9 +152,10 @@ impl Http {
         server: Glave,
         stop: impl Future<Output = ()>,
     ) -> anyhow::Result<()> {
-        if std::io::stderr().is_terminal() {
-            // Shown only to a person at a terminal: a service's error output often ends up in
-            // a log. The code is good once, for five minutes, so the link is no key left behind.
+        // Shown only to a person at a terminal, never in the log: a service's error output often
+        // ends up in a log store. The code is good once, for five minutes, so the link is no key
+        // left behind.
+        if self.said == Said::Plainly && std::io::stderr().is_terminal() {
             let url = std::fs::read_to_string(self.folder.join(crate::app::URL_FILE))?;
             let code = link(&server).await?;
             eprintln!(
@@ -165,7 +170,8 @@ impl Http {
                 );
             }
         } else {
-            eprintln!("glave: run glave on this computer to open glave in a browser");
+            self.said
+                .info("run glave on this computer to open glave in a browser");
         }
         let listeners = Listeners {
             plain: self.listeners,

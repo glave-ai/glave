@@ -16,6 +16,7 @@ use glave_session::protocol::{Reply, Request};
 
 use crate::data::{Data, DataLog};
 use crate::reach::{self, Reached};
+use crate::said::Said;
 use crate::setup::Setup;
 use crate::turns::{Here, no_project};
 use glave_config::policy::MemorySettings;
@@ -38,6 +39,8 @@ pub(crate) struct Running {
     pub memory: Arc<GlaveMemory<DataLog>>,
     pub scopes: Vec<Scope>,
     pub person: PrincipalId,
+    /// Where what fails in its housekeeping is said.
+    said: Said,
 }
 
 impl Running {
@@ -55,10 +58,11 @@ impl Running {
     }
 
     /// Housekeeping: retention, erasure that is due, and rotating project keys once keys were
-    /// destroyed. Failures are reported, never fatal.
+    /// destroyed. Failures are reported, never fatal, but someone must act on them: erasure
+    /// that is due waits on them.
     pub(crate) async fn housekeep(&self) {
         if let Err(error) = self.memory.memories().housekeep(&self.scopes).await {
-            eprintln!("glave: memory housekeeping failed: {error}");
+            self.said.failed("memory housekeeping failed", &error);
         }
     }
 }
@@ -72,17 +76,17 @@ pub(crate) async fn start_for(
 ) -> anyhow::Result<Option<Running>> {
     let settings =
         glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
-    start(store, &settings, person, scope).await
+    start(store, &settings, (person, scope), setup.said).await
 }
 
 /// Starts memory for `person`, tidied in `scope` and their own, when `settings` turn it on:
 /// each project with the setting `settings` choose, until its project's settings choose another
-/// (`project_folders.rs`).
-pub(crate) async fn start(
+/// (`project_folders.rs`). What fails it says as `said`.
+async fn start(
     store: &Data,
     settings: &MemorySettings,
-    person: PrincipalId,
-    scope: Scope,
+    (person, scope): (PrincipalId, Scope),
+    said: Said,
 ) -> anyhow::Result<Option<Running>> {
     if !settings.on {
         return Ok(None);
@@ -111,6 +115,7 @@ pub(crate) async fn start(
         memory: Arc::new(memory),
         scopes: vec![personal, scope],
         person,
+        said,
     };
     running.housekeep().await;
     Ok(Some(running))

@@ -75,6 +75,40 @@ fn no_instructions_means_the_prompt_alone() {
     });
 }
 
+/// The settings' instructions are the person's the harness works for. With no reader of
+/// folders, they open that person's threads alone: someone else's thread opens with none.
+#[test]
+fn the_settings_instructions_open_no_one_else_s_thread() {
+    let dir = folder("rules-others");
+    block_on!(async {
+        let answers = vec![
+            answer(Some("Hi."), vec![], StopReason::EndTurn),
+            answer(Some("Hi."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, seen) =
+            harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, with_rules()).await;
+        let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
+        let grace = glave_ports::Caller {
+            person: Some(someone.unwrap()),
+            ..glave_ports::Caller::default()
+        };
+        let mut theirs = harness.start_thread_as(scope(), &grace).await.unwrap();
+        harness
+            .run_turn_as(&mut theirs, "hello", &grace, &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        let mut own = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut own, "hello").await;
+        let sent = requests(&seen);
+        assert_eq!(
+            texts(&sent[0].messages[0]),
+            ["hello"],
+            "none of the person's"
+        );
+        assert_eq!(texts(&sent[1].messages[0]), [RULES, "hello"]);
+    });
+}
+
 #[test]
 fn a_compacted_thread_opens_with_the_instructions_again() {
     let dir = folder("rules-compact");
