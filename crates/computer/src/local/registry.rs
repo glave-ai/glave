@@ -13,7 +13,7 @@ use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
 use tokio::sync::OnceCell;
 use uuid::{Builder, Uuid};
 
-use super::sandbox::Prepared;
+use super::sandbox::{Prepared, moved_stores};
 
 /// The most computers one machine holds at once.
 const MAX_COMPUTERS: usize = 64;
@@ -79,12 +79,19 @@ impl Opened {
             }
         };
         let prepared = prepared.get_or_try_init(|| async {
+            // A store its commands' environment keeps elsewhere is hidden where it is.
+            let hidden: Vec<PathBuf> = self
+                .hidden
+                .iter()
+                .cloned()
+                .chain(moved_stores(&self.environment))
+                .collect();
             let prepared = Prepared::new(
                 sandbox,
                 &self.root,
                 self.git_common.as_deref(),
                 helper,
-                &self.hidden,
+                &hidden,
                 self.glave_on_path.as_deref(),
             );
             prepared.await.map(Arc::new)
