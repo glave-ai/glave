@@ -8,14 +8,19 @@
   visibility: hidden;
 }
 
-// What the files leave out, in the server's words, under their cards.
+// What the files leave out, in the server's words, under their cards: as wide as the column,
+// which says how many lines it takes.
+.notes {
+  container-type: inline-size;
+}
+
 .note {
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-sm);
 }
 
-// On a phone the server's notes take two lines, so their room does too.
-@media (width <= 48rem) {
+// In a narrow column the server's notes take two lines, so their room does too.
+@container (width <= 30rem) {
   .note {
     min-block-size: 2lh;
   }

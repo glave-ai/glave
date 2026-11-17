@@ -1,14 +1,17 @@
+// The card's width, not the window's, says how many lines a reason takes: the conversation's
+// column is narrow beside the side nav and the panel on a wide screen too.
 :host {
-  // The lines a line that gives a reason keeps, wrapped: two beside a wide column, three on a
-  // phone, where the server's reasons take three.
-  --app-reason-lines: 2;
-
   display: block;
+  container-type: inline-size;
 }
 
 // One row across the column: the kind's mark, the name over its line, then Download, whose row
 // keeps a button's height when it has none, so every card is as tall.
 .file {
+  // The lines a line that gives a reason keeps, wrapped: two in a wide card, three in a narrow
+  // one, where the server's reasons take three.
+  --app-reason-lines: 2;
+
   display: flex;
   align-items: center;
   gap: var(--glz-space-3);
@@ -66,12 +69,14 @@
   min-block-size: var(--glz-control-height-sm);
 }
 
-// On a phone the arrow is as large as a thumb needs, and every card keeps its height.
-@media (width <= 48rem) {
-  :host {
+@container (width <= 30rem) {
+  .file {
     --app-reason-lines: 3;
   }
+}
 
+// On a phone the arrow is as large as a thumb needs, and every card keeps its height.
+@media (width <= 48rem) {
   :host .download {
     min-block-size: var(--glz-control-height-touch);
     min-inline-size: var(--glz-control-height-touch);

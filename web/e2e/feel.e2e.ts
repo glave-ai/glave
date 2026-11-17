@@ -108,9 +108,12 @@ test('nothing moves on opening a thread in a repository when its folder says, la
   expectStill(await feltOn(page));
 });
 
-for (const [width, height, on] of [
-  [1280, 1600, 'a wide screen'],
-  [390, 844, 'a phone'],
+for (const [width, height, on, beside] of [
+  [1280, 1600, 'a wide screen', true],
+  // Just wide enough for the panel beside the conversation (past 64rem), with the side nav
+  // open too, which leaves the conversation's column narrow.
+  [1100, 1200, 'a narrower window beside the panel', true],
+  [390, 844, 'a phone', false],
 ] as const) {
   test(`nothing moves on opening a thread as the files its turn made are described late, on ${on}`, async ({
     page,
@@ -123,6 +126,7 @@ for (const [width, height, on] of [
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     await held.sent;
     await expect(byTestId(page, 'thread-message').last()).toBeVisible();
+    await expect(byTestId(page, 'panel-panel')).toBeVisible({ visible: beside });
     // Each card's room is kept, unseen, from the turn's end alone (a line's that gives a reason
     // among them), and so is the note's, which it says leaves a file out; the turn below stays
     // where it is.
