@@ -33,7 +33,9 @@ pub struct Glob {
     pub path: String,
     /// The most files returned.
     pub limit: usize,
-    /// Only files changed since then, in nanoseconds since 1970, as the computer's clock says.
+    /// Only files changed after then, in nanoseconds since 1970, as the computer's clock says,
+    /// and no later than [`Globbed::cut_off_ns`]: the window a look over what changed covers,
+    /// so one that starts where the last ended names no file twice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changed_since_ns: Option<u64>,
     /// Leaves out what is hidden (a name that starts with `.`): its folders are not looked in.
@@ -62,8 +64,10 @@ pub struct Globbed {
     /// everywhere, so `files` and `total` are not all there is.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stopped: bool,
-    /// What [`Glob::settled_for_ns`] made the latest a file may have changed and be found, in
-    /// nanoseconds since 1970 by the computer's clock: where the next look starts.
+    /// The latest a file may have changed and be found, in nanoseconds since 1970 by the
+    /// computer's clock, for a look over what changed ([`Glob::changed_since_ns`]) or what
+    /// settled ([`Glob::settled_for_ns`]): now, or as long before as files must have settled.
+    /// The next look starts after it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cut_off_ns: Option<u64>,
 }

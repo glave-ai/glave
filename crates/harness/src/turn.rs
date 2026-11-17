@@ -242,7 +242,7 @@ where
                 Ok(Answer::Given(completion, thinking)) => (completion, thinking),
                 // Asked once more; a second that repeats itself ends the turn.
                 Ok(Answer::Repeating(cut)) => {
-                    self.stopped_repeating(thread, &mut step.summary, &cut, repeated)
+                    self.stopped_repeating(thread, &mut step.summary, &cut, repeated, cancel)
                         .await?;
                     repeated = true;
                     continue;
@@ -258,7 +258,7 @@ where
                 }
                 Err(error) => {
                     step.summary.outcome = Outcome::Failed;
-                    self.end(thread, &mut step.summary).await?;
+                    self.end(thread, &mut step.summary, cancel).await?;
                     return Err(error);
                 }
             };
@@ -301,7 +301,7 @@ where
         if stopped && summary.outcome == Outcome::Cancelled {
             self.add_note(thread, CANCELLED).await?;
         }
-        self.end(thread, &mut summary).await?;
+        self.end(thread, &mut summary, cancel).await?;
         if !thread.delegated() && !stopped {
             self.on_stop(thread, summary.outcome, cancel).await?;
         }
@@ -373,13 +373,19 @@ where
     }
 
     /// Records `turn.ended`, with what the turn did and cost, its `result`, and the files it made
-    /// (`made.rs`).
-    async fn end(&self, thread: &mut Thread, result: &mut TurnResult) -> Result<(), HarnessError> {
-        // A turn stopped by the person or by glave stopping keeps what it made unread.
-        let read = !matches!(result.outcome, Outcome::Cancelled | Outcome::Interrupted);
-        let found = self.made_by_turn(thread, read).await;
-        (result.made, result.made_left, result.made_until_ns) =
-            (found.made, found.left, found.until_ns);
+    /// (`made.rs`), read apart from glave until `cancel` stops the turn or the look-over's
+    /// deadline, whichever comes first.
+    async fn end(
+        &self,
+        thread: &mut Thread,
+        result: &mut TurnResult,
+        cancel: &Cancel,
+    ) -> Result<(), HarnessError> {
+        let found = self.made_by_turn(thread, cancel).await;
+        result.made = found.made;
+        result.made_left = found.left;
+        result.made_until_ns = found.until_ns;
+        result.made_waits = found.waits;
         let mut events = Vec::new();
         let staged = self.stage_commands(thread, &mut events)?;
         self.stage(thread, &mut events, result)?;

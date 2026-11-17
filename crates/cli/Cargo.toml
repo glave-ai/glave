@@ -93,13 +93,14 @@ tracing-opentelemetry = { workspace = true, optional = true }
 tracing-subscriber.workspace = true
 uuid.workspace = true
 
-# Every allocation counted, so a reader of a file a turn made is held to a limit on every
-# computer, which RLIMIT_AS can't do on macOS (src/allocator.rs, src/reading.rs).
-cap.workspace = true
-
 # The memory allocator of the static Linux builds, in place of musl's (src/allocator.rs).
 [target.'cfg(target_env = "musl")'.dependencies]
 mimalloc.workspace = true
+
+# Every allocation counted on macOS, so a reader of a file a turn made is held to a limit there,
+# which RLIMIT_DATA does on Linux and nothing does on macOS (src/allocator.rs, src/reading.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+cap.workspace = true
 
 [dev-dependencies]
 # A workbook that grows a reader's memory, made in the test (already in the tree).

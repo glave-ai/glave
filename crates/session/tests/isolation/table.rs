@@ -53,7 +53,7 @@ pub(super) enum Kind {
     Asset,
     /// A file a person keeps, by its content's hash, as `file/read` names one a thread holds.
     Sha,
-    /// A file a person's turn made, kept with its preview.
+    /// A file a person's turn made, kept with the chat with its preview.
     Made,
 }
 
@@ -430,7 +430,10 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
         // through it no more than one nobody keeps.
         (
             "file/read",
-            vec![json!({"thread": "@thread", "sha256": "@sha", "offset": 0})],
+            vec![
+                json!({"thread": "@thread", "sha256": "@sha", "offset": 0}),
+                json!({"thread": "@thread", "sha256": "@made", "offset": 0}),
+            ],
         ),
         (
             "file/preview",

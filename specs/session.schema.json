@@ -4637,7 +4637,7 @@
           "type": "array"
         },
         "note": {
-          "description": "What `files` leave out, in a sentence, when they leave something out: more than a turn\nkeeps, a folder too large to look over, or what a command still running may make.",
+          "description": "What `files` leave out, in a sentence, when they leave something out: more than a turn\nkeeps, or a folder too large to look over.",
           "type": [
             "string",
             "null"
@@ -4699,13 +4699,17 @@
           "description": "What `made` leaves out, when it leaves something out: more files than a turn keeps, or a\nfolder too large to look over."
         },
         "made_until_ns": {
-          "description": "Where its look-over stopped, a command of the thread's still running in the background,\nin nanoseconds since 1970 by the computer's clock: the next look-over starts there.\nAbsent when it looked up to its end, or did not look.",
+          "description": "Where its look-over stopped, in nanoseconds since 1970 by the computer's clock: the\nnext look-over starts no earlier. Absent when it did not look.",
           "format": "uint64",
           "minimum": 0,
           "type": [
             "integer",
             "null"
           ]
+        },
+        "made_waits": {
+          "description": "Whether what was made after `made_until_ns` is still to be looked over: a command of the\nthread's still ran in the background, or the folder couldn't be looked over.",
+          "type": "boolean"
         },
         "model_calls": {
           "default": 0,

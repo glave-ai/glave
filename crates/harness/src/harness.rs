@@ -107,6 +107,8 @@ pub struct Harness<P, L, B, A> {
     /// Where the commands on each person's own computer ask for credentials: theirs. None by
     /// default, so only the harness's person's computer gets the workspace's.
     pub(crate) credentials_of: Option<CredentialsOf>,
+    /// The look-overs of what turns made running now, at most a few at once (`made.rs`).
+    pub(crate) looking: tokio::sync::Semaphore,
     /// What reads each file a turn made apart from glave, for its title, parts and preview;
     /// none by default, so files are kept unread.
     pub(crate) reader: Option<ReadMade>,
@@ -200,8 +202,8 @@ pub struct Thread {
     pub(crate) opened: Option<Opened>,
     /// The turn open on it, as what the turn made is told (`made.rs`): as its log has it.
     pub(crate) turn_open: Option<crate::made::TurnOpen>,
-    /// Where its last look-over stopped while a command of its still ran, which the next starts
-    /// from (`made.rs`): as its log has it.
+    /// Where its last look-over stopped, and whether what changed after is still owed a look
+    /// (`made.rs`): as its log has it.
     pub(crate) made_mark: Option<crate::made::Mark>,
     /// Where it works now that its project's folder moved, which its next turn records.
     pub(crate) rebound: Option<WorkspaceBound>,
@@ -340,6 +342,7 @@ where
             learned_windows: LearnedWindows::default(),
             homes: None,
             credentials_of: None,
+            looking: crate::made::looking(),
             reader: None,
             reading_for: crate::made::READING_FOR,
             memory: None,

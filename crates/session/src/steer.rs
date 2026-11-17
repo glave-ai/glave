@@ -66,7 +66,8 @@ where
     /// Queues what `caller` `said` to the work running in `thread`, when that work takes
     /// messages. A message chooses no model or mode: those are for a turn to start
     /// with. Refused when as many messages wait as a turn takes (`-32028`), or while work that
-    /// takes none runs (`-32002`).
+    /// takes none runs (`-32002`), but for work that only manages the thread, such as a look
+    /// over what a command made once it ended, which it starts a turn after.
     pub(crate) fn queue(
         &self,
         caller: &Caller,
@@ -86,11 +87,15 @@ where
             cancel,
             finished,
             inbox,
+            manages,
             ..
         }) = threads.get(&thread)
         else {
             return Ok(Queue::Idle);
         };
+        if *manages {
+            return Ok(Queue::Ending(finished.clone()));
+        }
         let Some(inbox) = inbox else {
             return Err(busy(thread));
         };

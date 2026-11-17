@@ -57,6 +57,25 @@ fn a_program_kept_to_a_few_bytes_is_ended_when_it_writes_more() {
 }
 
 #[test]
+fn a_program_kept_to_a_few_bytes_is_ended_when_it_complains_at_length() {
+    let processes = Processes::unrecorded();
+    let complaining = glave_ports::block_on!(async {
+        // Its standard error is held to the same few bytes as its output.
+        processes
+            .output_at_most(Program::new("sh").args(["-c", "yes >&2"]), AMPLE, 1_000)
+            .await
+    });
+    let complaining = complaining.unwrap();
+    assert_eq!(
+        complaining.stderr.len(),
+        1_001,
+        "the first bytes and one more"
+    );
+    assert_eq!(complaining.stdout, b"");
+    assert!(!complaining.status.success(), "ended by its closed pipe");
+}
+
+#[test]
 fn one_still_running_at_its_limit_is_stopped_saying_how_long_it_had() {
     let limit = Duration::from_secs(10);
     let processes = Processes::unrecorded();

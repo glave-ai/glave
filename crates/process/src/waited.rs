@@ -31,8 +31,8 @@ impl Processes {
 
     /// [`Processes::output`], keeping of its standard output, and of its standard error, only
     /// the first `most` bytes and one more, which says it printed more: the pipe is closed
-    /// there, which ends a program that goes on writing, so a long answer costs neither memory
-    /// nor the rest of its run.
+    /// there, which ends a program that goes on writing, so a long answer, or a long complaint,
+    /// costs neither memory nor the rest of its run.
     pub async fn output_at_most(
         &self,
         program: &mut Program,
