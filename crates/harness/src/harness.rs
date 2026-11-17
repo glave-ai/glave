@@ -195,8 +195,6 @@ pub struct Thread {
     pub(crate) opened: Option<Opened>,
     /// Where it works now that its project's folder moved, which its next turn records.
     pub(crate) rebound: Option<WorkspaceBound>,
-    /// When its next turn is a schedule's run, when that was due, which the turn records.
-    pub(crate) due: Option<At>,
     /// Where it works on its person's own computer, when it does: opened there again at a
     /// turn's start whenever that computer woke since (`homes.rs`).
     pub(crate) home: Option<crate::homes::AtHome>,
@@ -212,12 +210,6 @@ pub struct Thread {
 }
 
 impl Thread {
-    /// Says whether its next turn is a schedule's run, and when that run was due, which the
-    /// turn's `turn.started` records: never sent to the model.
-    pub fn run_due(&mut self, due: Option<At>) {
-        self.due = due;
-    }
-
     /// The conversation the model will see next.
     pub fn messages(&self) -> &[Message] {
         &self.messages
@@ -627,7 +619,6 @@ where
             commands: Arc::default(),
             opened: None,
             rebound: None,
-            due: None,
             home: crate::homes::at_home(bound.as_ref()),
             prefix: Prefixed::None,
             summary_failed: None,

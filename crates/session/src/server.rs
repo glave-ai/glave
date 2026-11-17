@@ -272,7 +272,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) limits: TaskLimits,
     /// What each project's task ledger says, as far as this server has read it.
     pub(crate) ledgers: Mutex<Ledgers>,
-    /// The store's index of the projects with schedules, as far as this server has read it.
+    /// The store's index of the projects with schedules, as far as this server has read it, and
+    /// which organization the scheduler's next tick starts from.
     pub(crate) placed: Mutex<crate::schedule::Placed>,
     /// Whether a server on its store fires schedules ([`Wiring::schedules`]).
     pub(crate) schedules: bool,

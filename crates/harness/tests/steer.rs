@@ -403,6 +403,7 @@ fn a_retry_queued_after_its_message_was_recorded_is_not_recorded_again() {
             text: "hello",
             files: &[],
             key: Some("attempt-1"),
+            scheduled: None,
         };
         let caller = Caller::default();
         let first = harness

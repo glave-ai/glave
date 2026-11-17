@@ -256,7 +256,7 @@ where
             let home = home.map_err(|error| ApiError::from(&error))?;
             return self.create_at_home(org, &home, new, folder).await;
         }
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(only_here(Sentence::NewFolderOnlyHere));
         }
         let person = Principal::person(self.person_of(caller)?);
@@ -384,7 +384,7 @@ where
         caller: &Caller,
         path: &str,
     ) -> Result<Reply, ApiError> {
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(only_here(Sentence::LookOnlyHere));
         }
         let person = Principal::person(self.person_of(caller)?);
@@ -448,7 +448,7 @@ where
         caller: &Caller,
         path: Option<String>,
     ) -> Result<Reply, ApiError> {
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(only_here(Sentence::FoldersOnlyHere));
         }
         let workspace = self.inner.harness.workspace();

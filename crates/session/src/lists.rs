@@ -274,9 +274,11 @@ where
 
     fn take(&mut self, change: Change) {
         match change {
-            Change::Thread(Changed { project, thread }) => {
-                if self.only.is_none_or(|only| only == project) {
-                    self.push(project, thread, MOST_GENERATIONS);
+            Change::Thread(Changed { at, thread }) => {
+                // Another organization's is dropped at once: a watch stays in its own.
+                let here = at.org == self.server.org_of(&self.caller);
+                if here && self.only.is_none_or(|only| only == at.project) {
+                    self.push(at.project, thread, MOST_GENERATIONS);
                 }
             }
             Change::Setting {
@@ -420,6 +422,6 @@ where
             .server
             .trust_on_page(&self.caller, scope.located(), std::iter::once(thread))
             .await;
-        Ok(Some(self.server.asking(summary, ask.as_ref(), false)))
+        Ok(Some(self.server.asking(summary, ask.as_ref(), None)))
     }
 }

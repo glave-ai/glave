@@ -69,6 +69,7 @@ where
         let memory = self.inner.harness.memory();
         theirs(
             caller,
+            self.inner.person,
             memory,
             Sentence::MemoryOff,
             Sentence::MemoryOnItsComputer,

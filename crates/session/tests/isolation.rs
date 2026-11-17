@@ -2,7 +2,9 @@
 //! person another's. Three organizations share one store, two served each by a server of its
 //! own and the third by the first server beside its own, with two people each; every method
 //! of the session API is called by every person with every other person's ids, and must answer
-//! exactly as it does for an id nobody has, so not even whether something exists leaks. Runs
+//! exactly as it does for an id nobody has, so not even whether something exists leaks; so it
+//! must for glave acting on its own for each of them (`on_behalf`, as a schedule's run does),
+//! which is refused all that only the person on a server's computer may do. Runs
 //! on SQLite, and on Postgres when `GLAVE_TEST_POSTGRES_URL` names a database. The methods come
 //! from the protocol's one table, through the schema made from it: a method this suite has no
 //! entry for fails it.
@@ -99,6 +101,7 @@ async fn isolated<L: EventLog + Clone + 'static>(name: &str, parts: Parts<L>) {
     sweep::snapshot(&world).await;
     let before = sweep::snapshot(&world).await;
     found.extend(sweep::sweep(&world).await);
+    found.extend(sweep::on_behalf(&world).await);
     let after = sweep::snapshot(&world).await;
     for ((person, before), after) in world.people.iter().zip(&before).zip(&after) {
         if before != after {

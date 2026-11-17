@@ -13,7 +13,7 @@ use glave_event::{Opened, Outcome};
 use glave_harness::Permissions;
 use glave_ports::testing::TempDir;
 use glave_ports::{Caller, InMemoryLog, Leases};
-use glave_session::protocol::{Notification, Reply, Request, TaskStatus, code};
+use glave_session::protocol::{ApiError, Notification, Reply, Request, TaskStatus, code};
 use glave_session::{Answering, Repaired, Watched};
 use serde_json::json;
 use tokio::sync::Notify;
@@ -405,26 +405,49 @@ fn policy_limits_how_many_tasks_run_at_once() {
         let first = task_thread(&server).await;
         let second = task_thread(&server).await;
         background(&server, first, None).await;
-        let refused = server
-            .request(Request::TurnStart {
-                thread: second,
-                prompt: "go".into(),
-                background: true,
-                budget: None,
-                meta: glave_session::protocol::Meta::default(),
-                model: None,
-                permissions: None,
-                effort: None,
-                unattended: false,
-                files: Vec::new(),
-            })
-            .await
-            .unwrap_err();
+        let refused = one_more(&server, second).await;
         assert_eq!(refused.code, code::LIMIT);
         assert!(
             refused.message.contains("max_running"),
             "{}",
             refused.message
+        );
+        server.shutdown().await;
+    });
+}
+
+/// How a task in `thread` beyond the limit is refused.
+async fn one_more(server: &Tested, thread: glave_event::ThreadId) -> ApiError {
+    let started = server.request(Request::TurnStart {
+        thread,
+        prompt: "go".into(),
+        background: true,
+        budget: None,
+        meta: glave_session::protocol::Meta::default(),
+        model: None,
+        permissions: None,
+        effort: None,
+        unattended: false,
+        files: Vec::new(),
+    });
+    started.await.unwrap_err()
+}
+
+#[test]
+fn with_no_rule_a_person_runs_four_tasks_at_once() {
+    block_on!(async {
+        let mut setup = Setup::new((0..5).map(|_| answer(Some("a"), None)).collect());
+        setup.gate = Some(Arc::new(Notify::new()));
+        let (server, _, _, _dir) = in_repository("task-default-limit", setup).await;
+        for _ in 0..4 {
+            let thread = task_thread(&server).await;
+            background(&server, thread, None).await;
+        }
+        let refused = one_more(&server, task_thread(&server).await).await;
+        assert_eq!(refused.code, code::LIMIT);
+        assert_eq!(
+            refused.message.to_string(),
+            "4 of your tasks are running, the most at once here (4); stop one first"
         );
         server.shutdown().await;
     });

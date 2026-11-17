@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use glave_event::{CallId, Caution, EventId, MemoryId, Part, ThreadId};
+use glave_event::{At, CallId, Caution, EventId, MemoryId, Part, ThreadId};
 
 use glave_ports::Caller;
 
@@ -99,6 +99,9 @@ pub struct Said<'a> {
     /// The idempotency key the person sent it with, when they sent one: recorded with it, and
     /// a message already recorded with it, on any server, starts no turn again.
     pub key: Option<&'a str>,
+    /// When the turn is a schedule's run, when that run was due: recorded with the turn
+    /// (`turn.started`), never sent to the model.
+    pub scheduled: Option<At>,
 }
 
 /// What the person asked for, and who asked.
@@ -116,6 +119,8 @@ pub(crate) struct Prompt<'a> {
     pub(crate) id: Option<EventId>,
     /// The idempotency key the person sent it with, when they sent one.
     pub(crate) key: Option<&'a str>,
+    /// When the turn is a schedule's run, when that run was due.
+    pub(crate) scheduled: Option<At>,
 }
 
 impl<'a> Prompt<'a> {
@@ -128,6 +133,7 @@ impl<'a> Prompt<'a> {
             by_glave: false,
             id: None,
             key: None,
+            scheduled: None,
         }
     }
 }
