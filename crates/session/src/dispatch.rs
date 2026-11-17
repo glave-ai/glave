@@ -439,7 +439,7 @@ where
                     effort,
                 };
                 let work = Work(prompt, choice);
-                boxed(|| self.start_task(caller, thread, work, budget, None))
+                boxed(|| self.start_task(caller, thread, work, budget))
                     .await
                     .map(|task| Reply::Task { task })
             }

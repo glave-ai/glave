@@ -10,14 +10,17 @@
 
 mod acting;
 mod adopted;
+mod run;
+
+pub(crate) use run::Unstarted;
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 
 use glave_event::{
-    At, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
-    TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
+    At, Body, Currency, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId, TaskEnded,
+    TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
 use glave_harness::Cancel;
 use glave_ports::computer::{Reason, Refusal};
@@ -156,12 +159,24 @@ where
         thread: ThreadId,
         work: Work,
         budget: Option<u64>,
-        schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
-        let project = (self
-            .may_start_task(caller, thread, schedule.is_some())
-            .await?)
-            .located();
+        let project = (self.may_start_task(caller, thread, false).await?).located();
+        self.run_task(caller, (project, thread), work, budget, None)
+            .await
+    }
+
+    /// Starts `work` in `thread` of `project` as a task for `caller`, who may, and answers
+    /// with it at once: its start recorded once its turn started, unless it came `claimed`,
+    /// a schedule's run whose start was recorded first (`run.rs`).
+    async fn run_task(
+        &self,
+        caller: &Caller,
+        (project, thread): (Located, ThreadId),
+        work: Work,
+        budget: Option<u64>,
+        claimed: Option<TaskStarted>,
+    ) -> Result<TaskInfo, ApiError> {
+        let schedule = claimed.as_ref().and_then(|started| started.schedule);
         // Whoever follows a task holds its task lease, so one server records its end.
         let lease =
             (self.take_task(project.org, thread).await?).ok_or_else(|| elsewhere(thread))?;
@@ -199,14 +214,14 @@ where
         };
         // Its end is what the ledger records, though its person signs out meanwhile.
         stream.outlasting_access();
-        let started = TaskStarted {
+        let started = claimed.clone().unwrap_or_else(|| TaskStarted {
             thread,
             title,
             model: stream.model.clone(),
             budget,
             schedule,
             by: self.someone_else(caller.person),
-        };
+        });
         let running = Running {
             project,
             started: started.clone(),
@@ -225,7 +240,11 @@ where
         let info = self.running_info(&running);
         let unfollowed = running.unfollowed.clone();
         self.tasks().insert(thread, running);
-        if let Err(error) = self.record_in_ledger(project, &started).await {
+        let recorded = match claimed {
+            Some(_) => Ok(()),
+            None => self.record_in_ledger(project, &started).await,
+        };
+        if let Err(error) = recorded {
             self.cancel_busy(thread);
             self.follow_task(thread, stream).await;
             self.let_go(&lease).await;

@@ -62,6 +62,7 @@ mod remembering;
 mod remote;
 mod removing;
 mod schedule_adopted;
+mod schedule_firing;
 mod schedule_pausing;
 mod schedule_runs;
 mod schedules;

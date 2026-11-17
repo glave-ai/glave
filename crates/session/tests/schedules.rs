@@ -430,12 +430,12 @@ fn schedules_fire_from_one_server_at_a_time() {
     });
 }
 
-/// One server looks after the schedules of every organization its callers work in, each under
-/// that organization's own scheduler lease, and a run lands in its schedule's organization:
+/// One server looks after the schedules of every organization its callers work in, under the
+/// store's one scheduler lease, and a run lands in its schedule's organization:
 /// someone in another organization sees nothing of it. A run for someone signed in from
 /// elsewhere does not start yet (#410), in any organization.
 #[test]
-fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
+fn one_server_keeps_every_organizations_schedules_under_the_store_s_lease() {
     block_on!(async {
         let mut first = setup();
         let now = first.clock.clone();
@@ -484,24 +484,20 @@ fn one_server_keeps_each_organizations_schedules_under_its_own_lease() {
             "in its organization"
         );
         assert_eq!(runs(&grace).await, Vec::new(), "and in no other");
-        // The server holds each organization's scheduler lease apart.
+        // The server holds the store's one scheduler lease.
         let entropy = CountingEntropy::starting_at(0x7e);
         let other = Holder::new(&now, &entropy).unwrap();
-        for org in [third, scope().org()] {
-            let taken = leases
-                .acquire(
-                    org,
-                    Leased::Scheduler,
-                    other,
-                    std::time::Duration::from_secs(60),
-                )
-                .await
-                .unwrap();
-            assert!(
-                taken.is_none(),
-                "each organization's lease is the first server's"
-            );
-        }
+        let minute = std::time::Duration::from_secs(60);
+        let taken = leases
+            .acquire(scope().org(), Leased::Scheduler, other, minute)
+            .await
+            .unwrap();
+        assert!(taken.is_none(), "the store's lease is the first server's");
+        let theirs = leases
+            .acquire(third, Leased::Scheduler, other, minute)
+            .await
+            .unwrap();
+        assert!(theirs.is_some(), "no organization's lease of its own");
     });
 }
 
