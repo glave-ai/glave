@@ -170,7 +170,7 @@ pub(crate) fn named(file: &Path) -> String {
 }
 
 /// The Office file in `bytes`, its main part and what it is, when its parts say.
-fn office(bytes: &[u8]) -> Option<(Package<'_>, String, Kind)> {
+pub(crate) fn office(bytes: &[u8]) -> Option<(Package<'_>, String, Kind)> {
     let mut package = Package::open(bytes)?;
     let (main, kind) = package.main().ok()??;
     Some((package, main, kind))
