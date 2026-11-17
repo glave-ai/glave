@@ -1,19 +1,19 @@
-//! People's computers on a real cluster, only with `GLAVE_TEST_KUBE=1` (CI's `kind` job sets
-//! it; elsewhere these tests say they skipped), on the kubeconfig's cluster and namespace. A
-//! stub in glave's place, on glave's computer image (`GLAVE_TEST_COMPUTER_IMAGE`), tests the
-//! Pod without a Linux build of glave: its limits and hardening as the API server keeps them,
-//! the network policy, the files copied in, the bridges into it (an exec each), and sleep. A
-//! runtime class the cluster lacks, or an isolation policy asks for that the cluster can't
-//! give, leaves nothing behind. Everything made carries `glave.test=<run>`, and each test
-//! checks by that label that nothing is left behind, Secrets included (there are none to
-//! leave). The whole path, with a real glave, is in `home/tests.rs` and `people/tests.rs`.
+//! People's computers on a real cluster, only with `GLAVE_TEST_KUBE=1` (CI's `kind` job sets it;
+//! elsewhere these tests say they skipped), on the kubeconfig's cluster and namespace. A stub in
+//! glave's place, on glave's computer image (`GLAVE_TEST_COMPUTER_IMAGE`), tests the Pod without a
+//! Linux build of glave: its limits and hardening as the API server keeps them, its own service
+//! account, the network policy, the files copied in, the bridges into it (an exec each), and sleep.
+//! A runtime class the cluster lacks, or an isolation policy asks for that the cluster can't give,
+//! leaves nothing behind. Everything made carries `glave.test=<run>`, and each test checks by that
+//! label that nothing is left behind, Secrets included (there are none to leave). The whole path,
+//! with a real glave, is in `home/tests.rs` and `people/tests.rs`.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use glave_ports::computer::{ComputerError, Computers as _, Environment, Image, Isolation, Limits};
 use glave_ports::{Clock as _, SystemClock, block_on};
-use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Pod, Secret};
+use k8s_openapi::api::core::v1::{PersistentVolumeClaim, Pod, Secret, ServiceAccount};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use kube::Api;
 use kube::api::ListParams;
@@ -121,8 +121,8 @@ fn mine(cluster: &Kubernetes) -> ListParams {
     ListParams::default().labels(&labels.join(","))
 }
 
-/// What this test left: Pods, network policies, disks and Secrets with its label, waited for (a
-/// removed Pod takes a moment to go).
+/// What this test left: Pods, network policies, service accounts, disks and Secrets with its
+/// label, waited for (a removed Pod takes a moment to go).
 pub(super) async fn left_behind(cluster: &Kubernetes) -> Vec<String> {
     let label = mine(cluster);
     let mut left = Vec::new();
@@ -140,6 +140,13 @@ pub(super) async fn left_behind(cluster: &Kubernetes) -> Vec<String> {
                 .items
                 .iter()
                 .map(|p| format!("policy {:?}", p.metadata.name)),
+        );
+        let accounts = cluster.accounts().list(&label).await.unwrap();
+        left.extend(
+            accounts
+                .items
+                .iter()
+                .map(|a| format!("service account {:?}", a.metadata.name)),
         );
         let claims: Api<PersistentVolumeClaim> =
             Api::namespaced(cluster.client.clone(), &cluster.namespace);
@@ -206,9 +213,11 @@ async fn through(computer: &PersonComputer) -> Result<Vec<String>, String> {
     Ok(said)
 }
 
-/// What a person's computer's Pod, its policy and the stub in it showed, while awake.
+/// What a person's computer's Pod, its account, its policy and the stub in it showed, while
+/// awake.
 struct Seen {
     pod: Value,
+    account: Value,
     policy: Value,
     said: String,
     bridges: (Vec<String>, Vec<String>),
@@ -217,12 +226,14 @@ struct Seen {
 /// Looks at the awake computer `name`, as `computer` reaches it.
 async fn seen(cluster: &Kubernetes, computer: &PersonComputer, name: &str) -> Result<Seen, String> {
     let pod = object::<Pod>(&cluster.pods(), name).await?;
+    let account = object::<ServiceAccount>(&cluster.accounts(), name).await?;
     let policy = object::<NetworkPolicy>(&cluster.policies(), name).await?;
     let said = printed(cluster, name, 2).await;
     // Each connection is a bridge of its own, the computer going on between them.
     let bridges = (through(computer).await?, through(computer).await?);
     Ok(Seen {
         pod,
+        account,
         policy,
         said,
         bridges,
@@ -269,8 +280,9 @@ fn a_persons_computer_is_limited_hardened_reached_and_put_to_sleep() {
     });
 }
 
-/// `seen`'s Pod and policy, as the API server kept them for a computer woken from `wanted` under
-/// `class`: limited, hardened, the token nowhere in them, nothing let in.
+/// `seen`'s Pod, account and policy, as the API server kept them for a computer woken from
+/// `wanted` under `class`: limited, hardened, running as its own account with no token, the
+/// token nowhere in them, nothing let in.
 fn limited_and_hardened(seen: &Seen, wanted: &Spec, class: Option<&str>) {
     let (pod, policy) = (&seen.pod, &seen.policy);
     let container = &pod["spec"]["containers"][0];
@@ -281,6 +293,13 @@ fn limited_and_hardened(seen: &Seen, wanted: &Spec, class: Option<&str>) {
     );
     assert_eq!(container["resources"]["requests"], amounts);
     assert_eq!(pod["spec"]["automountServiceAccountToken"], json!(false));
+    let account = &seen.account;
+    assert_eq!(
+        pod["spec"]["serviceAccountName"],
+        account["metadata"]["name"]
+    );
+    assert_eq!(account["metadata"]["name"], pod["metadata"]["name"]);
+    assert_eq!(account["automountServiceAccountToken"], json!(false));
     let security = &container["securityContext"];
     assert_eq!(security["capabilities"]["drop"], json!(["ALL"]));
     assert_eq!(security["allowPrivilegeEscalation"], json!(false));

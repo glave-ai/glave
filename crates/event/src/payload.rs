@@ -21,6 +21,7 @@ pub(crate) mod hook;
 pub(crate) mod instructions;
 pub(crate) mod language;
 pub(crate) mod library;
+pub(crate) mod made;
 pub(crate) mod memory;
 pub(crate) mod message;
 pub(crate) mod model;
@@ -69,6 +70,7 @@ pub use hook::{HookPoint, HookRan, HookResult};
 pub use instructions::{InstructionsFile, InstructionsRead, SkillFound};
 pub use language::LanguageSet;
 pub use library::{AssetKind, LibraryKept, LibraryRemoved};
+pub use made::Parts;
 pub use memory::{
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
     MemoryTidied, sealed_under_memory,
