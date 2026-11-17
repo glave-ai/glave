@@ -54,7 +54,9 @@ impl Line {
     }
 
     /// What the command's shell runs first: the line, on the sandbox's error output, by the
-    /// shell's own `printf`, which a function the environment exports does not stand in for.
+    /// shell's own `printf`, so an exported `printf` does not stand in for it. An exported
+    /// `builtin` still does, and keeps the line from coming, which only leaves the command its
+    /// own (`wait`). What stops a forged line is the token, not `builtin`.
     pub(super) fn said_first(&self) -> String {
         format!("builtin printf '%s\\n' {} >&2; ", self.0.trim_end())
     }
