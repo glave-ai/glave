@@ -85,10 +85,9 @@ impl Edited {
         if text.trim().is_empty() {
             return Ok(Self::default());
         }
-        let unread = |error: serde_json::Error| McpSettingsError(error.to_string());
-        let file: Members = serde_json::from_str(text).map_err(unread)?;
+        let file: Members = serde_json::from_str(text)?;
         let servers = match file.get(SERVERS) {
-            Some(raw) => serde_json::from_str(raw.get()).map_err(unread)?,
+            Some(raw) => serde_json::from_str(raw.get())?,
             None => Members::default(),
         };
         Ok(Self { file, servers })
@@ -96,11 +95,10 @@ impl Edited {
 
     /// The file's text with its servers as they are now, ending in a new line.
     pub fn text(mut self) -> Result<String, McpSettingsError> {
-        let failed = |error: serde_json::Error| McpSettingsError(error.to_string());
-        let servers = serde_json::to_string_pretty(&self.servers).map_err(failed)?;
-        let servers = RawValue::from_string(servers).map_err(failed)?;
+        let servers = serde_json::to_string_pretty(&self.servers)?;
+        let servers = RawValue::from_string(servers)?;
         self.file.set(SERVERS, servers);
-        let mut text = serde_json::to_string_pretty(&self.file).map_err(failed)?;
+        let mut text = serde_json::to_string_pretty(&self.file)?;
         text.push('\n');
         Ok(text)
     }
