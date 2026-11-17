@@ -138,7 +138,7 @@ fn a_schedule_made_by_no_one_glave_can_act_for_is_refused_and_recorded() {
         set(&now, "2026-10-10T11:00:00Z");
         assert_eq!(server.tick().await.unwrap(), Vec::new());
         let refused = refusal_in(&log, project).await;
-        assert!(refused.contains("can't tell who made it"), "{refused}");
+        assert_eq!(refused, "MAKER_UNKNOWN");
     });
 }
 

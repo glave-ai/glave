@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 
 use glave_ports::computer::{ComputerError, Sandbox};
 
-use super::profile::{Places, TEMP_PARAM, home_secrets, profile};
+use super::profile::{Places, TEMP_PARAM, profile};
 use super::run_temp::RunTemp;
+use super::secrets::home_secrets;
 use super::{Launch, Reached, Temps, failed, kept_read_only, own_git_folder, resolved};
 
 /// The only `sandbox-exec` trusted: an earlier one in `PATH` could be planted.
@@ -60,7 +61,7 @@ impl Enforcer {
         };
         let home = resolved(sandbox.home.as_deref()).await;
         let secrets: Vec<PathBuf> = match &home {
-            Some(home) => home_secrets(home).collect(),
+            Some(home) => home_secrets().map(|secret| home.join(secret)).collect(),
             None => Vec::new(),
         };
         let hidden = hidden(secrets.into_iter().chain(also_hidden.iter().cloned())).await;

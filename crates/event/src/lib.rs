@@ -47,7 +47,7 @@ pub use payload::{
     ToolCallRequested, ToolCallStarted, ToolError, ToolKind, TraceId, TurnResult, TurnStarted,
     Usage, Verdict, WebPage,
 };
-pub use payload::{AssetKind, LibraryKept, LibraryRemoved};
+pub use payload::{AssetKind, LibraryKept, LibraryRemoved, Parts};
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{
     Catalog, CatalogEndpoint, CatalogModel, CatalogProvider, CatalogRefreshed, Precision,

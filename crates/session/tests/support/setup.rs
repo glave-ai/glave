@@ -187,6 +187,8 @@ pub(crate) struct Setup {
     /// Tools beside the built-in ones.
     pub tools: Vec<Arc<dyn ToolSource>>,
     pub skills: Option<glave_harness::Skills>,
+    /// The hooks every thread runs; none unless a test sets some.
+    pub hooks: glave_ports::settings::Hooks,
     /// Variables its computer gives in place of this process's, such as its `HOME`.
     pub variables: Vec<(String, PathBuf)>,
     /// Whether people sign in through an identity provider; with none, it works for one person.
@@ -269,6 +271,7 @@ impl Setup {
             model: None,
             tools: Vec::new(),
             skills: None,
+            hooks: glave_ports::settings::Hooks::default(),
             variables: Vec::new(),
             identity_provider: false,
             schedules: true,
@@ -413,6 +416,7 @@ impl Setup {
             leases: self.leases,
             tools: self.tools,
             skills: self.skills,
+            hooks: self.hooks,
             awake: self.awake,
             worktrees: self.release,
             identity_provider: self.identity_provider,
@@ -544,9 +548,21 @@ pub(crate) fn shared_leases() -> (ManualClock, Arc<InMemoryLeases>) {
     (clock, leases)
 }
 
-/// A log in memory that two servers can share, as two processes share a database.
+/// A log in memory that two servers can share, as two processes share a database; told to,
+/// it fails on one type of event, as storage that can't be read or written does.
 #[derive(Clone, Default)]
-pub(crate) struct Shared(pub Arc<InMemoryLog>);
+pub(crate) struct Shared(
+    pub Arc<InMemoryLog>,
+    Arc<std::sync::Mutex<Option<&'static str>>>,
+);
+
+impl Shared {
+    /// Fails, from now on, every append holding an event of type `kind`, and every read back
+    /// of that type.
+    pub(crate) fn fail_on(&self, kind: &'static str) {
+        *self.1.lock().unwrap() = Some(kind);
+    }
+}
 
 impl EventLog for Shared {
     fn append(
@@ -554,7 +570,15 @@ impl EventLog for Shared {
         scope: &Scope,
         events: &[RawEvent],
     ) -> impl Future<Output = Result<(), LogError>> + Send {
-        self.0.append(scope, events)
+        let failing = *self.1.lock().unwrap();
+        let fails = failing.is_some_and(|kind| events.iter().any(|raw| raw.kind.as_str() == kind));
+        let append = self.0.append(scope, events);
+        async move {
+            if fails {
+                return Err(LogError::Storage("told to fail".into()));
+            }
+            append.await
+        }
     }
 
     fn read(
@@ -575,7 +599,15 @@ impl EventLog for Shared {
         before: Option<Seq>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
-        self.0.read_back(scope, thread, kinds, before, limit)
+        let failing = *self.1.lock().unwrap();
+        let fails = failing.is_some_and(|kind| kinds.is_some_and(|kinds| kinds.contains(&kind)));
+        let read = self.0.read_back(scope, thread, kinds, before, limit);
+        async move {
+            if fails {
+                return Err(LogError::Storage("told to fail".into()));
+            }
+            read.await
+        }
     }
 
     fn search(

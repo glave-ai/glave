@@ -1,6 +1,7 @@
 //! People's computers on Kubernetes: while awake, a Pod per person in one namespace, from the
 //! pinned image, with CPU and memory requested and limited, a runtime class (gVisor or Kata)
-//! when one is set, no service account token, no privilege, and a NetworkPolicy of its own.
+//! when one is set, a service account of its own with no token, no privilege, and a
+//! NetworkPolicy of its own.
 //! The computer's token, and glave unless its image carries the very glave chosen, are copied
 //! in through the API server once the Pod runs (an exec of `tar`), so the token is never
 //! stored there. The Pod waits for them, then becomes glave, serving on a Unix socket. The
@@ -20,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use glave_ports::computer::{ComputerError, Isolation};
-use k8s_openapi::api::core::v1::Pod;
+use k8s_openapi::api::core::v1::{Pod, ServiceAccount};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Status;
 use kube::api::{AttachParams, LogParams, Patch, PatchParams, PostParams};
@@ -32,6 +33,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 use crate::token::Token;
 pub(crate) use home::PersonComputer;
+pub use objects::UNFENCED;
 use objects::{Home, Progress, Resized, Shape};
 pub use people::{Holding, Leasing, People, person_sandbox};
 use sizing::Size;
@@ -244,6 +246,10 @@ impl Kubernetes {
         Api::namespaced(self.client.clone(), &self.namespace)
     }
 
+    fn accounts(&self) -> Api<ServiceAccount> {
+        Api::namespaced(self.client.clone(), &self.namespace)
+    }
+
     async fn glave(&self) -> Result<Vec<u8>, ComputerError> {
         tokio::fs::read(&self.glave).await.map_err(|error| {
             ComputerError::Refused(
@@ -302,7 +308,14 @@ impl Kubernetes {
             labels: &self.labels,
             home,
         };
-        // The policy first, so the Pod never runs without it.
+        // Its account and its policy first: the Pod is refused without the one, and never runs
+        // without the other.
+        let account: ServiceAccount = serde_json::from_value(shape.service_account())
+            .map_err(|error| failed("service account", error))?;
+        self.accounts()
+            .create(&PostParams::default(), &account)
+            .await
+            .map_err(|error| failed("refused the computer's service account", error))?;
         let policy: NetworkPolicy = serde_json::from_value(shape.network_policy())
             .map_err(|error| failed("network policy", error))?;
         self.policies()
@@ -375,9 +388,7 @@ impl Kubernetes {
     /// Copies `files` (a tar archive of `what`) into the running computer through the API
     /// server.
     async fn copy_in(&self, name: &str, files: &[u8], what: &str) -> Result<(), ComputerError> {
-        let (ended, said) = self
-            .fed(name, &["tar", "-x", "-f", "-", "-C", "/"], files, what)
-            .await?;
+        let (ended, said) = self.fed(name, &objects::COPY_IN, files, what).await?;
         match ended {
             // A cluster too old to close standard input on its own says nothing; the wait in
             // the computer then tells whether everything arrived.

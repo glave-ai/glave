@@ -19,6 +19,19 @@ pub use edit::{Edited, Members};
 #[error("MCP settings: {0}")]
 pub struct McpSettingsError(pub String);
 
+impl From<serde_json::Error> for McpSettingsError {
+    /// Where the JSON went wrong, and why, never a value it quotes: the file's headers and
+    /// environment hold secrets. Where is kept apart, so nothing in the reason can swallow it.
+    fn from(error: serde_json::Error) -> Self {
+        let said = error.to_string();
+        let at = format!(" at line {} column {}", error.line(), error.column());
+        match said.strip_suffix(&at) {
+            Some(why) if error.line() > 0 => Self(format!("{}{at}", super::unquoted(why))),
+            _ => Self(super::unquoted(&said)),
+        }
+    }
+}
+
 /// How to reach one server.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerConfig {
@@ -63,8 +76,7 @@ struct Raw {
 /// `true` when what their tools return comes from outside and no one vouches for it, as with
 /// a web page; `false` when the file's author vouches for it.
 pub fn marks(text: &str) -> Result<BTreeMap<String, bool>, McpSettingsError> {
-    let settings: File =
-        serde_json::from_str(text).map_err(|err| McpSettingsError(err.to_string()))?;
+    let settings: File = serde_json::from_str(text)?;
     Ok(settings
         .servers
         .into_iter()
@@ -126,8 +138,7 @@ fn naming(
     text: &str,
     values: impl Fn(&Raw) -> Option<Vec<&String>>,
 ) -> Result<BTreeSet<String>, McpSettingsError> {
-    let settings: File =
-        serde_json::from_str(text).map_err(|err| McpSettingsError(err.to_string()))?;
+    let settings: File = serde_json::from_str(text)?;
     Ok(settings
         .servers
         .into_iter()
@@ -148,8 +159,7 @@ fn read(
     local: &BTreeMap<String, String>,
     remote: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, ServerConfig>, McpSettingsError> {
-    let settings: File =
-        serde_json::from_str(text).map_err(|err| McpSettingsError(err.to_string()))?;
+    let settings: File = serde_json::from_str(text)?;
     let fill = |text: &str| expand(text, local);
     let fill_remote = |text: &str| expand(text, remote);
     let mut servers = BTreeMap::new();
@@ -220,9 +230,35 @@ fn walk(text: &str, mut variable: impl FnMut(&mut String, &str, Option<&str>)) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::any_secret;
 
     fn env() -> BTreeMap<String, String> {
         BTreeMap::from([("TOKEN".to_owned(), "t0k".to_owned())])
+    }
+
+    #[test]
+    fn a_value_of_the_wrong_kind_is_refused_without_saying_it() {
+        let secret = any_secret();
+        let text = format!(
+            r#"{{"mcpServers": {{"tracker": {{"url": "https://mcp.example.com", "headers": "Bearer {secret}"}}}}}}"#
+        );
+        let refused = parse(&text, &env()).err().map(|error| error.to_string());
+        let refused = refused.unwrap_or_default();
+        assert!(!refused.contains(&secret), "the value said");
+        assert!(refused.contains("line 1 column"), "{refused}");
+    }
+
+    #[test]
+    fn a_name_with_a_quote_in_it_never_swallows_where_it_went_wrong() {
+        let text = r#"{"mcpServers": {"x": {"command": "y", "a`\"b": 1}}}"#;
+        let refused = parse(text, &env()).unwrap_err().to_string();
+        let column = refused
+            .rsplit_once(" at line 1 column ")
+            .map(|(_, column)| column);
+        assert!(
+            column.is_some_and(|column| column.parse::<u32>().is_ok()),
+            "{refused}"
+        );
     }
 
     #[test]

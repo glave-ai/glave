@@ -10,18 +10,26 @@ use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, title_f
 use serde_json::json;
 
 use super::NewSchedule;
-use super::card::{card_in, first_runs};
+use super::card::{asked_in, card_in, first_runs};
 use crate::cron::Cron;
 use crate::protocol::{ApiError, ScheduleInfo, code};
 use crate::repeats::repeats_in;
 use crate::server::{Inner, Server};
-use crate::tasks::acting_for;
 use crate::words::{Language, Sentence};
 use crate::zone::time_zone;
 
 /// The most tokens each run of a schedule the agent sets up may use: the server's own budget
 /// for them, which no one is asked for.
 pub(crate) const RUN_BUDGET: u64 = 200_000;
+
+/// Whether the card shows what each run starts with, in the model's words, so a prompt under an
+/// innocent name is never confirmed unseen. Awaits the owner's decision (#1510): on until then.
+const SHOWS_PROMPT: bool = true;
+
+/// The fewest minutes between two runs of a schedule the agent sets up: an hour, so a model
+/// never proposes one that runs all day; the person can still set one up down to the server's
+/// own floor (`Cron::for_a_schedule`) themselves. Awaits the owner's decision (#1510).
+const PROPOSED_GAP: u16 = 60;
 
 /// The server's schedules, as its chats' tool reaches them: held weakly, since the harness that
 /// holds this is the server's own.
@@ -115,8 +123,7 @@ where
     /// Who asks through `from`: the person the chat is for, in its organization, as glave acts
     /// for them on its own, never as the person on this computer unless they are.
     fn caller_of(&self, from: &Asker) -> Caller {
-        let person = self.someone_else(from.person).and_then(|by| by.id);
-        acting_for(person, from.scope.org())
+        self.acting_as(from.person, from.scope.org())
     }
 
     /// `caller`'s schedules in the project `from` is in, the only ones its chat's tool reaches.
@@ -134,8 +141,9 @@ where
     }
 
     /// What setting up `repeat` would ask `caller`, refused for whatever setting it up would
-    /// refuse: where schedules don't run, a time that doesn't parse, no prompt, a zone glave
-    /// doesn't know, a project they can't work in, or no room under policy.
+    /// refuse: where schedules don't run, a time that doesn't parse, runs more often than the
+    /// agent may propose or never comes, no prompt, a zone glave doesn't know, a project they
+    /// can't work in, or no room under policy.
     async fn check_repeat(
         &self,
         caller: &Caller,
@@ -148,29 +156,32 @@ where
                 Sentence::SchedulesNotHere,
             ));
         }
-        let cron =
-            Cron::parse(&repeat.cron).map_err(|why| ApiError::new(code::INVALID_PARAMS, why))?;
-        let first = title_from(&repeat.prompt)
-            .ok_or_else(|| ApiError::new(code::INVALID_PARAMS, Sentence::ScheduleNoPrompt))?;
+        let invalid = |why| ApiError::new(code::INVALID_PARAMS, why);
+        let cron = Cron::for_a_schedule(&repeat.cron).map_err(invalid)?;
+        if cron.shortest_gap() < u32::from(PROPOSED_GAP) {
+            let minutes = PROPOSED_GAP;
+            return Err(invalid(Sentence::CronTooOften { minutes }));
+        }
+        let first =
+            (title_from(&repeat.prompt)).ok_or_else(|| invalid(Sentence::ScheduleNoPrompt))?;
         let zone = self.zone_of(caller).await?;
         let clocks = time_zone(&zone)?;
+        let now = self.inner.harness.clock().now();
+        let Some(first_run) = first_runs(&cron, now, &clocks).first().copied() else {
+            let text = repeat.cron.escape_debug().to_string();
+            return Err(invalid(Sentence::CronNever { text }));
+        };
         self.project_for(caller, Some(from.scope.project())).await?;
         self.room_for_one_more(caller).await?;
-        let name = title_from(&repeat.name).unwrap_or(first);
-        let now = self.inner.harness.clock().now();
-        let runs = first_runs(&cron, now, &clocks);
-        let when = When::Cron(repeat.cron.clone());
-        let english = Language::English;
-        let ask = Ask::Repeat {
-            when: repeats_in(english, &when, false),
-        };
-        let first = runs.first().copied().unwrap_or(now);
         let repeating = Repeating {
             cron: repeat.cron.clone(),
             zone,
-            name,
-            first: At::from(first),
+            name: title_from(&repeat.name).unwrap_or(first),
+            first: At::from(first_run),
+            prompt: SHOWS_PROMPT.then(|| repeat.prompt.clone()),
         };
+        let english = Language::English;
+        let ask = asked_in(english, &repeating);
         let detail = card_in(english, &repeating).unwrap_or_default();
         // A schedule on a person's own computer runs only while glave does there.
         let caution = self.inner.awake.is_some().then(|| Caution {
@@ -194,7 +205,8 @@ where
                     project: Some(from.scope.project()),
                     name: Some(repeat.name),
                     when: When::Cron(repeat.cron),
-                    zone: None,
+                    // The zone its card showed: one set meanwhile never makes another.
+                    zone: repeat.zone,
                     prompt: repeat.prompt,
                     budget: RUN_BUDGET,
                     from: Some(from.thread),
@@ -208,7 +220,9 @@ where
                     when_of(&made),
                     next_of(&made)
                 );
-                let about = json!({"schedule": made.schedule, "chat": made.thread});
+                let about = json!({
+                    "schedule": made.schedule, "chat": made.thread, "repeats": made.repeats
+                });
                 Ok(Done {
                     said,
                     about: Some(about),

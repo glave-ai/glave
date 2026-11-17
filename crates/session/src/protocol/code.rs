@@ -56,3 +56,10 @@ codes! {
     NOT_IN = -32036, "The organization the request named (`Glave-Organization`) is not one the caller is in, whether or not it exists";
     NO_FOLDER = -32029, "The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`)";
 }
+
+/// The name clients know `code` by (`ARCHIVED`), when it is one of [`ALL`].
+pub(crate) fn name_of(code: i64) -> Option<&'static str> {
+    ALL.iter()
+        .find(|(each, ..)| *each == code)
+        .map(|(_, name, _)| *name)
+}

@@ -4,9 +4,10 @@
 //! 8:00 am?", when it first runs on their clock, and the chat its runs go to): answered "Repeat
 //! it", the schedule and its own chat are made, and each run is a new turn there; "Not now"
 //! makes nothing. Removing one asks as any change does, so the judge may clear it in Auto. It
-//! is offered only where schedules run and someone can answer, and never to a subagent. The
-//! schedules themselves are the session's, which keeps them in its ledgers ([`Schedules`]); the
-//! harness only asks and passes on.
+//! is offered only where schedules run and someone can answer, and never to a subagent; a
+//! schedule's own run, which is offered it so its prefix stays the chat's, only lists, never
+//! setting up or removing what repeats. The schedules themselves are the session's, which keeps
+//! them in its ledgers ([`Schedules`]); the harness only asks and passes on.
 
 use std::sync::Arc;
 
@@ -34,6 +35,11 @@ const PLANNING: &str = "Not set up in plan mode: nothing repeats while you plan.
 const NO_ONE: &str = "Not set up: no one is here to confirm it. Tell the person what you would \
      repeat and when, and they can ask you again.";
 
+/// What the model is told in a schedule's own run, asked to set one up or remove one.
+const IN_A_RUN: &str = "Not done: this is a run of repeating work, which never sets up or \
+     removes what repeats. Tell the person what you would change, and they can ask for it in a \
+     chat.";
+
 /// Who asks of the schedules, and from where: a chat of a person's.
 #[derive(Debug, Clone)]
 pub struct Asker {
@@ -53,6 +59,9 @@ pub struct Repeat {
     pub prompt: String,
     /// When it runs: a five-field cron expression on the person's own clock.
     pub cron: String,
+    /// The time zone its card showed the person, once it did: what it is made in, so a zone
+    /// they set meanwhile never makes one the card didn't show.
+    pub zone: Option<String>,
 }
 
 /// What is asked of the schedules.
@@ -153,7 +162,12 @@ fn asked(arguments: &Arguments) -> Result<Asked, String> {
     let called: Called = serde_json::from_value(Value::Object(arguments.clone()))
         .map_err(|err| format!("The arguments were not understood: {err}."))?;
     Ok(match called {
-        Called::Create { name, prompt, cron } => Asked::Create(Repeat { name, prompt, cron }),
+        Called::Create { name, prompt, cron } => Asked::Create(Repeat {
+            name,
+            prompt,
+            cron,
+            zone: None,
+        }),
         Called::List => Asked::List,
         Called::Remove { schedule } => Asked::Remove(schedule),
     })
@@ -192,7 +206,7 @@ where
 
     /// Runs a `schedule` call, its hooks first whatever it does: setting one up asks the
     /// person, whatever the mode, and waits for them as any approval does; removing one asks
-    /// as any change does; listing asks nothing.
+    /// as any change does; listing asks nothing. A schedule's own run only lists.
     pub(crate) async fn call_schedule(
         &self,
         thread: &mut Thread,
@@ -207,7 +221,7 @@ where
                 "Repeating work isn't available here.",
             ));
         };
-        let asked = match asked(&call.arguments) {
+        let mut asked = match asked(&call.arguments) {
             Ok(asked) => asked,
             Err(why) => return Ok(ToolOutput::text(true, why)),
         };
@@ -220,6 +234,7 @@ where
         let hooked = ToolHook::of(call, SCHEDULE);
         if let Some(answered) = step.waited(&call.call_id) {
             // Its hooks ran and it asked before the turn stopped: the person's answer decides.
+            shown(&mut asked, answered.asked.repeating.as_ref());
             if let Some(refused) = self.answered(thread, answered, cancel, live).await? {
                 return Ok(refused);
             }
@@ -228,9 +243,14 @@ where
             if let Some(stopped) = hook.await? {
                 return Ok(stopped);
             }
-            let refused = match &asked {
+            if step.scheduled && asked != Asked::List {
+                return Ok(ToolOutput::text(true, IN_A_RUN));
+            }
+            let refused = match &mut asked {
                 Asked::Create(repeat) => {
                     let checked = schedules.check(&from, repeat).await;
+                    let card = checked.as_ref().ok().and_then(|it| it.repeating.as_ref());
+                    repeat.zone = card.map(|card| card.zone.clone());
                     self.confirmed(thread, call, checked, cancel, live).await?
                 }
                 Asked::Remove(schedule) => {
@@ -291,6 +311,13 @@ where
     }
 }
 
+/// Keeps in `asked`, when it sets up a schedule, the zone of the card the person was shown.
+fn shown(asked: &mut Asked, card: Option<&Repeating>) {
+    if let Asked::Create(repeat) = asked {
+        repeat.zone = card.map(|card| card.zone.clone());
+    }
+}
+
 /// What `call` asks the person, as `confirm` words it: a change, with the card's detail as
 /// what would run.
 fn request(thread: &Thread, call: &ToolCall, confirm: Confirm) -> ApprovalRequest {
@@ -329,6 +356,7 @@ mod tests {
             name: "Morning email summary".into(),
             prompt: "Summarize my email".into(),
             cron: "0 8 * * 1-5".into(),
+            zone: None,
         };
         assert_eq!(asked(&create), Ok(Asked::Create(repeat)));
         assert_eq!(describe(&create), "schedule: Morning email summary");

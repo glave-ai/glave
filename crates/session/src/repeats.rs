@@ -13,14 +13,32 @@ use crate::words::{Language, Sentence, say};
 /// The most times in a day said one by one.
 const MOST_TIMES: usize = 4;
 
+/// The last day every month has: a later one is skipped in the months without it, which plain
+/// words for it would hide.
+const EVERY_MONTH_HAS: u8 = 28;
+
 /// What a schedule's days come to.
-enum Days {
+pub(crate) enum Days {
     Every,
     Weekdays,
-    /// These weekdays, Sunday as 0.
+    /// These weekdays, Monday first, Sunday as 0.
     Weekly(Vec<u8>),
-    /// This day of every month.
+    /// This day of every month, one every month has.
     Monthly(u8),
+}
+
+/// A cron expression's shape, when it has plain words.
+pub(crate) enum Shape {
+    /// Every hour, at `past` minutes past.
+    Hourly { past: u8 },
+    /// Every `minutes` minutes, from the hour.
+    EveryMinutes { minutes: u8 },
+    /// On `days`, at each of `hours`, `minute` past.
+    OnDays {
+        days: Days,
+        hours: Vec<u8>,
+        minute: u8,
+    },
 }
 
 /// When `when` repeats, written in `language`, as a phrase that opens a line (`start`, "Every
@@ -38,18 +56,44 @@ pub(crate) fn repeats_in(language: Language, when: &When, start: bool) -> String
     say(language, &said.unwrap_or(Sentence::RepeatsOther { start }))
 }
 
-/// Whether `when` repeats in a shape with plain words, as "every weekday at 8:00 am" is: a
-/// cron expression whose days and times say plainly.
-pub(crate) fn plain(when: &When) -> bool {
-    let When::Cron(text) = when else {
-        return false;
-    };
-    let start = "no".to_owned();
-    Cron::parse(text).is_ok_and(|cron| plainly(Language::English, &cron, start).is_some())
-}
-
 /// The plain words for `cron` in `language`, when its shape has them.
 fn plainly(language: Language, cron: &Cron, start: String) -> Option<Sentence> {
+    Some(match shape_of(cron)? {
+        Shape::Hourly { past } => Sentence::RepeatsHourly {
+            start,
+            past: u64::from(past),
+        },
+        Shape::EveryMinutes { minutes } => Sentence::RepeatsEveryMinutes {
+            start,
+            minutes: u64::from(minutes),
+        },
+        Shape::OnDays {
+            days,
+            hours,
+            minute,
+        } => {
+            let time = times_in(language, &hours, minute);
+            match days {
+                Days::Every => Sentence::RepeatsDaily { start, time },
+                Days::Weekdays => Sentence::RepeatsWeekdays { start, time },
+                Days::Weekly(weekdays) => Sentence::RepeatsWeekly {
+                    start,
+                    days: weekdays_in(language, &weekdays),
+                    time,
+                },
+                Days::Monthly(day) => Sentence::RepeatsMonthly {
+                    start,
+                    day: u64::from(day),
+                    time,
+                },
+            }
+        }
+    })
+}
+
+/// The shape of `cron`, when it has plain words: every month, and either every day all day
+/// on the hour or evenly through it, or a few times a day on days that say plainly.
+pub(crate) fn shape_of(cron: &Cron) -> Option<Shape> {
     if values(cron.months, 1, 12).len() != 12 {
         return None;
     }
@@ -61,47 +105,20 @@ fn plainly(language: Language, cron: &Cron, start: String) -> Option<Sentence> {
             return None;
         }
         if let [past] = minutes.as_slice() {
-            let past = u64::from(*past);
-            return Some(Sentence::RepeatsHourly { start, past });
+            return Some(Shape::Hourly { past: *past });
         }
         let step = minutes.get(1).copied()?;
         let even = step > 0 && 60 % step == 0 && minutes.len() == usize::from(60 / step);
         let from_zero = minutes.iter().zip(0..).all(|(m, i)| *m == step * i);
-        let minutes = u64::from(step);
-        return (even && from_zero).then_some(Sentence::RepeatsEveryMinutes { start, minutes });
+        return (even && from_zero).then_some(Shape::EveryMinutes { minutes: step });
     }
     let [minute] = minutes.as_slice() else {
         return None;
     };
-    if hours.len() > MOST_TIMES {
-        return None;
-    }
-    let times: Vec<String> = (hours.iter())
-        .map(|hour| clock_in(language, *hour, *minute))
-        .collect();
-    let time = listed_in(language, &times);
-    Some(match days {
-        Days::Every => Sentence::RepeatsDaily { start, time },
-        Days::Weekdays => Sentence::RepeatsWeekdays { start, time },
-        Days::Weekly(weekdays) => {
-            let names: Vec<String> = (weekdays.iter())
-                .map(|day| {
-                    say(
-                        language,
-                        &Sentence::Weekday {
-                            day: u64::from(*day),
-                        },
-                    )
-                })
-                .collect();
-            let days = listed_in(language, &names);
-            Sentence::RepeatsWeekly { start, days, time }
-        }
-        Days::Monthly(day) => Sentence::RepeatsMonthly {
-            start,
-            day: u64::from(day),
-            time,
-        },
+    (hours.len() <= MOST_TIMES).then_some(Shape::OnDays {
+        days,
+        hours,
+        minute: *minute,
     })
 }
 
@@ -109,7 +126,9 @@ fn plainly(language: Language, cron: &Cron, start: String) -> Option<Sentence> {
 /// field is written with `*`, a day must be in both; when both are restricted, in either.
 fn days_of(cron: &Cron) -> Option<Days> {
     let days = values(cron.days, 1, 31);
-    let weekdays = values(cron.weekdays, 0, 6);
+    let mut weekdays = values(cron.weekdays, 0, 6);
+    // Monday first: Sunday ends the week.
+    weekdays.sort_by_key(|day| (day + 6) % 7);
     let every_date = days.len() == 31;
     let every_weekday = weekdays.len() == 7;
     let either = !cron.any_day && !cron.any_weekday;
@@ -120,7 +139,7 @@ fn days_of(cron: &Cron) -> Option<Days> {
         (true, true, _) => Some(Days::Every),
         (true, false, _) if weekdays == [1, 2, 3, 4, 5] => Some(Days::Weekdays),
         (true, false, _) => Some(Days::Weekly(weekdays)),
-        (false, true, [day]) => Some(Days::Monthly(*day)),
+        (false, true, [day]) if *day <= EVERY_MONTH_HAS => Some(Days::Monthly(*day)),
         _ => None,
     }
 }
@@ -132,13 +151,44 @@ fn values(set: u64, low: u8, high: u8) -> Vec<u8> {
         .collect()
 }
 
-/// `hour`:`minute` on a clock, in `language`: `8:00 am`.
+/// `days`, as a line opens with them, in `language`: "Monday to Friday".
+pub(crate) fn days_in(language: Language, days: &Days) -> String {
+    match days {
+        Days::Every => say(language, &Sentence::DaysEvery),
+        Days::Weekdays => say(language, &Sentence::DaysWeekdays),
+        Days::Weekly(weekdays) => weekdays_in(language, weekdays),
+        Days::Monthly(day) => say(
+            language,
+            &Sentence::DaysMonthly {
+                day: u64::from(*day),
+            },
+        ),
+    }
+}
+
+/// `weekdays`, Sunday as 0, by name in a list, in `language`: "Monday and Friday".
+fn weekdays_in(language: Language, weekdays: &[u8]) -> String {
+    let names: Vec<String> = (weekdays.iter())
+        .map(|day| {
+            let day = u64::from(*day);
+            say(language, &Sentence::Weekday { day })
+        })
+        .collect();
+    listed_in(language, &names)
+}
+
+/// Each of `hours` at `minute` past, in a list, in `language`: "9:00 am and 5:00 pm".
+pub(crate) fn times_in(language: Language, hours: &[u8], minute: u8) -> String {
+    let times: Vec<String> = (hours.iter())
+        .map(|hour| clock_in(language, *hour, minute))
+        .collect();
+    listed_in(language, &times)
+}
+
+/// `hour` (0 to 23):`minute` on a clock, in `language`: `8:00 am`, or `20:00` in a language
+/// whose clocks run to 24, as its catalog says.
 pub(crate) fn clock_in(language: Language, hour: u8, minute: u8) -> String {
     let half = if hour < 12 { "am" } else { "pm" }.to_owned();
-    let hour = match hour % 12 {
-        0 => 12,
-        other => other,
-    };
     let clock = Sentence::Clock {
         hour: u64::from(hour),
         minute: format!("{minute:02}"),
@@ -184,9 +234,15 @@ mod tests {
             ),
             (
                 "0 9,17 * * 6,7",
-                "Every Sunday and Saturday at 9:00 am and 5:00 pm",
+                "Every Saturday and Sunday at 9:00 am and 5:00 pm",
             ),
+            ("0 9 * * 0,6", "Every Saturday and Sunday at 9:00 am"),
+            ("0 9 * * 0,1", "Every Monday and Sunday at 9:00 am"),
             ("0 8 1 * *", "On day 1 of every month at 8:00 am"),
+            ("0 8 28 * *", "On day 28 of every month at 8:00 am"),
+            // Not every month has the 29th to the 31st: its next runs say when instead.
+            ("0 8 29 * *", "On a repeating schedule"),
+            ("0 8 31 * *", "On a repeating schedule"),
             ("0 8 1-31 * *", "Every day at 8:00 am"),
             ("0 8 * * 0-6", "Every day at 8:00 am"),
             ("0 * * * *", "Every hour"),
@@ -207,6 +263,20 @@ mod tests {
         assert_eq!(inside, "every weekday at 8:00 am");
         let at = When::At(glave_event::At::from(jiff::Timestamp::UNIX_EPOCH));
         assert_eq!(repeats_in(Language::English, &at, true), "Once");
+    }
+
+    #[test]
+    fn the_catalog_gets_the_hour_of_the_day_and_english_says_it_on_a_12_hour_clock() {
+        let said: Vec<String> = [0, 1, 11, 12, 13, 23]
+            .into_iter()
+            .map(|hour| clock_in(Language::English, hour, 5))
+            .collect();
+        assert_eq!(
+            said,
+            [
+                "12:05 am", "1:05 am", "11:05 am", "12:05 pm", "1:05 pm", "11:05 pm"
+            ]
+        );
     }
 
     #[test]

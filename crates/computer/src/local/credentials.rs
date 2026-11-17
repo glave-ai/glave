@@ -3,9 +3,10 @@
 //! (`gh` for github.com, `tea`) runs through a small wrapper that asks the same helper and sets
 //! the token in that tool's own environment only. The helper reaches glave over a connection
 //! on this machine's loopback address, opened for this command and closed when it ends, and
-//! presents a random password that only the helper's file holds. Nothing secret is written:
-//! the files hold the address and that password; the token travels only in answers, to the
-//! process that asked.
+//! presents a random password that only the command's own environment holds. Nothing secret is
+//! written: the files hold the address alone, so another command on the computer, which reads
+//! them where every sandbox does, is answered nothing; the token travels only in answers, to
+//! the process that asked.
 
 mod serving;
 mod wrapper;
@@ -22,6 +23,10 @@ use wrapper::{Places, quoted};
 /// itself is read as printing a credential (`glave-shell`).
 const HELPER: &str = "git-credential-glave";
 
+/// The variable the helper reads its password from: in its command's environment alone, never
+/// in a file, since every sandbox on the computer reads the folder helpers are made in.
+const PASSWORD: &str = "GLAVE_CREDENTIAL_PASSWORD";
+
 /// The helper git runs for each connected host, and the forge tools' wrappers, in a folder of
 /// their own for one command, removed when it ends.
 pub(crate) struct Offered {
@@ -29,8 +34,8 @@ pub(crate) struct Offered {
     listener: TcpListener,
     password: String,
     hosts: Vec<CredentialHost>,
-    /// What the command's environment gains: git's settings naming the helper, and the
-    /// wrappers' folder first in `PATH`.
+    /// What the command's environment gains: git's settings naming the helper, the helper's
+    /// password, and the wrappers' folder first in `PATH`.
     pub(crate) environment: Vec<(OsString, OsString)>,
 }
 
@@ -96,8 +101,11 @@ pub(crate) async fn offer(
         environment: Vec::new(),
     };
     let helper = offered.folder.join(HELPER);
-    write_script(&helper, &helper_script(port, &offered.password)).await?;
+    write_script(&helper, &helper_script(port)).await?;
     offered.environment = settings(&offered.hosts, &helper, environment);
+    offered
+        .environment
+        .push((PASSWORD.into(), offered.password.clone().into()));
     let tools = ForgeTool::signed_in(&offered.hosts);
     if !tools.is_empty() {
         let bin = offered.folder.join("bin");
@@ -138,17 +146,19 @@ fn settings(
     )
 }
 
-/// The helper: on `get`, it sends the password and git's request to glave and prints the
-/// answer, waiting at most 30 seconds for each line. Anything else (`store`, `erase`) it
-/// ignores, so this helper keeps nothing anywhere.
-fn helper_script(port: u16, password: &str) -> String {
+/// The helper: on `get`, it sends its command's password, which only that command's
+/// environment holds, and git's request to glave and prints the answer, waiting at most 30
+/// seconds for each line. Anything else (`store`, `erase`) it ignores, so this helper keeps
+/// nothing anywhere.
+fn helper_script(port: u16) -> String {
     format!(
         "#!/usr/bin/env bash\n\
          # glave's credential helper for one command: it asks glave, at each use, for the\n\
-         # credential of a host the person connected. Only `get` is answered.\n\
+         # credential of a host the person connected. Only `get` is answered, and only to\n\
+         # the command it was made for, whose environment holds its password.\n\
          test \"$1\" = get || exit 0\n\
          {{ exec 3<>/dev/tcp/127.0.0.1/{port}; }} 2>/dev/null || exit 0\n\
-         {{ printf '%s\\n' '{password}'; cat; printf '\\n'; }} >&3\n\
+         {{ printf '%s\\n' \"${PASSWORD}\"; cat; printf '\\n'; }} >&3\n\
          while IFS= read -r -t 30 line <&3; do printf '%s\\n' \"$line\"; done\n"
     )
 }
