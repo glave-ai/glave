@@ -264,6 +264,7 @@ fn as_csv(rows: &Rows) -> String {
 }
 
 mod csv;
+pub(crate) use csv::rows as csv_rows;
 mod functions;
 mod json;
 pub(crate) mod load;
