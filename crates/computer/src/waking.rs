@@ -15,7 +15,7 @@ pub use machine::{Grow, Lost, Short};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use glave_ports::computer::{
     Background, Bytes, Changes, Command, CommandId, ComputerError, ComputerId, ComputerInfo,
@@ -24,9 +24,8 @@ use glave_ports::computer::{
     Searched, Since, Sources, Stat, TerminalId, TerminalInfo, TerminalSize, WorkspaceId,
     WorkspaceInfo,
 };
-use glave_ports::{BoxFuture, Cancellation};
+use glave_ports::{BoxFuture, Cancellation, Clock};
 use planned::{Planned, Real};
-use tokio::time::Instant;
 
 /// Wakes the computer, if it sleeps, and answers it awake with its home: what [`Waking`] asks
 /// before each call that needs the computer.
@@ -40,9 +39,9 @@ pub type Wake = Arc<dyn Fn() -> BoxFuture<'static, Result<Home, ComputerError>> 
 pub type Peek =
     Arc<dyn Fn() -> BoxFuture<'static, Result<Option<Home>, ComputerError>> + Send + Sync>;
 
-/// How long a computer that answered a call is taken to be awake without asking again: a turn
-/// holds it awake, asking it how it is once a minute, so only a call after a quiet spell asks
-/// whether it slept meanwhile.
+/// How long a computer that answered a call is taken to be awake without asking again, on the
+/// clock [`Waking`] is given: a turn holds it awake, asking it how it is once a minute, so only a
+/// call after a quiet spell asks whether it slept meanwhile.
 const TRUSTED: Duration = Duration::from_secs(30);
 
 /// A person's computer that wakes only for the calls that need it.
@@ -59,7 +58,9 @@ pub struct Waking {
     /// Each workspace planned on it, and where it is open for real.
     workspaces: Mutex<BTreeMap<WorkspaceId, Arc<Planned>>>,
     /// The computer last found awake, and when a call on it last went through.
-    awake: Mutex<Option<(ComputerId, Option<Instant>)>>,
+    awake: Mutex<Option<(ComputerId, Option<SystemTime>)>>,
+    /// What tells when a call went through, and how long ago.
+    clock: Arc<dyn Clock>,
 }
 
 impl std::fmt::Debug for Waking {
@@ -84,12 +85,14 @@ impl Waking {
     /// The computer `wake` wakes, `peek` finds awake without waking it, and `machine`, if
     /// given, grows and says whether it lost its machine, planned as `home`: its home's
     /// workspace, which names the computer, whose scratch folders are made in the folder
-    /// `scratch`. Nothing is asked of it until a call needs it.
+    /// `scratch`. How lately a call went through is read on `clock`. Nothing is asked of it
+    /// until a call needs it.
     pub fn home(
         (wake, peek): (Wake, Peek),
         machine: Option<(Grow, Lost)>,
         home: WorkspaceInfo,
         scratch: &str,
+        clock: Arc<dyn Clock>,
     ) -> Home {
         let waking = Self {
             wake,
@@ -99,6 +102,7 @@ impl Waking {
             scratch: scratch.trim_end_matches('/').to_owned(),
             workspaces: Mutex::new(BTreeMap::new()),
             awake: Mutex::new(None),
+            clock,
         };
         waking.plan(home.clone(), None);
         Home {
@@ -157,8 +161,16 @@ impl Waking {
 
     /// The computer last found awake, and whether a call on it went through lately.
     fn last_awake(&self) -> Option<(ComputerId, bool)> {
+        let now = self.now();
         let awake = *self.awake.lock().unwrap_or_else(PoisonError::into_inner);
-        awake.map(|(computer, at)| (computer, at.is_some_and(|at| at.elapsed() < TRUSTED)))
+        // Past `TRUSTED`, or with the clock set back since, it is asked whether it slept.
+        let lately = |at: SystemTime| now.duration_since(at).is_ok_and(|ago| ago < TRUSTED);
+        awake.map(|(computer, at)| (computer, at.is_some_and(lately)))
+    }
+
+    /// Now, on the clock.
+    fn now(&self) -> SystemTime {
+        SystemTime::from(self.clock.now())
     }
 
     /// Whether `computer` is the one [`Peek`] finds awake now: never so once the server let go
@@ -179,11 +191,12 @@ impl Waking {
     /// Counts `computer` awake as of now, and forgets what was kept only for commands on a
     /// computer before it.
     fn saw(&self, computer: ComputerId) {
+        let now = self.now();
         let before = self
             .awake
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .replace((computer, Some(Instant::now())));
+            .replace((computer, Some(now)));
         if before.is_some_and(|(was, _)| was != computer) {
             self.workspaces
                 .lock()
@@ -195,11 +208,12 @@ impl Waking {
     /// `result`, a call's on the computer awake: one that went through counts it awake as of
     /// now; one that found it unreachable has the next call ask whether it slept.
     fn done<T>(&self, result: Result<T, ComputerError>) -> Result<T, ComputerError> {
+        let now = self.now();
         let mut awake = self.awake.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some((_, at)) = awake.as_mut() {
             *at = match &result {
                 Err(ComputerError::Unreachable(_)) => None,
-                _ => Some(Instant::now()),
+                _ => Some(now),
             };
         }
         result
