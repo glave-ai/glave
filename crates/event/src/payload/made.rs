@@ -2,9 +2,10 @@
 //! spreadsheet, a deck or a PDF changed in the thread's folder over the turn, kept for the
 //! thread so it outlives the computer, and named in its `turn.ended`, under `made`, with what
 //! glave read of it apart from itself: its title, its pages, sheets or slides, and its preview.
-//! While a command the thread started in the background still runs, a look-over stops short of
-//! what may still be being written, and says where (`made_until_ns`): the next one starts there,
-//! a `turn.made` when the last such command ends while the thread is idle.
+//! A turn's end says where its look-over stopped (`made_until_ns`), and whether a command the thread started
+//! in the background still ran then (`made_waits`), so that what may still have been being
+//! written is looked over later: a `turn.made`, once the last such command ends while the thread
+//! is idle, or the next working turn's end.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -90,16 +91,16 @@ pub enum MadeLeft {
     TooMany,
 }
 
-/// What a look-over that ended while the thread was idle found (`turn.made`): once the last
-/// command the thread ran in the background ended, the files changed since where the turn's own
-/// look-over stopped, which are that turn's.
+/// What a look-over while the thread was idle found (`turn.made`): once the last command the
+/// thread ran in the background ended, the files changed since where the turn's own look-over
+/// stopped, which are that turn's. It looks up to its end, as no command runs then.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TurnMade {
     /// The turn's `turn.started`.
     pub turn: Seq,
-    /// Where this look-over stopped, a command of the thread's still running, in nanoseconds
-    /// since 1970 by the computer's clock; absent when it looked up to its end.
+    /// Where this look-over stopped, in nanoseconds since 1970 by the computer's clock: the
+    /// next starts no earlier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub made_until_ns: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -110,7 +111,8 @@ pub struct TurnMade {
 
 impl Payload for TurnMade {
     const TYPE: &'static str = TURN_MADE;
-    const VERSION: u32 = 1;
+    // 2 has what was read of each file (`read`); a version 1 look-over read none.
+    const VERSION: u32 = 2;
 }
 
 /// Decodes `turn.made`; `None` for any other type or version.
@@ -119,7 +121,7 @@ pub(crate) fn decode(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<Body>> {
-    (kind == TURN_MADE && version == 1).then(|| parse(data).map(Body::TurnMade))
+    (kind == TURN_MADE && matches!(version, 1 | 2)).then(|| parse(data).map(Body::TurnMade))
 }
 
 /// The files counted as made, by the end of their name: each one's media type and kind.

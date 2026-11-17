@@ -39,9 +39,12 @@ pub(crate) async fn glob(root: &Path, glob: &Glob) -> Result<Globbed, ComputerEr
             .changed_since_ns
             .map(|nanos| SystemTime::UNIX_EPOCH + Duration::from_nanos(nanos));
         let now = SystemTime::from(SystemClock.now());
-        let cut_off = glob.settled_for_ns.map(|nanos| {
-            now.checked_sub(Duration::from_nanos(nanos))
-                .unwrap_or(SystemTime::UNIX_EPOCH)
+        // A look over a window of time ends at now, or as long before it as files must have
+        // settled: the next look starts just after.
+        let windowed = glob.changed_since_ns.is_some() || glob.settled_for_ns.is_some();
+        let cut_off = windowed.then(|| {
+            let settled = Duration::from_nanos(glob.settled_for_ns.unwrap_or(0));
+            now.checked_sub(settled).unwrap_or(SystemTime::UNIX_EPOCH)
         });
         let started = Instant::now();
         let mut stopped = false;
@@ -62,7 +65,7 @@ pub(crate) async fn glob(root: &Path, glob: &Glob) -> Result<Globbed, ComputerEr
             };
             let when = modified(&stat);
             let settled = cut_off.is_none_or(|cut_off| when <= cut_off);
-            if since.is_none_or(|since| when >= since) && settled {
+            if since.is_none_or(|since| when > since) && settled {
                 files.push((when, relative(root.path, &path)));
             }
         }
@@ -209,3 +212,6 @@ fn clip(line: &str, most: usize) -> String {
     cut.push('…');
     cut
 }
+
+#[cfg(test)]
+mod tests;

@@ -60,6 +60,19 @@ fn each_turn_s_files_are_what_its_end_and_a_later_look_over_say_it_made() {
         told(&turns).get(1..),
         Some(&[(3, vec!["log.pdf"], more), (5, vec![], None)][..])
     );
+    // A file a later look-over found again is named once, in its first place, as it is now.
+    let again =
+        json!({"turn": 1, "made": [{"path": "out/plan.pdf", "bytes": 12, "kept": "secret"}]});
+    read(&mut turns, raw(8, "turn.made", &again));
+    assert_eq!(
+        told(&turns).first(),
+        Some(&(1, vec!["out/plan.pdf", "big.pdf"], None))
+    );
+    let plan = turns.first().and_then(|turn| turn.files.first());
+    assert_eq!(
+        plan.map(|file| (file.bytes, &file.kept)),
+        Some((12, &Kept::Secret))
+    );
 }
 
 #[test]
@@ -69,12 +82,13 @@ fn a_file_is_named_by_its_title_else_its_cleaned_file_name() {
     assert_eq!(cleaned("_.pdf"), "_.pdf");
     assert_eq!(kind_word(AssetKind::Deck), "deck");
     let blob = json!({"sha256": "a".repeat(64), "bytes": 9, "media_type": "application/pdf"});
-    let unread: FileMade = serde_json::from_value(
+    let kept: FileMade = serde_json::from_value(
         json!({"path": "out/Lisbon_plan.pdf", "bytes": 9, "kept": {"blob": blob}}),
     )
     .unwrap();
-    let shown = made_file(unread.clone());
+    let shown = made_file(&kept);
     assert_eq!(shown.name, "Lisbon plan");
+    assert_eq!(shown.file_name, "Lisbon_plan.pdf");
     assert!(shown.unread.is_some() && !shown.previews);
     let read = FileMade {
         read: Some(glave_event::FileRead {
@@ -82,9 +96,9 @@ fn a_file_is_named_by_its_title_else_its_cleaned_file_name() {
             parts: Some(Parts::Pages(2)),
             preview: None,
         }),
-        ..unread
+        ..kept
     };
-    let shown = made_file(read);
+    let shown = made_file(&read);
     assert_eq!(shown.name, "Lisbon");
     assert!(shown.unread.is_none() && shown.previews && shown.parts.is_some());
 }

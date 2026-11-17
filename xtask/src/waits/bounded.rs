@@ -7,7 +7,7 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "crates/cli/src/reading.rs",
         "let ended = self.ended.notified();",
         1,
-        "a reader's share, waited for within the look-over's deadline (READING_FOR in \
+        "a reader's share, waited for within the look-over's deadline (READING_FOR in \\
          glave-harness's made.rs), which the harness wraps every reader in",
     ),
     (

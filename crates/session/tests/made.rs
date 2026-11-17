@@ -3,13 +3,15 @@
 //! name, parts, whether it previews and where it is kept, in the server's sentences, as its
 //! reader read it; `file/read` reads it back and `file/preview` gives the preview its turn kept;
 //! a file the server doesn't preview is refused plainly, and one its reader couldn't read only
-//! downloads, said why. A command that waits for the person makes a file once they allow it.
+//! downloads, said why. A command that waits for the person makes a file once they allow it. A
+//! message sent while what a command made is looked over starts a turn once it is done.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use glave_event::{AssetKind, Parts};
+use glave_event::{AssetKind, Body, Parts, decode};
 use glave_ports::{MadeRead, ReadMade};
 use glave_session::Answering;
 use glave_session::protocol::{Answer, MadeFile, Reply, Request, code};
@@ -191,5 +193,60 @@ fn what_a_turn_and_its_worker_made_is_listed_read_back_and_previewed() {
             matches!(&refused, Err(error) if error.code == code::INVALID_PARAMS),
             "a PDF is drawn by the client: {refused:?}"
         );
+    });
+}
+
+/// How long a test waits for what the server does by itself: seconds, however busy the machine.
+const TOLD: Duration = Duration::from_secs(10);
+
+/// A message sent while the thread is idle but for the look over what a command made once it
+/// ended starts a turn once the look-over is done, rather than being refused as busy.
+#[test]
+fn a_message_sent_while_a_command_s_files_are_looked_over_starts_a_turn_after() {
+    let dir = folder("made-waits");
+    block_on!(async {
+        // Past the first look the tool takes at a command it starts, which would see it end.
+        let late = "sleep 3; printf '%%PDF-1.7' > late.pdf";
+        let answers = vec![
+            answer(
+                None,
+                Some(("bash", json!({"command": late, "background": true}))),
+            ),
+            answer(Some("It is making it."), None),
+            answer(Some("Here it is."), None),
+        ];
+        let mut setup = Setup::new(answers);
+        setup.settings.titles = false;
+        let blobs = setup.blobs.clone();
+        let (server, _) = setup.build(&dir).await;
+        let thread = start(&server, false).await;
+        turn(&server, thread, "make it in the background")
+            .await
+            .unwrap();
+        // The command ends while the thread is idle: its file is looked over, and kept slowly.
+        blobs.hold_puts();
+        tokio::time::timeout(TOLD, blobs.put_held())
+            .await
+            .expect("the file the command made is kept within seconds");
+        let sending = stream_turn(&server, thread, "where is it?", None);
+        let letting_go = async {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            blobs.let_go();
+        };
+        let (sent, ()) = tokio::join!(sending, letting_go);
+        let mut stream = sent.expect("taken, once the look-over is done, not refused as busy");
+        stream.finish().await.unwrap();
+        let events = events(&server, thread).await;
+        let kinds: Vec<&str> = events
+            .iter()
+            .filter_map(
+                |event| match decode(event.clone()).map(|event| event.body) {
+                    Ok(Body::TurnMade(_)) => Some("made"),
+                    Ok(Body::TurnStarted(_)) => Some("started"),
+                    _ => None,
+                },
+            )
+            .collect();
+        assert_eq!(kinds, ["started", "made", "started"]);
     });
 }

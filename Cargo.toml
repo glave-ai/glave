@@ -142,8 +142,9 @@ lopdf = { version = "0.45", default-features = false }
 # Each secret looked for in a file a turn made, found in linear time (already in the tree, under
 # regex and more).
 memchr = "2"
-# glave's allocator, counted against a limit set only in a reader of a file a turn made: the one
-# way to hold a process to a memory limit on macOS as on Linux. Safe API, no dependencies.
+# glave's allocator on macOS, counted against a limit set only in a reader of a file a turn made:
+# the one way to hold a process to a memory limit there (Linux has RLIMIT_DATA). Safe API, no
+# dependencies.
 cap = "0.1"
 # Kubernetes types for the worker backend on Kubernetes: the API at its oldest supported version.
 k8s-openapi = { version = "0.28", default-features = false, features = ["std", "earliest"] }
@@ -244,8 +245,9 @@ opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
 
-# Inflating and checking a workbook's strings of 2 GB unoptimized takes minutes; the test that
-# holds a reader of a file a turn made to its memory reads one (crates/cli/tests/reading.rs).
+# Inflating and checking what a file a turn made unpacks to takes minutes unoptimized for the
+# largest the tests make: one looked through for secrets (crates/harness/src/made/tests.rs), and a
+# workbook's strings of 2 GB that a reader is held to its memory by (crates/cli/tests/reading.rs).
 [profile.dev.package.zlib-rs]
 opt-level = 3
 

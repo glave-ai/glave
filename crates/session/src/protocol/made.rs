@@ -46,7 +46,7 @@ pub struct TurnFiles {
     pub turn: Seq,
     pub files: Vec<MadeFile>,
     /// What `files` leave out, in a sentence, when they leave something out: more than a turn
-    /// keeps, a folder too large to look over, or what a command still running may make.
+    /// keeps, or a folder too large to look over.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<Told>,
 }

@@ -8,6 +8,7 @@
 )]
 
 mod accounts;
+#[cfg(any(target_env = "musl", target_os = "macos"))]
 mod allocator;
 mod app;
 mod args;

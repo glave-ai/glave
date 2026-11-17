@@ -2,13 +2,15 @@
 //! called a tool that can change files (glave's own `write`, `edit` or `bash`, or a worker on a
 //! computer that never sleeps), the thread's folder is looked over once (`files/glob`): each
 //! document, spreadsheet, deck, PDF and e-book in no hidden folder, changed in its window, counts
-//! as made, whatever made it. The window runs from where the last look-over stopped, else the
-//! turn's start, up to now; while a command the thread started in the background still runs, up
-//! to a little before now, so nothing still being written is kept, and where it stopped is
-//! recorded (`made_until_ns`) for the next to start from: a `turn.made` once the last such
-//! command ends while the thread is idle, or the next working turn's end. Each file is kept for
-//! the thread (`keep.rs`) and read apart from glave ([`glave_ports::ReadMade`]) within one
-//! deadline for the whole look-over. Where it stands is read again from the log (`log.rs`).
+//! as made, whatever made it. The window runs from just after where the last look-over stopped
+//! (its turn's start less a little, for a computer whose clock is behind, when that is later) up
+//! to now; while a command the thread started in the background still runs, up to a little
+//! before now, so nothing still being written is kept, and the look-over is owed the rest (a
+//! mark): a `turn.made`, once the last such command ends while the thread is idle, or as the
+//! next turn starts, else the next working turn's end. Each file is kept for the thread and read
+//! apart from glave (`keep.rs`, [`glave_ports::ReadMade`]) within one deadline for the whole
+//! look-over, or until the turn that ends with it is stopped. Where it stands is read again from
+//! the log (`log.rs`). At most [`MOST_LOOKING`] look-overs run at once on a server.
 
 mod keep;
 mod log;
@@ -20,10 +22,13 @@ use glave_event::AssetKind;
 use glave_event::{FileMade, MadeLeft, RawEvent, TurnMade};
 use glave_ports::computer::Glob;
 use glave_ports::{BlobStore, EventLog, ModelProvider, Standing};
+use tokio::sync::Semaphore;
 use tokio::time::Instant;
 
 use crate::approval::Approver;
+use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
+use keep::Reading;
 
 pub(crate) use log::{Mark, TurnOpen, changes_files, from_log, opened_by};
 
@@ -42,17 +47,32 @@ const MOST_LOOKED_AT: usize = 50_000;
 /// still being written is left for the next.
 const MARGIN: Duration = Duration::from_secs(2);
 
+/// The most look-overs that run at once on a server: each walks a folder and reads up to
+/// [`MOST`] files of 10 MB.
+pub(crate) const MOST_LOOKING: usize = 4;
+
+/// The longest a look-over waits for its turn among [`MOST_LOOKING`]: past it, it is owed, as
+/// when its folder can't be looked over.
+const WAITS_TO_LOOK: Duration = Duration::from_secs(60);
+
 /// The longest the files of one look-over are read for, in all: past it, the rest are kept
 /// unread, so no turn or request waits on readers for minutes.
 pub(crate) const READING_FOR: Duration = Duration::from_secs(30);
 
-/// What a look-over found: the files kept, what they leave out, and where it stopped while a
-/// command of the thread's still ran.
+/// What a look-over found: the files kept, what they leave out, where it stopped, and whether
+/// what changed after that is still owed a look (a command of the thread's still ran, or it
+/// couldn't look).
 #[derive(Debug, Default)]
 pub(crate) struct Found {
     pub(crate) made: Vec<FileMade>,
     pub(crate) left: Option<MadeLeft>,
     pub(crate) until_ns: Option<u64>,
+    pub(crate) waits: bool,
+}
+
+/// The look-overs of one server, at most [`MOST_LOOKING`] at once.
+pub(crate) fn looking() -> Semaphore {
+    Semaphore::new(MOST_LOOKING)
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -63,9 +83,10 @@ where
     A: Approver,
 {
     /// The files `thread`'s turn made, as it ends: none unless it called a tool that can change
-    /// files there. Read apart from glave unless the turn was stopped (`read` false), when they
-    /// are kept unread.
-    pub(crate) async fn made_by_turn(&self, thread: &mut Thread, read: bool) -> Found {
+    /// files there. Where it stops, and whether the rest is owed, becomes the thread's mark. Read
+    /// apart from glave until the look-over's deadline or until `cancel` stops the turn,
+    /// whichever comes first: a turn already stopped keeps them unread.
+    pub(crate) async fn made_by_turn(&self, thread: &mut Thread, cancel: &Cancel) -> Found {
         let Some(turn) = thread.turn_open.take().filter(|turn| turn.works) else {
             return Found::default();
         };
@@ -74,22 +95,33 @@ where
             return Found::default();
         }
         let started = u64::try_from(turn.at.timestamp().as_nanosecond()).unwrap_or(0);
-        let since = thread.made_mark.map_or_else(
-            || started.saturating_sub(nanos(MARGIN)),
-            |mark| mark.since_ns,
-        );
-        let found = self.look_over(thread, since, read).await;
+        let since = match thread.made_mark {
+            Some(mark) if mark.owed => mark.since_ns,
+            looked => started
+                .saturating_sub(nanos(MARGIN))
+                .max(looked.map_or(0, |mark| mark.since_ns)),
+        };
+        let reading = self.reading(cancel.clone());
+        let found = self
+            .look_over(thread, since, &reading)
+            .await
+            .unwrap_or(Found {
+                until_ns: Some(since),
+                waits: true,
+                ..Found::default()
+            });
         thread.made_mark = found.until_ns.map(|since_ns| Mark {
             turn: turn.turn,
             since_ns,
+            owed: found.waits,
         });
         found
     }
 
-    /// Stages in `events` what the look-over a turn's mark left made (`turn.made`), once no
-    /// command of the thread's runs in the background and the thread is idle: from the mark up
-    /// to now, for that turn. Never on a person's own computer, which looking would wake: the
-    /// next turn that works there looks.
+    /// Stages in `events` what the look-over a turn's mark owes found (`turn.made`), once no
+    /// command of the thread's runs in the background: from the mark up to now, for that turn.
+    /// Nothing when the folder can't be looked over, the mark staying owed. Never on a person's
+    /// own computer, which looking would wake: the next turn that works there looks.
     pub(crate) async fn stage_marked(
         &self,
         thread: &mut Thread,
@@ -98,30 +130,39 @@ where
         let looks = thread.home.is_none()
             && thread.standing == Standing::Active
             && !thread.commands.any_running();
-        let Some(mark) = thread.made_mark.filter(|_| looks) else {
+        let Some(mark) = thread.made_mark.filter(|mark| mark.owed && looks) else {
             return Ok(());
         };
-        let found = self.look_over(thread, mark.since_ns, true).await;
+        let reading = self.reading(Cancel::new());
+        let Some(found) = self.look_over(thread, mark.since_ns, &reading).await else {
+            return Ok(());
+        };
         let made = TurnMade {
             turn: mark.turn,
+            made_until_ns: found.until_ns,
             made: found.made,
             made_left: found.left,
-            made_until_ns: found.until_ns,
         };
         self.stage(thread, events, &made)?;
         thread.made_mark = found.until_ns.map(|since_ns| Mark {
             turn: mark.turn,
             since_ns,
+            owed: found.waits,
         });
         Ok(())
     }
 
-    /// The files in `thread`'s folder changed since `since_ns`, by the computer's clock, each
-    /// kept or said why not, in path order: at most [`MOST`], the rest counted. While a command
-    /// of the thread's still runs, only those settled for [`MARGIN`], and where that stopped.
-    /// None when the folder can't be looked over, the mark staying where it was while a command
-    /// runs; none, said so, when it holds too many files to look over in time.
-    async fn look_over(&self, thread: &Thread, since_ns: u64, read: bool) -> Found {
+    /// The files in `thread`'s folder changed after `since_ns`, by the computer's clock, each
+    /// kept or said why not, in path order: at most [`MOST`], the rest counted; and where it
+    /// stopped. While a command of the thread's still runs, only those settled for [`MARGIN`],
+    /// the rest owed. None, said so, when the folder holds too many files to look over in time;
+    /// `None` when it can't be looked over, or its turn among the server's look-overs doesn't
+    /// come in time.
+    async fn look_over(&self, thread: &Thread, since_ns: u64, reading: &Reading) -> Option<Found> {
+        let _turn = tokio::time::timeout(WAITS_TO_LOOK, self.looking.acquire())
+            .await
+            .ok()?
+            .ok()?;
         if thread.commands.any_running() {
             thread.commands.check().await;
         }
@@ -135,43 +176,55 @@ where
             most_looked_at: Some(MOST_LOOKED_AT),
             settled_for_ns: running.then(|| nanos(MARGIN)),
         };
-        let Ok(found) = self.workspace_for(thread).glob(&glob).await else {
-            return Found {
-                until_ns: running.then_some(since_ns),
-                ..Found::default()
-            };
-        };
-        let until_ns = found.cut_off_ns.filter(|_| running);
+        let found = self.workspace_for(thread).glob(&glob).await.ok()?;
+        let until_ns = found.cut_off_ns;
         if found.stopped {
-            let left = Some(MadeLeft::TooMany);
-            return Found {
-                made: Vec::new(),
-                left,
+            return Some(Found {
+                left: Some(MadeLeft::TooMany),
                 until_ns,
-            };
+                waits: running,
+                ..Found::default()
+            });
         }
         let listed = u64::try_from(found.files.len()).unwrap_or(u64::MAX);
         let mut more = found.total.saturating_sub(listed);
+        // Walked in no order, so a large folder is never read whole first: named in path order.
         let mut paths: Vec<String> = found
             .files
             .into_iter()
             .filter(|path| !locked(path))
             .collect();
         paths.sort();
-        let reading = read.then(|| Instant::now() + self.reading_for);
         let mut made = Vec::new();
         for path in &paths {
             if made.len() >= MOST {
                 more = more.saturating_add(1);
-            } else if let Some(file) = self.keep_made_file(thread, path, reading).await {
+            } else if let Some(file) = self.keep_made_file(thread, path, Some(reading)).await {
                 made.push(file);
             }
         }
-        let left = (more > 0).then_some(MadeLeft::More { files: more });
-        Found {
+        Some(Found {
             made,
-            left,
+            left: (more > 0).then_some(MadeLeft::More { files: more }),
             until_ns,
+            waits: running,
+        })
+    }
+}
+
+impl<P, L, B, A> Harness<P, L, B, A>
+where
+    P: ModelProvider,
+    L: EventLog,
+    B: BlobStore,
+    A: Approver,
+{
+    /// How long a look-over starting now reads its files: until its deadline, or until `cancel`
+    /// stops what it ends with.
+    fn reading(&self, cancel: Cancel) -> Reading {
+        Reading {
+            until: Instant::now() + self.reading_for,
+            cancel,
         }
     }
 }

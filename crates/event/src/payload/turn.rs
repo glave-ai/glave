@@ -164,11 +164,14 @@ pub struct TurnResult {
     /// folder too large to look over.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub made_left: Option<MadeLeft>,
-    /// Where its look-over stopped, a command of the thread's still running in the background,
-    /// in nanoseconds since 1970 by the computer's clock: the next look-over starts there.
-    /// Absent when it looked up to its end, or did not look.
+    /// Where its look-over stopped, in nanoseconds since 1970 by the computer's clock: the
+    /// next look-over starts no earlier. Absent when it did not look.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub made_until_ns: Option<u64>,
+    /// Whether what was made after `made_until_ns` is still to be looked over: a command of the
+    /// thread's still ran in the background, or the folder couldn't be looked over.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub made_waits: bool,
 }
 
 impl TurnResult {
@@ -191,6 +194,7 @@ impl TurnResult {
             made: Vec::new(),
             made_left: None,
             made_until_ns: None,
+            made_waits: false,
         }
     }
 
@@ -272,9 +276,10 @@ pub enum Outcome {
 
 impl Payload for TurnResult {
     const TYPE: &'static str = ENDED;
-    // 2 names the files the turn made (`made`, `made_left`, `made_until_ns`); a version 1 end
-    // made none, and reads as one that made none.
-    const VERSION: u32 = 2;
+    // 2 names the files the turn made (`made`, `made_left`, `made_until_ns`, `made_waits`); a
+    // version 1 end made none, and reads as one that made none. 3 has what was read of each
+    // (`read`); a version 2 end read none.
+    const VERSION: u32 = 3;
 }
 
 pub(crate) fn decode_ended(
@@ -282,7 +287,7 @@ pub(crate) fn decode_ended(
     data: &RawValue,
 ) -> Option<serde_json::Result<TurnResult>> {
     match version {
-        1 | 2 => Some(parse(data)),
+        1..=3 => Some(parse(data)),
         _ => None,
     }
 }

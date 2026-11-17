@@ -2,9 +2,8 @@
 //! its log: each `turn.ended` names the files its turn made (`glave_event::FileMade`), kept with
 //! the thread or left on the computer, with what glave read of each in a process of its own,
 //! and a `turn.made` what more a turn's look-over found once the thread's commands in the
-//! background had ended.
-//! `thread/files` gives them by turn, `file/preview` a file's preview as its turn kept it.
-//! Nothing here reads a file the agent made.
+//! background had ended. `thread/files` gives them by turn, each path once, `file/preview` a
+//! file's preview as its turn kept it. Nothing here reads a file the agent made.
 
 use glave_event::{
     AssetKind, Body, FileMade, Kept, MadeLeft, MadePreview, Parts, RawEvent, Seq, Sha256, ThreadId,
@@ -44,7 +43,7 @@ where
             .filter(|turn| !turn.files.is_empty() || turn.left.is_some())
             .map(|turn| TurnFiles {
                 turn: turn.started,
-                files: turn.files.into_iter().map(made_file).collect(),
+                files: turn.files.iter().map(made_file).collect(),
                 note: turn.left.map(|left| Told::from(left_out(left))),
             })
             .collect();
@@ -95,7 +94,8 @@ where
 }
 
 /// Reads the next event of a thread's log into `turns`: each turn's start, the files its end
-/// says it made, and what a turn whose look-over waited made, once looked over, with it.
+/// says it made, and what a turn whose look-over waited made, once looked over, with it: a file
+/// found again in place of where it was first named.
 fn read(turns: &mut Vec<Turn>, event: RawEvent) {
     let started = event.seq;
     if !matches!(
@@ -118,7 +118,16 @@ fn read(turns: &mut Vec<Turn>, event: RawEvent) {
         }
         Ok(Body::TurnMade(made)) => {
             if let Some(looked) = turns.iter_mut().find(|turn| turn.started == made.turn) {
-                looked.files.extend(made.made);
+                for file in made.made {
+                    match looked
+                        .files
+                        .iter_mut()
+                        .find(|named| named.path == file.path)
+                    {
+                        Some(named) => *named = file,
+                        None => looked.files.push(file),
+                    }
+                }
                 looked.left = made.made_left.or(looked.left);
             }
         }
@@ -128,7 +137,7 @@ fn read(turns: &mut Vec<Turn>, event: RawEvent) {
 
 /// `file` as `thread/files` gives it: named by its title, else its file's name, and said where
 /// it is kept, or why it isn't, and why it can't be shown when glave couldn't read it.
-fn made_file(file: FileMade) -> MadeFile {
+fn made_file(file: &FileMade) -> MadeFile {
     let file_name = file
         .path
         .rsplit('/')
@@ -149,7 +158,7 @@ fn made_file(file: FileMade) -> MadeFile {
         Kept::Unchecked => (None, Sentence::LeftUnchecked),
     };
     let unread = sha256.is_some() && file.read.is_none();
-    let read = file.read.unwrap_or_default();
+    let read = file.read.clone().unwrap_or_default();
     let name = read.title.unwrap_or_else(|| cleaned(&file_name));
     let (unit, count) = match read.parts {
         Some(Parts::Pages(count)) => ("pages", count),

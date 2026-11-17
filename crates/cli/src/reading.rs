@@ -2,11 +2,14 @@
 //! glave starts itself again as a reader, with an empty environment, which takes the file on its
 //! input, describes and previews it with glave-office, and prints what it found as JSON. A file
 //! crafted to take more memory or time than reading it should ends the reader, never the
-//! server: on every computer the reader's allocations are held to [`MOST_MEMORY`], past which
-//! it ends, and the server stops it past [`WITHIN`], with all it started. A reader that ends
-//! otherwise than as it should has read nothing. At most [`MOST_READERS`] run at once on a
-//! server, and at most [`MOST_PER_ORG`] for one organization, so no one's files hold up
-//! everyone's.
+//! server. Before it reads anything the reader holds itself to [`MOST_MEMORY`] of allocations,
+//! past which it ends (on Linux `RLIMIT_DATA`, which counts what it maps too; on macOS, which
+//! enforces no such limit, glave's own allocator, `allocator.rs`), leaves no core dump of what it
+//! decoded, and on Linux is the first the kernel ends when memory runs out, so the readers' own
+//! never take the server. The server stops it past [`WITHIN`], with all it started. A reader
+//! that ends otherwise than as it should has read nothing. At most [`MOST_READERS`] run at once
+//! on a server, and at most [`MOST_PER_ORG`] for one organization, so no one's files hold up
+//! everyone's: their memory, in all, is at most [`MOST_READERS`] times [`MOST_MEMORY`].
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -18,6 +21,7 @@ use std::time::Duration;
 use glave_harness::MAX_FILE;
 use glave_ports::{MadeRead, OrgId, ReadMade};
 use glave_process::{Processes, Program};
+use rustix::process::{Resource, Rlimit, setrlimit};
 use tokio::sync::Notify;
 
 /// What glave is started with to read a file a turn made, followed by its media type.
@@ -48,7 +52,7 @@ pub(crate) fn helper(args: &[OsString]) -> Option<ExitCode> {
     let Some(media_type) = args.get(2).and_then(|media_type| media_type.to_str()) else {
         return Some(ExitCode::from(2));
     };
-    if crate::allocator::GLOBAL.set_limit(MOST_MEMORY).is_err() {
+    if held_to_reading().is_err() {
         return Some(ExitCode::FAILURE);
     }
     let mut bytes = Vec::new();
@@ -71,6 +75,35 @@ pub(crate) fn helper(args: &[OsString]) -> Option<ExitCode> {
         Ok(()) => Some(ExitCode::SUCCESS),
         Err(_) => Some(ExitCode::FAILURE),
     }
+}
+
+/// Holds this process, a reader, to what reading a file may take, first thing: no core dump of
+/// what it decodes, which would leave the file unsealed on the drive; at most [`MOST_MEMORY`]
+/// of allocations; and on Linux, none dumped by anything else, and the first process the kernel
+/// ends when memory runs out.
+fn held_to_reading() -> Result<(), String> {
+    let nothing = Rlimit {
+        current: Some(0),
+        maximum: Some(0),
+    };
+    setrlimit(Resource::Core, nothing).map_err(|error| error.to_string())?;
+    #[cfg(target_os = "linux")]
+    {
+        use rustix::process::{DumpableBehavior, set_dumpable_behavior};
+        set_dumpable_behavior(DumpableBehavior::NotDumpable).map_err(|error| error.to_string())?;
+        std::fs::write("/proc/self/oom_score_adj", "1000").map_err(|error| error.to_string())?;
+        let most = u64::try_from(MOST_MEMORY).unwrap_or(u64::MAX);
+        let data = Rlimit {
+            current: Some(most),
+            maximum: Some(most),
+        };
+        setrlimit(Resource::Data, data).map_err(|error| error.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    crate::allocator::GLOBAL
+        .set_limit(MOST_MEMORY)
+        .map_err(|()| "the reader's memory couldn't be limited".to_owned())?;
+    Ok(())
 }
 
 /// What reads each file a turn made: this program as a reader, in a process of its own among
@@ -150,5 +183,30 @@ impl Drop for Share<'_> {
         }
         drop(running);
         self.readers.ended.notify_waiters();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rustix::process::getrlimit;
+
+    use super::*;
+
+    #[test]
+    fn a_reader_leaves_no_core_dump_and_is_held_to_its_memory() {
+        held_to_reading().unwrap();
+        let core = getrlimit(Resource::Core);
+        assert_eq!((core.current, core.maximum), (Some(0), Some(0)));
+        #[cfg(target_os = "linux")]
+        {
+            use rustix::process::{DumpableBehavior, dumpable_behavior};
+            assert_eq!(dumpable_behavior().unwrap(), DumpableBehavior::NotDumpable);
+            let adjusted = std::fs::read_to_string("/proc/self/oom_score_adj").unwrap();
+            assert_eq!(adjusted.trim(), "1000", "the first the kernel ends");
+            let data = getrlimit(Resource::Data);
+            assert_eq!(data.current, u64::try_from(MOST_MEMORY).ok());
+        }
+        #[cfg(target_os = "macos")]
+        assert_eq!(crate::allocator::GLOBAL.limit(), MOST_MEMORY);
     }
 }

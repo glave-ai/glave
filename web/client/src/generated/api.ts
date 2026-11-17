@@ -1697,7 +1697,7 @@ export type TurnFiles = {
   readonly files: readonly (MadeFile)[];
   /**
    * What `files` leave out, in a sentence, when they leave something out: more than a turn
-   * keeps, a folder too large to look over, or what a command still running may make.
+   * keeps, or a folder too large to look over.
    */
   readonly note?: string | null;
   readonly turn: Seq;
@@ -1737,11 +1737,15 @@ export type TurnResult = {
    */
   readonly made_left?: MadeLeft | null;
   /**
-   * Where its look-over stopped, a command of the thread's still running in the background,
-   * in nanoseconds since 1970 by the computer's clock: the next look-over starts there.
-   * Absent when it looked up to its end, or did not look.
+   * Where its look-over stopped, in nanoseconds since 1970 by the computer's clock: the
+   * next look-over starts no earlier. Absent when it did not look.
    */
   readonly made_until_ns?: number | null;
+  /**
+   * Whether what was made after `made_until_ns` is still to be looked over: a command of the
+   * thread's still ran in the background, or the folder couldn't be looked over.
+   */
+  readonly made_waits?: boolean;
   readonly model_calls?: number;
   readonly outcome: Outcome;
   /** The commands that ran outside the sandbox, each one allowed. */

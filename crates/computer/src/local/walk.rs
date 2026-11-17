@@ -7,32 +7,40 @@ use glave_ports::computer::EntryKind;
 use globset::{GlobBuilder, GlobMatcher};
 use ignore::{Walk, WalkBuilder};
 
-fn walker(root: &Path, depth: Option<usize>, visible: bool) -> Walk {
-    WalkBuilder::new(root)
+/// A walk under `root` as git sees it, `depth` folders deep at most; with `visible`, what is
+/// hidden left out; with `sorted`, each folder's entries in path order, which reads each folder
+/// whole before going on.
+fn walker(root: &Path, depth: Option<usize>, visible: bool, sorted: bool) -> Walk {
+    let mut builder = WalkBuilder::new(root);
+    builder
         .hidden(visible)
         .require_git(false)
         .follow_links(false)
         .max_depth(depth)
-        .sort_by_file_path(Ord::cmp)
-        .filter_entry(|entry| entry.file_name() != ".git")
-        .build()
+        .filter_entry(|entry| entry.file_name() != ".git");
+    if sorted {
+        builder.sort_by_file_path(Ord::cmp);
+    }
+    builder.build()
 }
 
 /// Every file under `root` that git would not ignore, even outside a repository, in path
 /// order. Hidden files such as `.github/` are included; the `.git` folder is not. A file
 /// given as `root` is returned as is.
 pub(crate) fn files(root: &Path) -> impl Iterator<Item = PathBuf> {
-    walker(root, None, false)
+    walker(root, None, false, true)
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_file()))
         .map(ignore::DirEntry::into_path)
 }
 
-/// Every entry under `root` that git would not ignore, folders too, in path order, each with
-/// whether it is a file; with `visible`, what is hidden is left out and its folders are not
-/// looked in. The `.git` folder never is.
+/// Every entry under `root` that git would not ignore, folders too, each with whether it is a
+/// file, in no order: each folder's entries come as they are read, never all read and sorted
+/// first, so a look that stops after so many entries stops there however large one folder is.
+/// With `visible`, what is hidden is left out and its folders are not looked in. The `.git`
+/// folder never is.
 pub(crate) fn everything(root: &Path, visible: bool) -> impl Iterator<Item = (PathBuf, bool)> {
-    walker(root, None, visible)
+    walker(root, None, visible, false)
         .filter_map(Result::ok)
         .map(|entry| {
             let file = entry.file_type().is_some_and(|kind| kind.is_file());
@@ -47,7 +55,7 @@ pub(crate) fn entries(dir: &Path) -> std::io::Result<(Vec<(PathBuf, EntryKind)>,
         .filter_map(Result::ok)
         .filter(|entry| entry.file_name() != ".git")
         .count();
-    let names: Vec<(PathBuf, EntryKind)> = walker(dir, Some(1), false)
+    let names: Vec<(PathBuf, EntryKind)> = walker(dir, Some(1), false, true)
         .filter_map(Result::ok)
         .filter(|entry| entry.depth() == 1)
         .map(|entry| {

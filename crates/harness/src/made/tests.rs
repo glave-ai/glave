@@ -113,7 +113,7 @@ fn where_a_thread_stands_is_read_again_from_its_log() {
     let config = json!({"sha256": "9".repeat(64), "bytes": 2, "media_type": "application/json"});
     let started = json!({"model": {"provider": "p", "name": "m"}, "config": config});
     let call = |tool: &str| json!({"call_id": "call_1", "tool": tool, "arguments": {"json": {}}});
-    let marked = json!({"outcome": "completed", "made_until_ns": 42});
+    let marked = json!({"outcome": "completed", "made_until_ns": 42, "made_waits": true});
     let log = [
         event(1, "turn.started", &started),
         event(2, "tool.call.requested", &call("bash")),
@@ -135,12 +135,14 @@ fn where_a_thread_stands_is_read_again_from_its_log() {
         open.map(|open| (open.turn, open.works)),
         Some((seq(6), true))
     );
-    // A turn that only talked looked at nothing: the mark stays where the last look stopped.
+    // A turn that only talked looked at nothing: the mark stays where the last look stopped,
+    // still owed.
     assert_eq!(
         mark,
         Some(Mark {
             turn: seq(1),
-            since_ns: 42
+            since_ns: 42,
+            owed: true,
         })
     );
     let (at_home, _) = from_log(&log, true);
@@ -149,16 +151,29 @@ fn where_a_thread_stands_is_read_again_from_its_log() {
         Some(false),
         "a worker at home wakes it itself"
     );
+    // The look-over the mark owed, once the thread was idle, is owed nothing more.
     let mut looked = log.to_vec();
-    looked.push(event(8, "turn.made", &json!({"turn": 1})));
-    assert_eq!(from_log(&looked, false).1, None, "looked up to its end");
+    looked.push(event(
+        8,
+        "turn.made",
+        &json!({"turn": 1, "made_until_ns": 50}),
+    ));
+    let owed = from_log(&looked, false)
+        .1
+        .map(|mark| (mark.since_ns, mark.owed));
+    assert_eq!(owed, Some((50, false)), "looked up to its end");
     let mut worked = log.get(..6).unwrap().to_vec();
     worked.push(event(7, "tool.call.requested", &call("write")));
-    worked.push(event(8, "turn.ended", &json!({"outcome": "completed"})));
+    let ended = json!({"outcome": "completed", "made_until_ns": 60});
+    worked.push(event(8, "turn.ended", &ended));
     assert_eq!(
         from_log(&worked, false).1,
-        None,
-        "a working turn looked up to its end"
+        Some(Mark {
+            turn: seq(6),
+            since_ns: 60,
+            owed: false,
+        }),
+        "a working turn looked up to its end, where the next starts after"
     );
 }
 
