@@ -17,7 +17,6 @@ import type { ScheduleId, ScheduleInfo } from '@glave/client';
 
 import { scheduleParts } from '../../lib/repeating';
 import { clock } from '../../services/clock';
-import { ProjectsService } from '../../services/projects.service';
 import { SchedulesService } from '../../services/schedules.service';
 import { READER_ZONE } from '../../services/zone.service';
 import { ScheduleActionsComponent } from '../schedule-actions/schedule-actions.component';
@@ -33,9 +32,9 @@ function inOrder(schedules: readonly ScheduleInfo[]): readonly ScheduleInfo[] {
  * The Repeating list on the Tasks page: each schedule by its name, which opens its chat, when it
  * repeats in the server's words with its next and last run on its own clocks (a line each on a
  * phone), and Pause or Resume and Remove, each row saying in the server's words what it
- * refused. It opens with the schedules the side nav's chats carry, so it takes its room at
- * once, until the server's list is read. Shown once it has a schedule; after the last is
- * removed it says nothing repeats, the keyboard on its heading.
+ * refused. Shown once its read has a schedule (the Tasks page waits for that read, so nothing
+ * under it moves); after the last is removed it says nothing repeats, the keyboard on its
+ * heading.
  */
 @Component({
   selector: 'app-repeating-list',
@@ -50,20 +49,13 @@ export class RepeatingListComponent {
     none: $localize`:@@repeatingList.none:Nothing repeats now.`,
   } as const;
   private readonly service = inject(SchedulesService);
-  private readonly projects = inject(ProjectsService);
   private readonly locale = inject(LOCALE_ID);
   private readonly zone = inject(READER_ZONE);
   private readonly injector = inject(Injector);
   private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
   /** What the server refused each schedule's last change with, by schedule. */
   private readonly errors = signal<ReadonlyMap<ScheduleId, string>>(new Map());
-  /** The schedules the side nav's chats carry, which the list shows until its own is read. */
-  private readonly carried = computed(() =>
-    this.projects
-      .projects()
-      .flatMap(({ threads }) => threads.flatMap((thread) => thread.schedule ?? [])),
-  );
-  private readonly schedules = computed(() => inOrder(this.service.schedules() ?? this.carried()));
+  private readonly schedules = computed(() => inOrder(this.service.schedules() ?? []));
   /** Now, moving on while schedules show, so "tomorrow" becomes "today". */
   private readonly now = clock(() => this.schedules().length > 0);
 
@@ -75,7 +67,7 @@ export class RepeatingListComponent {
       return {
         schedule,
         id: schedule.schedule,
-        name: schedule.name,
+        name: schedule.name_shown,
         link: thread === null ? null : ['/t', thread],
         parts: scheduleParts(schedule, reader, now).map((text, at) => ({ text, after: at > 0 })),
         paused: schedule.paused,

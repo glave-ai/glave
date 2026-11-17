@@ -1,15 +1,15 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { GlzButtonComponent } from '@glave/glaze';
 
-import { ProjectsService } from '../../services/projects.service';
+import { SchedulesService } from '../../services/schedules.service';
 import { TasksService } from '../../services/tasks.service';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 import { RepeatingListComponent } from '../repeating-list/repeating-list.component';
 import { TaskListComponent } from '../task-list/task-list.component';
 
 /**
- * The Tasks page: what repeats, the tasks running now, and those finished, once the side nav's
- * chats are read, so it opens at its shape.
+ * The Tasks page: what repeats, the tasks running now, and those finished, these once the
+ * schedules are read, so it opens at its shape.
  */
 @Component({
   selector: 'app-tasks',
@@ -27,8 +27,8 @@ export class TasksComponent {
     finished: $localize`:@@tasks.finished:Finished`,
   } as const;
   private readonly service = inject(TasksService);
-  /** Whether the side nav's chats are read, whose schedules the Repeating list opens with. */
-  protected readonly ready = inject(ProjectsService).loaded;
+  /** Whether the schedules are read, which the Repeating list above what runs shows. */
+  protected readonly ready = inject(SchedulesService).read;
   /** Whether any task has finished, which go under their own heading. */
   protected readonly finished = computed(() =>
     this.service.tasks().some((task) => task.status === 'finished'),

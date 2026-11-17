@@ -20,8 +20,8 @@ use std::future::Future;
 use std::sync::Arc;
 
 use glave_event::{
-    At, Body, Currency, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId, TaskEnded,
-    TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
+    At, Body, Currency, Due, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
+    TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
 use glave_harness::Cancel;
 use glave_ports::computer::{Reason, Refusal};
@@ -196,7 +196,10 @@ where
             queue: false,
             // Its thread is unattended for the whole task already, where it is.
             unattended: false,
-            scheduled: schedule.map(|fired| fired.due),
+            scheduled: schedule.map(|fired| Due {
+                zone: self.zone_of_schedule(project, fired.schedule),
+                at: fired.due,
+            }),
         };
         let stream = self
             .start_turn_with(caller, thread, message, None)

@@ -84,7 +84,7 @@ test('nothing moves on opening a schedule’s chat: its line under its title com
   expectStill(await feltOn(page));
 });
 
-test('nothing moves on opening Tasks: what repeats takes its room from the chats in the side nav', async ({
+test('nothing moves on opening Tasks: what repeats and what runs come in together, once the schedules are read', async ({
   page,
 }) => {
   await watchFeel(page);

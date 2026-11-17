@@ -78,17 +78,11 @@ describe('repeating', () => {
     );
   });
 
-  it('says when it last ran, and what came of it in the server’s words, as the line runs on', () => {
+  it('says when it last ran, on its own clocks', () => {
     const ran = (last: ScheduleInfo['last']): ScheduleInfo => ({ ...schedule('s1', null), last });
     expect(lastOf(ran(null), LISBON, NOW)).toBeNull();
-    const skipped = ran({
-      due: '2026-11-16T02:00:00.000Z',
-      status: 'skipped',
-      said: 'Skipped: the run before was still going',
-    });
-    expect(lastOf(skipped, LISBON, NOW)).toBe(
-      'Last: today, 2:00 AM, skipped: the run before was still going',
-    );
+    const skipped = ran({ due: '2026-11-16T02:00:00.000Z', status: 'skipped', said: 'Skipped' });
+    expect(lastOf(skipped, LISBON, NOW)).toBe('Last: today, 2:00 AM');
   });
 
   it('gives the Repeating list a schedule a part each: repeats, next, last, the server’s note', () => {
@@ -101,16 +95,19 @@ describe('repeating', () => {
         said: 'Done',
       },
     };
+    // What came of its last run is the server's own words, as they are, a part of their own.
     expect(scheduleParts(done, LISBON, NOW)).toEqual([
       'Every day at 2:00 am',
       'Next: tomorrow, 2:00 AM',
-      'Last: today, 2:00 AM, done',
+      'Last: today, 2:00 AM',
+      'Done',
     ]);
     const paused = { ...done, paused: true, note: 'It runs no more: set it up again.' };
     expect(scheduleParts(paused, LISBON, NOW)).toEqual([
       'Every day at 2:00 am',
       'Paused',
-      'Last: today, 2:00 AM, done',
+      'Last: today, 2:00 AM',
+      'Done',
       'It runs no more: set it up again.',
     ]);
   });

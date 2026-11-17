@@ -7,10 +7,9 @@
     </button>
   </div>
   <p class="intro">{{ copy.intro }}</p>
-  <!-- Drawn once the side nav's chats are read, whose schedules the Repeating list opens with,
-       so it takes its room at once and nothing under it moves. -->
+  <app-repeating-list />
+  <!-- Drawn once the schedules are read, with what repeats above, so nothing under it moves. -->
   @if (ready()) {
-    <app-repeating-list />
     <section class="glz-stack glz-gap-3" aria-labelledby="tasks-running">
       <h2 id="tasks-running" data-testid="tasks-running">{{ copy.running }}</h2>
       <app-task-list />

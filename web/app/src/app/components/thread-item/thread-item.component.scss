@@ -23,7 +23,7 @@
   display: none;
 }
 
-// A repeat set up here, in one quiet line that opens its chat; or why the server made none.
+// A repeat set up here, in one quiet line that opens its chat.
 .repeats {
   display: flex;
   align-items: baseline;
@@ -35,11 +35,6 @@
 .repeats glz-icon {
   flex: none;
   align-self: center;
-}
-
-.refused {
-  color: var(--glz-color-danger);
-  overflow-wrap: anywhere;
 }
 
 .repeats a {

@@ -4,7 +4,7 @@
 //! thread idle, so a message lands either in the running work or in a turn of its own after
 //! it, never in between.
 
-use glave_event::{At, EventId, ThreadId};
+use glave_event::{Due, EventId, ThreadId};
 use glave_harness::{Inbox, NotQueued, Queued, Said};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
@@ -26,9 +26,9 @@ pub(crate) struct Message<'a> {
     pub(crate) queue: bool,
     /// Whether no one answers the turn it starts.
     pub(crate) unattended: bool,
-    /// When the schedule's run it starts was due, when it starts one: its chat's copy of the
-    /// project is brought up to date first.
-    pub(crate) scheduled: Option<At>,
+    /// When the schedule's run it starts was due, and on whose clocks, when it starts one: its
+    /// chat's copy of the project is brought up to date first.
+    pub(crate) scheduled: Option<Due>,
 }
 
 /// What sending a message did, for whoever follows the turns they start: it started a turn,

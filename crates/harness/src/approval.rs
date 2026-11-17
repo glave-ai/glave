@@ -10,8 +10,8 @@ use std::future::{Future, ready};
 use std::path::Path;
 
 use glave_event::{
-    ApprovalRequested, Arguments, Ask, CallId, Caution, Lifted, OutsideSandbox, PrincipalId,
-    Repeating, Risk, Settled, ThreadId, WebPage, Worded as _,
+    ApprovalRequested, Arguments, Ask, CallId, CardLines, Caution, Lifted, OutsideSandbox,
+    PrincipalId, Repeating, Risk, Settled, ThreadId, WebPage, Worded as _,
 };
 use glave_ports::{Assessment, Effect, ToolSource};
 
@@ -49,6 +49,8 @@ pub struct ApprovalRequest {
     pub outside_sandbox: Option<OutsideSandbox>,
     /// For a schedule's card, what it was written from.
     pub repeating: Option<Repeating>,
+    /// For a schedule's card, its lines, typed, as its detail holds them.
+    pub lines: Option<CardLines>,
 }
 
 impl ApprovalRequest {
@@ -66,6 +68,7 @@ impl ApprovalRequest {
             reason: self.caution.clone(),
             outside_sandbox: self.outside_sandbox.clone(),
             repeating: self.repeating.clone(),
+            lines: self.lines.clone(),
         }
     }
 
@@ -458,6 +461,7 @@ mod tests {
             caution: None,
             outside_sandbox: None,
             repeating: None,
+            lines: None,
         };
         assert_eq!(block_on!(AllowAll.decide(&request(true))), Decision::Deny);
         assert_eq!(

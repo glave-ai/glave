@@ -79,17 +79,24 @@ export class TurnComponent {
   readonly earlier = input(false, { transform: booleanAttribute });
   private readonly locale = inject(LOCALE_ID);
   private readonly zone = inject(READER_ZONE);
+  private readonly thread = inject(ThreadService);
   /**
-   * For a schedule's run, its heading: when it was due, as its start recorded it, on the reader's
-   * clocks, so no later change to the schedule moves it; and what it was asked, its prompt,
-   * folded under that rather than shown as the person's message. `null` for any other turn.
+   * For a schedule's run, its heading: when it was due, on the clocks it came due on as its start
+   * recorded them (for one recorded before it said, its schedule's), so no later change moves it;
+   * and what it was asked, folded under that rather than shown as the person's message, as the
+   * server shows its schedule's prompt, each letter the eye can't see as its code (`asked`, not
+   * shown once the schedule is gone). `null` for any other turn.
    */
   protected readonly run = computed(() => {
-    const at = this.turn().scheduled;
-    const reader = { locale: this.locale, timeZone: this.zone };
-    const text = at === null ? null : runDate(at, this.zone, reader);
-    const asked = this.turn().prompt?.text ?? '';
-    return at === null || text === null ? null : { at, text, asked };
+    const due = this.turn().scheduled;
+    const schedule = this.thread.summary()?.schedule ?? null;
+    const zone = due?.zone ?? schedule?.zone ?? this.zone;
+    const text =
+      due === null ? null : runDate(due.at, zone, { locale: this.locale, timeZone: this.zone });
+    const asked = schedule?.prompt_shown ?? '';
+    return due === null || text === null
+      ? null
+      : { at: due.at, text, asked, unasked: asked === '' };
   });
   /** Where the reply is among its parts: the last of the model's words that are no aside. */
   private readonly reply = computed(() =>
@@ -160,7 +167,7 @@ export class TurnComponent {
     return room.length > 0 ? room : null;
   });
   /** Whether the thread is being opened, its history read: what shows meanwhile was there. */
-  private readonly opening = inject(ThreadService).opening;
+  private readonly opening = this.thread.opening;
   /**
    * What waits for the person that appeared as the person watched, by key: never what the turn
    * showed with as it first showed, nor what the thread's history brought as it opened.

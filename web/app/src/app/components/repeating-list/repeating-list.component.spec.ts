@@ -4,10 +4,9 @@ import { provideRouter } from '@angular/router';
 import { ApiError, ErrorCode, type ScheduleInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import { ProjectsService } from '../../services/projects.service';
 import { READER_ZONE } from '../../services/zone.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { record, schedule, thread } from '../../testing/fixtures';
+import { schedule } from '../../testing/fixtures';
 import { RepeatingListComponent } from './repeating-list.component';
 
 /** A schedule that ran last night and runs again the night after next. */
@@ -18,6 +17,7 @@ const RAN: ScheduleInfo = {
 const PAUSED: ScheduleInfo = {
   ...schedule('s2', null),
   name: 'Lisbon flight prices',
+  name_shown: 'Lisbon flight\\u{200b} prices',
   created_at: '2026-10-12T10:00:00.000Z',
   thread: null,
   paused: true,
@@ -27,11 +27,7 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve));
 }
 
-/** The list, its calls answered by `fake`, the side nav's lists read first when `listed`. */
-async function render(
-  fake: FakeSession,
-  listed = false,
-): Promise<{
+async function render(fake: FakeSession): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ComponentFixture<RepeatingListComponent>;
 }> {
@@ -43,9 +39,6 @@ async function render(
       { provide: LiveAnnouncer, useValue: { announce: () => Promise.resolve() } },
     ],
   });
-  if (listed) {
-    await TestBed.inject(ProjectsService).refresh();
-  }
   const fixture = TestBed.createComponent(RepeatingListComponent);
   await settle();
   await fixture.whenStable();
@@ -72,7 +65,8 @@ describe('RepeatingListComponent', () => {
     // Oldest first, whatever order the server lists them in.
     expect(names.map((name) => name.textContent.trim())).toEqual([
       'Audit the dependencies',
-      'Lisbon flight prices',
+      // As the server shows it, each letter the eye can't see as its code.
+      'Lisbon flight\\u{200b} prices',
     ]);
     expect(names[0]?.getAttribute('href')).toBe('/t/0192f5c0-0000-7000-8000-0000000000b1');
     // One made before schedules had chats has no chat to open.
@@ -80,7 +74,8 @@ describe('RepeatingListComponent', () => {
     const [ran, paused] = lines(root);
     expect(ran?.[0]).toBe('Every day at 2:00 am');
     expect(ran?.[1]).toMatch(/^Next: .*2:00 AM$/u);
-    expect(ran?.[2]).toMatch(/^Last: .*2:00 AM, done$/u);
+    expect(ran?.[2]).toMatch(/^Last: .*2:00 AM$/u);
+    expect(ran?.[3]).toBe('Done');
     expect(paused).toEqual(['Every day at 2:00 am', 'Paused']);
     expect(all(root, 'repeating-pause').map((each) => each.textContent.trim())).toEqual([
       'Pause',
@@ -89,25 +84,15 @@ describe('RepeatingListComponent', () => {
     await expectAccessible(root);
   });
 
-  it('opens with the schedules the side nav’s chats carry, until its own list is read', async () => {
-    const fake = new FakeSession()
-      .answer('project/list', { projects: [record('p1', 'glave')] })
-      .answer('thread/list', { threads: [thread('t1', 'Audit', { schedule: RAN })] });
-    const answer = fake.held('schedule/list');
-    const { root, fixture } = await render(fake, true);
-    expect(all(root, 'repeating-name').map((name) => name.textContent.trim())).toEqual([
-      'Audit the dependencies',
-    ]);
-    answer({ schedules: [RAN, PAUSED] });
-    await settle();
-    await fixture.whenStable();
-    expect(all(root, 'repeating-schedule')).toHaveLength(2);
-  });
-
   it('keeps a row as the server answers its change, and says in its words what it refused', async () => {
+    // The server's list as it stands: the first schedule paused once asked.
+    let listed = [RAN, PAUSED];
     const fake = new FakeSession()
-      .answer('schedule/list', { schedules: [RAN, PAUSED] })
-      .answer('schedule/pause', { schedule: { ...RAN, paused: true } });
+      .answer('schedule/list', () => ({ schedules: listed }))
+      .answer('schedule/pause', () => {
+        listed = [{ ...RAN, paused: true }, PAUSED];
+        return { schedule: { ...RAN, paused: true } };
+      });
     const { root, fixture } = await render(fake);
     all(root, 'repeating-pause')[0]?.click();
     await settle();
@@ -130,7 +115,13 @@ describe('RepeatingListComponent', () => {
   });
 
   it('removes one once the person says yes, the keyboard on the list’s heading', async () => {
-    const fake = new FakeSession().answer('schedule/list', { schedules: [RAN] });
+    let listed = [RAN];
+    const fake = new FakeSession()
+      .answer('schedule/list', () => ({ schedules: listed }))
+      .answer('schedule/delete', () => {
+        listed = [];
+        return {};
+      });
     const { root, fixture } = await render(fake);
     all(root, 'repeating-remove')[0]?.click();
     await fixture.whenStable();

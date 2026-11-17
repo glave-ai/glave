@@ -1178,6 +1178,11 @@ export type ScheduleInfo = {
   /** What it is called, as its chat is. */
   readonly name: string;
   /**
+   * Its name as a client shows it: on one line, each letter the eye can't see (a
+   * bidirectional override, a zero-width mark) written out as its code, as its card showed it.
+   */
+  readonly name_shown: string;
+  /**
    * When it runs next; absent while it is paused, once a one-off has run, and when it runs
    * no more.
    */
@@ -1192,9 +1197,16 @@ export type ScheduleInfo = {
   /** The project its chat is in. */
   readonly project: ProjectId;
   readonly prompt: string;
+  /** What each run starts with, shown as `name_shown` is. */
+  readonly prompt_shown: string;
   /** When it repeats, in the server's words: "Every weekday at 8:00 am". */
   readonly repeats: string;
   readonly schedule: ScheduleId;
+  /**
+   * What removing it asks the person, in the server's words, naming it: "Stop repeating
+   * Morning check?".
+   */
+  readonly stop: string;
   /**
    * Its own chat, which each run adds a turn to; absent for one made before schedules had
    * chats, which runs no more (`note` says so).

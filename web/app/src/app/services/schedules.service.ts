@@ -7,9 +7,9 @@ import { TASKS_REFRESH_MS } from './tasks.service';
 
 /**
  * The person's schedules, as the server lists them for the Repeating list, read while it shows;
- * and paused, resumed or removed from the app, each kept as the server answered it, so a read a
- * change may have overtaken leaves them as they are, and of two reads the latest wins. Loaded
- * only with what shows a schedule, never with the app's first page.
+ * and paused, resumed or removed from the app, each kept as the server answered it, then read
+ * again. Of two reads the latest wins, so one asked before a change never undoes it. Loaded only
+ * with what shows a schedule, never with the app's first page.
  */
 @Service()
 export class SchedulesService {
@@ -17,14 +17,13 @@ export class SchedulesService {
   private readonly document = inject(DOCUMENT);
   /** How many reads were asked for: only the latest one's answer is kept. */
   private reads = 0;
-  /** How many changes were answered, so a read knows when one overtook it. */
-  private changes = 0;
-  /** How many changes are on their way. */
-  private changing = 0;
   private readonly kept = signal<readonly ScheduleInfo[] | null>(null);
+  private readonly done = signal(false);
 
   /** The person's schedules, as the server lists them; `null` until read. */
   readonly schedules = this.kept.asReadonly();
+  /** Whether they were read once, or could not be. */
+  readonly read = this.done.asReadonly();
 
   /**
    * Reads the schedules now and again every few seconds, skipping a hidden tab, until the
@@ -42,46 +41,39 @@ export class SchedulesService {
     };
   }
 
-  /** Reads the schedules, kept unless a later read or a change overtook this one. */
+  /** Reads the schedules, kept unless a later read was asked for meanwhile. */
   async refresh(): Promise<void> {
     this.reads += 1;
-    const [read, changes, before] = [this.reads, this.changes, this.changing];
+    const read = this.reads;
     try {
       const { schedules } = await this.session.call('schedule/list', {});
-      const overtaken = before > 0 || this.changing > 0 || changes !== this.changes;
-      if (read === this.reads && !overtaken) {
+      if (read === this.reads) {
         this.kept.set(schedules);
       }
     } catch {
       // What was read before stays, until the next read.
+    } finally {
+      this.done.set(true);
     }
   }
 
   /** Pauses `schedule` (`paused`) or resumes it; throws what the server refused it with. */
   async pause(schedule: ScheduleId, paused: boolean): Promise<ScheduleInfo> {
-    const { schedule: now } = await this.change(() =>
-      this.session.call('schedule/pause', { schedule, paused }),
-    );
-    this.kept.update(
-      (all) => all?.map((each) => (each.schedule === now.schedule ? now : each)) ?? null,
-    );
+    const answer = await this.session.call('schedule/pause', { schedule, paused });
+    const now = answer.schedule;
+    this.changed((all) => all.map((each) => (each.schedule === now.schedule ? now : each)));
     return now;
   }
 
   /** Removes `schedule`, keeping its chat; throws what the server refused it with. */
   async remove(schedule: ScheduleId): Promise<void> {
-    await this.change(() => this.session.call('schedule/delete', { schedule }));
-    this.kept.update((all) => all?.filter((each) => each.schedule !== schedule) ?? null);
+    await this.session.call('schedule/delete', { schedule });
+    this.changed((all) => all.filter((each) => each.schedule !== schedule));
   }
 
-  /** Asks the server for `change`, which a read asked for meanwhile may not have seen. */
-  private async change<T>(change: () => Promise<T>): Promise<T> {
-    this.changing += 1;
-    try {
-      return await change();
-    } finally {
-      this.changing -= 1;
-      this.changes += 1;
-    }
+  /** Keeps a change as the server answered it, then reads the list again, past any read asked before. */
+  private changed(change: (all: readonly ScheduleInfo[]) => readonly ScheduleInfo[]): void {
+    this.kept.update((all) => (all === null ? null : change(all)));
+    void this.refresh();
   }
 }

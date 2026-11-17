@@ -130,6 +130,37 @@ describe('ScheduleActionsComponent', () => {
     expect(fixture.componentInstance.error()).toBeNull();
   });
 
+  it('drops what is answered for a schedule it no longer shows, as when the page moved to another chat', async () => {
+    const fake = new FakeSession();
+    const answer = fake.held('schedule/pause');
+    const { root, fixture, announced } = await render(fake);
+    find(root, 'actions-pause')?.click();
+    await fixture.whenStable();
+    fixture.componentInstance.schedule.set({ ...schedule('s2', NEXT), name: 'Another' });
+    await fixture.whenStable();
+    answer(paused({ paused: true }));
+    await settle(fixture);
+    expect(fixture.componentInstance.changed).toEqual([]);
+    expect(announced).toEqual([]);
+    expect(find(root, 'actions-pause')?.textContent.trim()).toBe('Pause');
+    // Nor what the server refused it with.
+    let refuse: (error: unknown) => void = () => undefined;
+    fake.answer(
+      'schedule/pause',
+      () =>
+        new Promise((_, reject) => {
+          refuse = reject;
+        }),
+    );
+    find(root, 'actions-pause')?.click();
+    await fixture.whenStable();
+    fixture.componentInstance.schedule.set(schedule('s1', NEXT));
+    await fixture.whenStable();
+    refuse(new ApiError({ code: ErrorCode.NO_SCHEDULE, message: 'no such schedule' }));
+    await settle(fixture);
+    expect(fixture.componentInstance.error()).toBeNull();
+  });
+
   it('removes the schedule once the person says yes, and not before', async () => {
     const fake = new FakeSession();
     const { root, fixture, announced } = await render(fake);
@@ -142,6 +173,10 @@ describe('ScheduleActionsComponent', () => {
     find(root, 'actions-remove')?.click();
     await fixture.whenStable();
     expect(confirming(root)).toBe(true);
+    // It asks in the server's words, naming it.
+    expect(find(document.body, 'actions-confirm')?.textContent).toContain(
+      'Stop repeating Audit the dependencies?',
+    );
     expect(find(document.body, 'actions-confirm')?.textContent).toContain(
       'Its chat stays, with its past runs.',
     );
