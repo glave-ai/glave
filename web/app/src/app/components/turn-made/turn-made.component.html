@@ -6,5 +6,7 @@
   <app-made-file class="room" [file]="card.file" />
 }
 @if (note(); as note) {
-  <p class="note" data-testid="turn-made-note" [class.room]="noteRoom()">{{ note }}</p>
+  <div class="notes">
+    <p class="note" data-testid="turn-made-note" [class.room]="noteRoom()">{{ note }}</p>
+  </div>
 }

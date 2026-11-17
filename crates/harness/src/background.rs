@@ -20,6 +20,7 @@ use glave_ports::{BlobStore, EventLog, ModelProvider, ToolOutput};
 use tokio::task::JoinSet;
 
 use crate::approval::Approver;
+use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::tools::no_longer_there;
 
@@ -323,10 +324,14 @@ where
     /// thread is idle, or as a turn starts: once the last has ended, with what the look-over a
     /// turn owes found since its mark (`made.rs`), so what a command made before it ended, as one
     /// a glave that stopped took with it, is that turn's.
-    pub async fn record_ended(&self, thread: &mut Thread) -> Result<(), HarnessError> {
+    pub async fn record_ended(
+        &self,
+        thread: &mut Thread,
+        cancel: &Cancel,
+    ) -> Result<(), HarnessError> {
         let mut events = Vec::new();
         let staged = self.stage_commands(thread, &mut events)?;
-        self.stage_marked(thread, &mut events).await?;
+        self.stage_marked(thread, &mut events, cancel).await?;
         self.commit(thread, events).await?;
         staged.recorded(thread);
         Ok(())
@@ -334,11 +339,15 @@ where
 
     /// Asks the computers how the thread's commands in the background are, and records what
     /// ended meanwhile, with the look-over a turn owes once none runs: as a turn starts.
-    pub(crate) async fn check_commands(&self, thread: &mut Thread) -> Result<(), HarnessError> {
+    pub(crate) async fn check_commands(
+        &self,
+        thread: &mut Thread,
+        cancel: &Cancel,
+    ) -> Result<(), HarnessError> {
         if thread.commands.any_running() {
             thread.commands.check().await;
         }
-        self.record_ended(thread).await
+        self.record_ended(thread, cancel).await
     }
 
     /// `output`, a call's in `thread`, with what the model is told of its commands no longer on

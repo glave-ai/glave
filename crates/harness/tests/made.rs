@@ -12,7 +12,7 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use glave_event::{Body, Event, FileMade, Kept, MadeLeft, Principal, Secret, StopReason};
-use glave_harness::{AllowAll, NoOneToAsk, Workspace};
+use glave_harness::{AllowAll, Cancel, NoOneToAsk, Workspace};
 use glave_ports::secrets::{Known, KnownSecrets};
 use glave_ports::testing::any_secret;
 use glave_ports::{BlobStore as _, Completion, InMemoryLog};
@@ -234,7 +234,10 @@ fn a_turn_shows_what_settled_at_once_and_what_a_command_may_still_write_once_it_
                 .await
                 .unwrap()
         );
-        harness.record_ended(&mut resumed).await.unwrap();
+        harness
+            .record_ended(&mut resumed, &Cancel::new())
+            .await
+            .unwrap();
         let events = events(harness.log(), thread.id).await;
         let later = events.iter().find_map(|event| match &event.body {
             Body::TurnMade(made) => Some(made.clone()),

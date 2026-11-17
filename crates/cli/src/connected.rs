@@ -333,7 +333,10 @@ impl Connections for Connected {
             if !self.ledger.remove_connection(&url).await? {
                 return Err(ApiError::new(
                     code::NO_CREDENTIAL,
-                    format!("nothing at {url} is signed in to here"),
+                    format!(
+                        "nothing at {} is signed in to here",
+                        glave_ports::host::shown(&url)
+                    ),
                 ));
             }
             self.more.forget(&url, None);

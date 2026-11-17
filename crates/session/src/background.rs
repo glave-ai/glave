@@ -160,9 +160,9 @@ where
                 thread,
                 finish,
                 Use::Manage,
-                move |inner, mut held, _| async move {
+                move |inner, mut held, cancel| async move {
                     let recorded = if looks {
-                        inner.harness.record_ended(&mut held).await
+                        inner.harness.record_ended(&mut held, &cancel).await
                     } else {
                         inner.harness.record_commands(&mut held).await
                     };
