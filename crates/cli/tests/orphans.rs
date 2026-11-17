@@ -86,9 +86,9 @@ fn commands(pids: &[u32]) -> Vec<String> {
         .collect()
 }
 
-/// What `glave` said and was asked, once it did not get as far as a test waited for, so the
+/// What `glave` said and asked, once it did not get as far as a test waited for, so the
 /// failure says why (#1533): whether it had ended, all it printed and logged to `log`, and the
-/// tool results it sent the model with each request. It is stopped first.
+/// last message of each request it sent the model. It is stopped first.
 fn told(mut glave: Running, model: &FakeServer, log: &Path) -> String {
     let ended = match glave.try_wait() {
         Ok(Some(status)) => format!("glave had ended ({status})"),
@@ -99,14 +99,18 @@ fn told(mut glave: Running, model: &FakeServer, log: &Path) -> String {
         .wait_with_output()
         .map_or_else(|error| error.to_string(), |output| text(&output));
     let logged = std::fs::read_to_string(log).unwrap_or_default();
-    let results: Vec<String> = model
+    let asked: Vec<String> = model
         .received()
         .iter()
-        .map(|asked| said(&asked.body, "tool").concat())
+        .map(|asked| {
+            let last = asked.body["messages"].as_array().and_then(|all| all.last());
+            let content = last.map_or_else(String::new, |last| last["content"].to_string());
+            format!("{} {}", asked.line, content.chars().take(400).collect::<String>())
+        })
         .collect();
     format!(
-        "{ended}; it printed:\n{printed}\nits log:\n{logged}\nthe tool results it sent the \
-         model, request by request: {results:?}"
+        "{ended}; it printed:\n{printed}\nits log:\n{logged}\nwhat it last said to the model, \
+         request by request: {asked:#?}"
     )
 }
 
