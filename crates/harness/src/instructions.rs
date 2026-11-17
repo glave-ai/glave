@@ -49,8 +49,29 @@ pub async fn agents_md(
     root: &Path,
     user_file: Option<&Path>,
 ) -> std::io::Result<Option<Instructions>> {
+    read_in(root, user_file, project_dirs(root)).await
+}
+
+/// [`agents_md`] for a folder that is no project's, such as a chat's scratch folder: the
+/// person's own instructions (`user_file`), then the folder's own, and nothing from above it.
+/// A scratch folder is kept in glave's own folder, so a repository above it (a home folder or
+/// glave's folder kept in git) is not the chat's: its files, the person's own instructions
+/// among them, are never read as the folder's.
+pub async fn agents_md_alone(
+    root: &Path,
+    user_file: Option<&Path>,
+) -> std::io::Result<Option<Instructions>> {
+    read_in(root, user_file, vec![root.to_path_buf()]).await
+}
+
+/// The instructions for `root`: `user_file`, then the AGENTS.md of each of `dirs`, in order.
+async fn read_in(
+    root: &Path,
+    user_file: Option<&Path>,
+    dirs: Vec<PathBuf>,
+) -> std::io::Result<Option<Instructions>> {
     let mut candidates: Vec<PathBuf> = user_file.map(Path::to_path_buf).into_iter().collect();
-    candidates.extend(project_dirs(root).iter().map(|dir| dir.join(AGENTS_MD)));
+    candidates.extend(dirs.iter().map(|dir| dir.join(AGENTS_MD)));
     let mut read = Sections::default();
     for path in candidates {
         if read.full() {

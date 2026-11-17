@@ -14,8 +14,9 @@ mod placed;
 pub(crate) use placed::Placed;
 
 use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, SchedulePaused, ThreadId, When};
+use glave_harness::Change;
 use glave_ports::{
-    BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, title_from,
+    BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, Standing, title_from,
 };
 
 use crate::choice::Choice;
@@ -87,10 +88,9 @@ where
         time_zone(&zone)?;
         let (_, scope) = self.project_for(caller, new.project).await?;
         self.room_for_one_more(caller).await?;
-        let thread = self.schedule_chat(caller, scope).await?;
-        self.rename(caller, thread, name.clone()).await?;
         let now = self.inner.harness.clock().now();
         let schedule = ScheduleId::new(now, self.inner.harness.entropy().bytes()?)?;
+        let thread = self.schedule_chat(caller, scope).await?;
         let created = ScheduleCreated {
             schedule,
             name,
@@ -103,20 +103,41 @@ where
             by: self.someone_else(caller.person),
         };
         let project = scope.located();
-        // Listed first, so every server that fires schedules finds it once it is recorded.
-        self.place_schedules(project).await?;
-        self.record_in_ledger(project, &created).await?;
+        if let Err(refused) = self.keep_schedule(caller, project, &created).await {
+            // A chat made for a schedule that isn't kept goes, with its copy.
+            if let Err(error) = self.change(caller, thread, Change::Delete).await {
+                tracing::warn!(error = %error.message, %thread, "a schedule's chat was left after the schedule was not kept");
+            }
+            return Err(refused);
+        }
         self.schedule_info(project, schedule)
             .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ScheduleNotKept))
     }
 
+    /// Names `created`'s chat for it, then keeps it in `project`'s ledger, for `caller`: its
+    /// project listed first, so every server that fires schedules finds it once it is recorded.
+    async fn keep_schedule(
+        &self,
+        caller: &Caller,
+        project: Located,
+        created: &ScheduleCreated,
+    ) -> Result<(), ApiError> {
+        if let Some(thread) = created.thread {
+            self.rename(caller, thread, created.name.clone()).await?;
+        }
+        self.place_schedules(project).await?;
+        self.record_in_ledger(project, created).await
+    }
+
     /// A new chat in `scope` for a schedule's runs: on a copy of its project's folder where the
-    /// folder is a repository, else where any new chat there works.
+    /// folder is a git repository with a commit, else in the folder itself, or where any new
+    /// chat there works when it has none. Any other reason a copy can't be made refuses it, so
+    /// a repository's runs never land in the person's own folder.
     async fn schedule_chat(&self, caller: &Caller, scope: Scope) -> Result<ThreadId, ApiError> {
         let choice = Choice::default();
         match self.new_thread(caller, scope, None, true, &choice).await {
-            Err(refused) if refused.code == code::WORKSPACE => {
-                self.new_thread(caller, scope, None, false, &choice).await
+            Err(refused) if crate::tasks::is_no_copy(&refused) => {
+                (self.new_thread(caller, scope, Some(false), false, &choice)).await
             }
             made => made,
         }
@@ -150,7 +171,8 @@ where
         Some(info::info(at, scheduled, ledger, now))
     }
 
-    /// Refused once `caller` keeps as many schedules as policy allows that will still run.
+    /// Refused once `caller` keeps as many schedules as policy allows that will still run, or
+    /// may once resumed: a paused one counts, so pausing makes no room.
     async fn room_for_one_more(&self, caller: &Caller) -> Result<(), ApiError> {
         let Some(most) = self.inner.limits.max_schedules else {
             return Ok(());
@@ -162,7 +184,7 @@ where
             .iter()
             .filter(|(id, _)| projects.contains(id))
             .flat_map(|(_, ledger)| ledger.schedules.values())
-            .filter(|scheduled| info::next_run(scheduled, now).is_some())
+            .filter(|scheduled| info::kept(scheduled, now))
             .count();
         if kept >= most {
             return Err(ApiError::new(
@@ -202,10 +224,34 @@ where
         paused: bool,
     ) -> Result<Reply, ApiError> {
         let project = self.project_of_schedule(caller, schedule).await?;
+        if !paused {
+            self.may_resume(project, schedule).await?;
+        }
         self.set_paused(caller, project, schedule, paused).await?;
         let schedule = (self.schedule_info(project, schedule))
             .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ScheduleNotKept))?;
         Ok(Reply::Schedule { schedule })
+    }
+
+    /// Refuses resuming `schedule` of `project` while its chat is archived, and one made before
+    /// schedules had chats, which runs no more.
+    async fn may_resume(&self, project: Located, schedule: ScheduleId) -> Result<(), ApiError> {
+        let chat = (self.ledgers().get(&project))
+            .and_then(|ledger| ledger.schedules.get(&schedule))
+            .map(|scheduled| scheduled.created.thread);
+        let Some(Some(chat)) = chat else {
+            return Err(ApiError::new(
+                code::INVALID_PARAMS,
+                Sentence::ScheduleNoChatToResume,
+            ));
+        };
+        if self.standing(chat).await? == Standing::Archived {
+            return Err(ApiError::new(
+                code::ARCHIVED,
+                Sentence::ScheduleChatArchived,
+            ));
+        }
+        Ok(())
     }
 
     /// Records `schedule` of `project` paused (`paused`) or resumed for `caller`, unless it is

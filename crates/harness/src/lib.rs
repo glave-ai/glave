@@ -76,7 +76,7 @@ pub use harness::{Harness, HarnessError, Invalid, Parts, Settings, Thread};
 pub use homes::{CredentialsOf, Homes, ShortOfRoom};
 pub use inbox::{Inbox, MAX_QUEUED, NotQueued, Queued};
 pub use install::{ASKED_BY_GLAVE, Own};
-pub use instructions::{AGENTS_MD, Instructions, agents_md};
+pub use instructions::{AGENTS_MD, Instructions, agents_md, agents_md_alone};
 pub use judge::{JudgeCase, Ruling, judge};
 pub use memory::MemoryVerb;
 pub use own_tools::{OwnTools, Placed};
