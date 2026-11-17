@@ -8,6 +8,7 @@ use glave_event::{Body, LanguageSet};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, Reply, code};
+use crate::providers::unsigned;
 use crate::server::Server;
 use crate::words::{Language, Sentence, says, translate};
 
@@ -66,9 +67,14 @@ where
     }
 
     /// The language the server writes to `caller` in. A choice that cannot be read leaves the
-    /// client's, then English.
+    /// client's, then English; so does a caller with no sign-in, who has none: the choice the
+    /// transport's caller leads to is the person on this computer's, theirs alone.
     pub(crate) async fn language_for(&self, caller: &Caller, accepted: Option<&str>) -> Language {
-        let chosen = self.chosen_language(caller).await.ok().flatten();
+        let chosen = if unsigned(caller) {
+            None
+        } else {
+            self.chosen_language(caller).await.ok().flatten()
+        };
         chosen
             .map(|(_, language)| language)
             .or_else(|| accepted.and_then(Language::accepted))
