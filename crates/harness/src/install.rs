@@ -267,6 +267,7 @@ fn reach(server: &Value) -> String {
             headers if headers.is_empty() => String::new(),
             headers => format!(", sending {headers}"),
         };
+        let url = glave_ports::host::shown(url);
         return format!("at {url}{sends}. Signing in to it stays yours either way.");
     }
     let mut runs: Vec<&str> = server

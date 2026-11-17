@@ -182,7 +182,8 @@ impl OpenAiCompatible {
         while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
             if body.len().saturating_add(bytes.len()) > most {
                 return Err(ProviderError::Protocol(format!(
-                    "{url} answered with more than {most} bytes"
+                    "{} answered with more than {most} bytes",
+                    glave_ports::host::shown(url)
                 )));
             }
             body.extend_from_slice(&bytes);
@@ -236,8 +237,12 @@ impl OpenAiCompatible {
             return Err(ProviderError::from_response(status.as_u16(), &body, &sent));
         }
         let body = self.whole(response, &url, MOST_LISTED).await?;
-        serde_json::from_slice(&body)
-            .map_err(|e| ProviderError::Protocol(format!("{url} did not answer with JSON: {e}")))
+        serde_json::from_slice(&body).map_err(|e| {
+            ProviderError::Protocol(format!(
+                "{} did not answer with JSON: {e}",
+                glave_ports::host::shown(&url)
+            ))
+        })
     }
 
     /// What a failed request means: no connection in time, a silence past the idle timeout, or a

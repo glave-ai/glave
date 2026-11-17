@@ -97,7 +97,7 @@ fn what_it_adds_is_read_and_shown_in_one_line() {
     );
     assert_eq!(
         message(&change(&server()).unwrap()),
-        "Connect “linear”, at https://mcp.linear.test/mcp, sending Authorization from \
+        "Connect “linear”, at https://mcp.linear.test/…, sending Authorization from \
          ${LINEAR_TOKEN}, X-Team. Signing in to it stays yours either way."
     );
     let program = arguments(json!({"kind": "server", "name": "files", "server": {

@@ -41,6 +41,9 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+# URLs read as browsers and HTTP clients read them, to show one with what it carries hidden
+# (`host::shown`); already in the tree, under every HTTP client.
+url.workspace = true
 # The runtime tests run on, the gate a scripted model waits at (`testing`), the paused clock
 # the model provider suite waits out a silence on, and a client that stalls mid-request.
 tokio = { workspace = true, optional = true }

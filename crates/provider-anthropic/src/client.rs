@@ -207,13 +207,18 @@ impl Anthropic {
         while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
             if body.len().saturating_add(bytes.len()) > MOST_LISTED {
                 return Err(ProviderError::Protocol(format!(
-                    "{url} answered with more than {MOST_LISTED} bytes"
+                    "{} answered with more than {MOST_LISTED} bytes",
+                    glave_ports::host::shown(&url)
                 )));
             }
             body.extend_from_slice(&bytes);
         }
-        serde_json::from_slice(&body)
-            .map_err(|e| ProviderError::Protocol(format!("{url} did not answer with JSON: {e}")))
+        serde_json::from_slice(&body).map_err(|e| {
+            ProviderError::Protocol(format!(
+                "{} did not answer with JSON: {e}",
+                glave_ports::host::shown(&url)
+            ))
+        })
     }
 
     /// What a failed request means: no connection in time, a silence past the idle timeout, or a

@@ -420,8 +420,8 @@ sentences! {
         "could not open the folder at { $path }: { $reason }",
     CloneFailed { url: String, reason: String } = "clone-failed"
         "could not clone { $url }: { $reason }. If the repository is private, connect its git host first",
-    NotARepository { url: String } = "not-a-repository"
-        "\"{ $url }\" is not a repository's address: give its https:// address, such as https://github.com/acme/app, with no user name or token in it",
+    NotARepository = "not-a-repository"
+        "that is not a repository's address: give its https:// address, such as https://github.com/acme/app, with no user name or token in it",
 
     // Project trust.
     NothingToTrust = "nothing-to-trust" "nothing in this chat's project waits to be trusted",

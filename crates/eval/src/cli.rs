@@ -121,8 +121,7 @@ pub(crate) fn endpoint() -> Result<Config, String> {
     let api_key = std::env::var("GLAVE_API_KEY")
         .ok()
         .filter(|key| !key.is_empty());
-    Config::for_url(base_url.clone(), api_key)
-        .ok_or_else(|| format!("GLAVE_BASE_URL is not a URL: {base_url}"))
+    Config::for_url(base_url, api_key).ok_or_else(|| "GLAVE_BASE_URL is not a URL".to_owned())
 }
 
 /// Runs the suite; `Ok(false)` when an attempt failed or was skipped.

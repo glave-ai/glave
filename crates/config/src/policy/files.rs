@@ -221,12 +221,13 @@ impl GithubFile {
             ));
         }
         let url = self.url.as_ref()?;
-        CredentialHost::named(url, Forge::Github).is_none().then(|| {
-            format!(
-                "url = {url:?} is not a GitHub server's address: https:// and its host, such as \
-                 https://github.example.com (http only to this computer)"
-            )
-        })
+        CredentialHost::named(url, Forge::Github)
+            .is_none()
+            .then(|| {
+                "url is not a GitHub server's address: https:// and its host, such as \
+             https://github.example.com (http only to this computer)"
+                    .to_owned()
+            })
     }
 }
 
@@ -310,20 +311,20 @@ impl ServeFile {
         if let Some(origin) = &self.origin
             && PublicOrigin::parse(origin).is_none()
         {
-            return Some(format!(
-                "origin = {origin:?} is not an address people reach glave at: https:// and its \
-                 name, such as https://glave.example.com, and nothing after it; or, for people \
-                 who share this computer, http://localhost, with the port glave serves at or \
-                 none to follow it"
-            ));
+            return Some(
+                "origin is not an address people reach glave at: https:// and its name, such as \
+                 https://glave.example.com, and nothing after it; or, for people who share this \
+                 computer, http://localhost, with the port glave serves at or none to follow it"
+                    .to_owned(),
+            );
         }
         if let Some(domain) = &self.domain
             && Self::named(domain).is_none()
         {
-            return Some(format!(
-                "domain = {domain:?} is not a name glave can get a certificate for, such as \
-                 glave.example.com"
-            ));
+            return Some(
+                "domain is not a name glave can get a certificate for, such as glave.example.com"
+                    .to_owned(),
+            );
         }
         if self.public_origin().is_none() {
             return Some(

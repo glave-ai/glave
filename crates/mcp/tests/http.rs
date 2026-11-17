@@ -142,7 +142,7 @@ fn a_server_not_there_never_says_what_its_address_carries() {
         let why = start_error(launch(&at(&url, &[])).started().await);
         assert!(!why.contains(&secret), "the address said");
         assert!(
-            why.starts_with("could not reach http://127.0.0.1:9/…: "),
+            why.starts_with("could not reach http://127.0.0.1:9/…?…: "),
             "{why}"
         );
     });
