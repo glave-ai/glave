@@ -3,9 +3,10 @@
 //! every project whose tasks it runs, adds one turn to its chat, run as a task with its budget
 //! that waits for the person where it needs them, as a chat does. A run due while the one
 //! before is still going in the chat, or while someone's turn is, is skipped and recorded so
-//! once (`schedule.skipped`); a run refused for any other reason is recorded with why. A
-//! schedule that missed runs while no server ran it runs once, as soon as one does, never once
-//! per missed time (systemd's `Persistent=true`).
+//! (`schedule.skipped`); a run refused for any other reason is recorded with its reason. A skip
+//! for the reason the latest skip had is recorded once, then only held back. A schedule that
+//! missed runs while no server ran it runs once, as soon as one does, never once per missed
+//! time (systemd's `Persistent=true`).
 
 use std::collections::BTreeSet;
 use std::future::Future;
@@ -25,8 +26,8 @@ use crate::tasks::Work;
 /// The longest the scheduler sleeps before looking again: schedules made by another process
 /// are found within this.
 const LOOK_AGAIN: Duration = Duration::from_secs(60);
-/// The shortest it sleeps: a run due now that the next tick would not start, held back by the
-/// task limit, waits at least this long rather than being looked at again at once.
+/// The shortest it sleeps, so a run due now that a tick did not start is not looked at again
+/// at once.
 const SOONEST: Duration = Duration::from_secs(1);
 /// How long the organization's scheduler lease lasts unless renewed: past the longest wait
 /// between ticks, so the server firing its schedules keeps it from tick to tick, and another
@@ -94,9 +95,10 @@ where
         Ok(started)
     }
 
-    /// Whether this server runs as many tasks as policy allows.
+    /// Whether this server runs as many tasks as policy allows: a run waiting for the person
+    /// runs nothing meanwhile, and counts toward no limit.
     fn at_task_limit(&self) -> bool {
-        (self.inner.limits.max_running).is_some_and(|max| self.tasks().len() >= max)
+        (self.inner.limits.max_running).is_some_and(|max| self.working(|_| true) >= max)
     }
 
     /// Whether this server fires `org`'s schedules: it takes their lease, or renews it, for
@@ -130,8 +132,9 @@ where
         }
     }
 
-    /// Runs the schedules until `stop` finishes: a tick whenever the next run is due, at least
-    /// every minute, for schedules other processes made, and at most every second.
+    /// Runs the schedules until `stop` finishes: a tick whenever the next run is due or a task
+    /// ends, at least every minute, for schedules other processes made, and at most every
+    /// second.
     pub async fn run_scheduler(&self, stop: impl Future<Output = ()>) {
         let mut stop = std::pin::pin!(stop);
         loop {
@@ -145,16 +148,19 @@ where
             tokio::select! {
                 () = &mut stop => return,
                 () = tokio::time::sleep(wait) => {}
+                // A run the task limit held back may start now.
+                () = self.inner.tasks_ended.notified() => {}
             }
         }
     }
 
     /// When the next tick would start a run, of the schedules this server fires: never sooner
-    /// than a second from now, so a run due now that a tick would not start (held back by the
-    /// task limit) is not looked at again at once.
+    /// than a second from now. A run due now that the task limit holds back is left to the
+    /// tick that follows a task ending, or the one at least every minute.
     pub fn next_due(&self) -> Option<Timestamp> {
         let now = self.inner.harness.clock().now();
         let firing: BTreeSet<OrgId> = self.scheduling().keys().copied().collect();
+        let held_back = self.at_task_limit();
         let next = self
             .ledgers()
             .iter()
@@ -162,6 +168,7 @@ where
             .flat_map(|(_, ledger)| ledger.schedules.values())
             .filter(|scheduled| fires_here(scheduled))
             .filter_map(next_fire)
+            .filter(|next| *next > now || !held_back)
             .min()?;
         let soonest = now
             .checked_add(SignedDuration::try_from(SOONEST).ok()?)
@@ -197,13 +204,10 @@ where
         };
         let why = match started {
             Ok(_) => return Ran::Started(chat),
-            Err(refused) if refused.code == code::TURN_RUNNING => Skipped::Going,
-            Err(refused) => Skipped::Refused {
-                why: refused.message.to_string(),
-            },
+            Err(refused) => skipped_for(&refused),
         };
-        // Once while the same run still goes: then only held back.
-        let again = why == Skipped::Going && self.skipped_going(project, schedule);
+        // Once for the same reason as the latest skip: then only held back.
+        let again = self.skipped_for_the_same(project, schedule, &why);
         let skipped = ScheduleSkipped {
             schedule: schedule.schedule,
             due: fired.due,
@@ -218,11 +222,28 @@ where
         Ran::NotStarted
     }
 
-    /// Whether `schedule`'s latest run was skipped as the one before still went.
-    fn skipped_going(&self, project: Located, schedule: &ScheduleCreated) -> bool {
+    /// Whether `schedule`'s latest run was skipped, for `why`.
+    fn skipped_for_the_same(
+        &self,
+        project: Located,
+        schedule: &ScheduleCreated,
+        why: &Skipped,
+    ) -> bool {
         (self.ledgers().get(&project))
             .and_then(|ledger| ledger.schedules.get(&schedule.schedule))
-            .is_some_and(|scheduled| scheduled.skipped == Some(Skipped::Going))
+            .is_some_and(|scheduled| scheduled.skipped.as_ref() == Some(why))
+    }
+}
+
+/// Why a run `refused` was skipped: as the one before still goes when a turn runs in its chat,
+/// here or on another server; else for the refusal's reason, which each reader reads in their
+/// language.
+fn skipped_for(refused: &ApiError) -> Skipped {
+    match refused.code {
+        code::TURN_RUNNING | code::RUNNING_ELSEWHERE => Skipped::Going,
+        other => Skipped::Refused {
+            reason: code::name_of(other).unwrap_or_default().to_owned(),
+        },
     }
 }
 

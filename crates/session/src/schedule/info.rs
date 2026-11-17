@@ -102,9 +102,9 @@ fn last_run(scheduled: &Scheduled, ledger: &Ledger) -> Option<LastRun> {
     let schedule = scheduled.created.schedule;
     let (status, outcome, said) = match &scheduled.skipped {
         Some(Skipped::Going) => (RunStatus::Skipped, None, Sentence::RunSkipped),
-        Some(Skipped::Refused { why }) => {
-            let why = why.clone();
-            (RunStatus::Refused, None, Sentence::RunRefused { why })
+        Some(Skipped::Refused { reason }) => {
+            let reason = reason.clone();
+            (RunStatus::Refused, None, Sentence::RunRefused { reason })
         }
         None => {
             let started = |task: &&Recorded| {
