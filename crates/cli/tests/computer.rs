@@ -1,8 +1,8 @@
 //! `glave computer serve --stdio`, the real binary, as a harness elsewhere would reach it: the
 //! computers suite runs against it across the protocol, and its commands never see glave's
-//! secrets. And `--tls`, ending when its input does and hiding its folder from its sandboxed
-//! commands, and `--socket` as a computer in a Pod runs it, reached through bridges that each
-//! end alone.
+//! secrets. And `--tls`, ending when its input does, its token and key in glave's folder where
+//! its sandboxed commands neither read nor replace them, and `--socket` as a computer in a Pod
+//! runs it, reached through bridges that each end alone.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -96,9 +96,10 @@ fn the_binary_serves_a_computer_that_passes_the_suite() {
     });
 }
 
-/// `dir/tls`, holding a new identity and a token, as `glave computer serve --tls` reads them.
-fn tls_folder(dir: &Path) -> (PathBuf, Identity, Token) {
-    let tls = dir.join("tls");
+/// `home/computer-tls`, holding a new identity and a token, as `glave computer serve --tls`
+/// reads them from glave's folder `home`.
+fn tls_folder(home: &Path) -> (PathBuf, Identity, Token) {
+    let tls = home.join("computer-tls");
     std::fs::create_dir_all(&tls).unwrap();
     let identity = Identity::mint().unwrap();
     std::fs::write(tls.join("cert.pem"), &identity.certificate).unwrap();
@@ -109,14 +110,11 @@ fn tls_folder(dir: &Path) -> (PathBuf, Identity, Token) {
     (tls, identity, token)
 }
 
-/// `glave computer serve --tls` at `address` with the identity and token in `tls`, glave's
-/// folder in `dir`, ending with its input.
-fn serving_tls(dir: &Path, address: &str, tls: &Path) -> tokio::process::Child {
+/// `glave computer serve --tls` at `address`, glave's folder `home`, ending with its input.
+fn serving_tls(home: &Path, address: &str) -> tokio::process::Child {
     tokio::process::Command::new(GLAVE)
-        .args(["computer", "serve", "--tls", address])
-        .arg(tls)
-        .arg("--until-input-ends")
-        .env("GLAVE_HOME", dir.join("home"))
+        .args(["computer", "serve", "--tls", address, "--until-input-ends"])
+        .env("GLAVE_HOME", home)
         .stdin(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
@@ -126,10 +124,11 @@ fn serving_tls(dir: &Path, address: &str, tls: &Path) -> tokio::process::Child {
 #[test]
 fn a_glave_serving_tls_ends_when_its_input_does() {
     let dir = TempDir::new("e2e-computer-tls").unwrap();
-    let (tls, _, _) = tls_folder(&dir);
+    let home = dir.join("home");
+    tls_folder(&home);
     read_program(GLAVE).unwrap();
     block_on!(async {
-        let mut child = serving_tls(&dir, "127.0.0.1:0", &tls);
+        let mut child = serving_tls(&home, "127.0.0.1:0");
         // What the glave that started it holds, closed as that glave ends, however it ends.
         drop(child.stdin.take());
         let ended = tokio::time::timeout(Duration::from_secs(30), child.wait()).await;
@@ -138,12 +137,11 @@ fn a_glave_serving_tls_ends_when_its_input_does() {
     });
 }
 
-/// A computer served with TLS on a port of this computer free a moment ago, from `dir` as
-/// [`serving_tls`] serves it, and the client reaching it once it serves. Another port when
-/// another program took that one first.
+/// A computer served with TLS on a port of this computer free a moment ago, glave's folder
+/// `home`, and the client reaching it once it serves. Another port when another program took
+/// that one first.
 async fn served_on_tls(
-    dir: &Path,
-    tls: &Path,
+    home: &Path,
     identity: &Identity,
     token: &Token,
 ) -> (tokio::process::Child, RemoteComputers) {
@@ -151,7 +149,7 @@ async fn served_on_tls(
         let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = free.local_addr().unwrap();
         drop(free);
-        let mut child = serving_tls(dir, &address.to_string(), tls);
+        let mut child = serving_tls(home, &address.to_string());
         // Up to 30 seconds for it to start listening.
         for _ in 0..600 {
             if let Ok(remote) = connect_tls(address, &identity.fingerprint, token.secret()).await {
@@ -166,13 +164,15 @@ async fn served_on_tls(
     panic!("glave never served TLS");
 }
 
-/// A computer served with TLS keeps its folder from its sandboxed commands, as a computer on a
-/// socket keeps its own (#1502): with the token there, a command with the network could reach
-/// the computer and open a terminal outside every sandbox, and with the key pass as it. What
-/// sits beside the folder stays readable, and the same command outside the sandbox reads both,
-/// so the test cannot pass by being broken.
+/// A computer served with TLS keeps its token and key in glave's folder, which its sandboxed
+/// commands neither read nor change (#1502): with the token, a command with the network could
+/// connect and open a terminal outside every sandbox; with the key, pass as the computer. Here
+/// glave's folder is inside the project, where the command writes everything else. The same
+/// command outside the sandbox reads both and replaces the token, so the test cannot pass by
+/// being broken. (The other ways to replace it, under each sandbox, are glave-computer's:
+/// `local/sandbox/tests/token.rs`.)
 #[test]
-fn a_tls_computer_s_token_and_key_are_hidden_from_its_sandboxed_commands() {
+fn a_tls_computer_s_token_and_key_are_neither_read_nor_replaced_by_its_sandboxed_commands() {
     if !glave_computer::sandbox_available() {
         assert!(
             std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none(),
@@ -181,41 +181,40 @@ fn a_tls_computer_s_token_and_key_are_hidden_from_its_sandboxed_commands() {
         return;
     }
     let dir = TempDir::outside_temp("computer-tls-hidden").unwrap();
-    let (tls, identity, token) = tls_folder(&dir);
     let work = dir.join("work");
-    std::fs::create_dir_all(&work).unwrap();
-    let beside = dir.join("beside");
-    std::fs::write(&beside, "beside-ok\n").unwrap();
-    let reads = format!(
-        "cat '{0}/token' '{0}/key.pem' '{1}'; true",
-        tls.display(),
-        beside.display()
-    );
+    let home = work.join("glave");
+    let (tls, identity, token) = tls_folder(&home);
     read_program(GLAVE).unwrap();
     block_on!(async {
-        let (mut child, remote) = served_on_tls(&dir, &tls, &identity, &token).await;
+        let (mut child, remote) = served_on_tls(&home, &identity, &token).await;
         let made = remote.create(&Environment::host()).await.unwrap();
         let path = work.to_string_lossy().into_owned();
         let here = remote
             .open(made.id, &Sources::Folder { path })
             .await
             .unwrap();
-        let read = async |sandbox: Option<Sandbox>| {
-            let mut command = Command::new(reads.as_str());
+        let run = async |script: &str, sandbox: Option<Sandbox>| {
+            let mut command = Command::new(script);
             command.sandbox = sandbox;
             let seen = Collect::default();
             let finished = remote.run(here.id, &command, &seen, &NeverCancelled).await;
             assert_eq!(finished.unwrap().ending, Ending::Exited { code: 0 });
             seen.0.into_inner().unwrap()
         };
+        let kept = || std::fs::read_to_string(tls.join("token")).unwrap_or_default();
+        // glave's folder named as every client names it: the computer's own.
         let sandbox = Sandbox {
             level: SandboxLevel::Project,
             network: SandboxNetwork::Direct,
             home: Some(dir.to_path_buf()),
-            glave_home: Some(dir.join("home")),
+            glave_home: Some(home.clone()),
         };
-        let said = read(Some(sandbox)).await;
-        assert!(said.contains("beside-ok"), "{said}");
+        let takes = format!(
+            "cat '{0}/token' '{0}/key.pem'; printf forged > '{0}/token'; echo tried",
+            tls.display()
+        );
+        let said = run(&takes, Some(sandbox)).await;
+        assert!(said.contains("tried"), "{said}");
         // What was read is not printed: it would be the token or the key.
         assert!(
             !said.contains(token.secret()),
@@ -225,10 +224,14 @@ fn a_tls_computer_s_token_and_key_are_hidden_from_its_sandboxed_commands() {
             !said.contains("PRIVATE KEY"),
             "a sandboxed command read the key"
         );
-        let said = read(None).await;
+        assert!(
+            kept().contains(token.secret()),
+            "a sandboxed command replaced the token"
+        );
+        let said = run(&takes, None).await;
         assert!(said.contains(token.secret()), "outside, the token is read");
         assert!(said.contains("PRIVATE KEY"), "outside, the key is read");
-        remote.destroy(made.id).await.unwrap();
+        assert!(!kept().contains(token.secret()), "and replaced");
         drop(remote);
         drop(child.stdin.take());
         let ended = tokio::time::timeout(Duration::from_secs(30), child.wait()).await;
