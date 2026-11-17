@@ -23,9 +23,13 @@ mod nested_repository;
 
 mod own_settings;
 
+mod stores;
+
 pub(super) mod terminals;
 
-fn enforced() -> bool {
+/// Whether the sandbox runs here: where it must (`GLAVE_REQUIRE_SANDBOX`, as CI's sandbox
+/// jobs say), a test that finds none fails instead of passing by doing nothing.
+pub(in crate::local) fn enforced() -> bool {
     let available = sandbox_available();
     assert!(
         available || std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none(),

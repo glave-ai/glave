@@ -57,6 +57,14 @@ pub(crate) struct Recorded {
     pub(crate) ended: Option<(TaskEnded, At)>,
 }
 
+impl Recorded {
+    /// Whether `ended` is this task's end: one for the run of its schedule that came due when
+    /// this did, or one that names no run.
+    fn ended_by(&self, ended: &TaskEnded) -> bool {
+        ended.due.is_none() || self.started.schedule.map(|fired| fired.due) == ended.due
+    }
+}
+
 /// What the ledger says so far.
 #[derive(Debug, Default)]
 pub(crate) struct Ledger {
@@ -122,7 +130,9 @@ impl Ledger {
                 self.open.insert(recorded.started.thread, recorded);
             }
             Body::TaskEnded(ended) => {
-                if let Some(mut recorded) = self.open.remove(&ended.thread) {
+                // A late end of a run before never closes the one its chat runs since.
+                let its = (self.open.get(&ended.thread)).is_some_and(|open| open.ended_by(&ended));
+                if its && let Some(mut recorded) = self.open.remove(&ended.thread) {
                     recorded.ended = Some((ended, at));
                     if self.finished.len() >= FINISHED {
                         self.finished.pop_front();
@@ -233,5 +243,53 @@ where
             .ledgers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_event::{Fired, Outcome};
+    use jiff::Timestamp;
+
+    use super::*;
+
+    fn at(seconds: i64) -> At {
+        At::from(Timestamp::from_second(seconds).unwrap())
+    }
+
+    #[test]
+    fn a_run_s_end_closes_that_run_alone() {
+        let thread = ThreadId::new(Timestamp::UNIX_EPOCH, [1; 10]).unwrap();
+        let schedule = ScheduleId::new(Timestamp::UNIX_EPOCH, [2; 10]).unwrap();
+        let started = |due| Recorded {
+            started: TaskStarted {
+                thread,
+                title: String::new(),
+                model: String::new(),
+                budget: None,
+                schedule: Some(Fired { schedule, due }),
+                by: None,
+            },
+            at: due,
+            ended: None,
+        };
+        let ended = |due| TaskEnded {
+            thread,
+            due,
+            outcome: Outcome::Completed,
+            tokens: glave_event::TokenCounts::default(),
+            cost: None,
+            by: None,
+        };
+        let second = started(at(7_200));
+        assert!(second.ended_by(&ended(Some(at(7_200)))));
+        assert!(
+            !second.ended_by(&ended(Some(at(3_600)))),
+            "the run before's"
+        );
+        assert!(
+            second.ended_by(&ended(None)),
+            "one from before ends carried a run"
+        );
     }
 }

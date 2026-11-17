@@ -32,6 +32,7 @@ use crate::mcp::Servers;
 use crate::project_folders::ProjectFolders;
 use crate::providers::{Built, Lineup, ModelAccounts};
 use crate::reread::Rereading;
+use crate::said::Said;
 use crate::setup::{self, Setup};
 use crate::trust::Trust;
 use crate::worktrees::OnThisMachine;
@@ -118,7 +119,7 @@ pub(crate) async fn wire(
     let folder = std::env::current_dir()?;
     let mut setup = Setup::load(args, &folder).await?;
     let telemetry = crate::telemetry::start_for(args.log.as_deref(), &setup.choices)?;
-    let processes = home::reaped().await?;
+    let processes = home::reaped(setup.said).await?;
     let workspace = crate::sandboxing::workspace(&folder, &mut setup, &processes).await?;
     let choices = &setup.choices;
     let configured = crate::providers::endpoint(choices)?;
@@ -162,7 +163,7 @@ pub(crate) async fn wire(
         asked,
         args,
     )?;
-    say(&told, &projects, &folder).await;
+    say(setup.said, &told, &projects, &folder).await;
     // Memory is tidied once the server answers the filters its calls keep to.
     let (filters, tidier) = (lined.switch.filters(), lined.switch.clone());
     let tidy_model = settings.model.clone();
@@ -194,7 +195,11 @@ pub(crate) async fn wire(
         forwarded: choices.forwarded.as_ref().map(|forwarded| forwarded.value),
         leases: Some(store.leases()),
         awake: crate::awake::for_server(args, choices, &processes),
-        worktrees: Some(Arc::new(OnThisMachine(store.log(), processes.clone()))),
+        worktrees: Some(Arc::new(OnThisMachine(
+            store.log(),
+            processes.clone(),
+            setup.said,
+        ))),
         homes,
         credits,
         router_floor: crate::gateway::router_floor(floor),
@@ -230,11 +235,11 @@ pub(crate) async fn wire(
     })
 }
 
-/// Says on standard error what glave `told` the person about `folder`, and the settings of
-/// `projects` it set aside there.
-async fn say(told: &[String], projects: &ProjectFolders, folder: &Path) {
+/// Says what glave `told` the person about `folder`, and the settings of `projects` it set
+/// aside there.
+async fn say(said: Said, told: &[String], projects: &ProjectFolders, folder: &Path) {
     let set_aside = projects.set_aside(folder).await;
-    (told.iter().chain(&set_aside)).for_each(|line| eprintln!("glave: {line}"));
+    (told.iter().chain(&set_aside)).for_each(|line| said.warn(line));
 }
 
 /// The scope glave's own work here keeps to: the project of `root`, the workspace of `folder`,
@@ -504,7 +509,9 @@ async fn line_up(
     let mut built = match lineup.build(&accounts, &catalogs) {
         Ok(built) => built,
         Err(error) if !accounts.is_empty() => {
-            eprintln!("glave: the model accounts you connected are set aside: {error:#}");
+            args.said().warn(&format!(
+                "the model accounts you connected are set aside: {error:#}"
+            ));
             lineup.build(&[], &[])?
         }
         Err(error) => return Err(error),
@@ -534,8 +541,8 @@ async fn line_up(
 /// The data store the setup's choices name, once this machine's worktrees have had their
 /// daily check, git run as one of `processes`.
 async fn store(setup: &Setup, processes: &Processes) -> anyhow::Result<Data> {
-    let store = Data::chosen(&setup.choices).await?;
-    crate::worktrees::check_daily(&store.log(), processes).await;
+    let store = Data::chosen(&setup.choices, setup.said).await?;
+    crate::worktrees::check_daily(&store.log(), processes, setup.said).await;
     Ok(store)
 }
 

@@ -4,6 +4,7 @@
 
 use std::process::ExitCode;
 
+use anyhow::Context as _;
 use glave_config::policy::Choices;
 use glave_config::trust::Asking;
 use glave_event::ThreadId;
@@ -18,6 +19,7 @@ use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Session};
 use crate::config;
 use crate::input::Input;
+use crate::said::Said;
 use crate::setup;
 use crate::terminal::Printer;
 use crate::wiring::Wired;
@@ -45,7 +47,9 @@ const SUBCOMMANDS: [(&str, Subcommand); 15] = [
     ("people", crate::people::main),
 ];
 
-pub(crate) fn main() -> ExitCode {
+/// glave's entry, once `kept` says whether it kept its capabilities to itself
+/// (`capabilities.rs`): what went wrong there is said once glave knows where it says things.
+pub(crate) fn main(kept: Option<&str>) -> ExitCode {
     // Watched for as long as glave runs, whatever it runs as.
     let _starter = match crate::starter::watch() {
         Ok(watching) => watching,
@@ -58,6 +62,9 @@ pub(crate) fn main() -> ExitCode {
     if let Some((first, rest)) = words.split_first()
         && let Some((_, subcommand)) = SUBCOMMANDS.iter().find(|(name, _)| name == first)
     {
+        if let Some(error) = kept {
+            crate::capabilities::warn(Said::Plainly, error);
+        }
         return subcommand(rest);
     }
     let args = match args::parse(words) {
@@ -78,29 +85,39 @@ pub(crate) fn main() -> ExitCode {
         }
         _ => {}
     }
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(e) => {
-            eprintln!("glave: could not start: {e}");
+    // The log, from here to the end: the error glave stops on goes in it too.
+    let said = args.said();
+    let _log = match crate::telemetry::start(args.log.as_deref(), None) {
+        Ok(log) => log,
+        Err(error) => {
+            eprintln!("glave: {error:#}");
             return ExitCode::FAILURE;
         }
     };
-    let ran = match args.action {
+    if let Some(error) = kept {
+        crate::capabilities::warn(said, error);
+    }
+    match act(args) {
+        Ok(code) => code,
+        Err(error) => {
+            said.stopped(&error);
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Does what `args` ask, on a runtime of its own.
+fn act(args: Args) -> anyhow::Result<ExitCode> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("could not start")?;
+    match args.action {
         Action::Serve => runtime.block_on(serve(args)),
         Action::Explain => runtime.block_on(setup::explain(&args)),
         Action::Skills => runtime.block_on(crate::skills::list()),
         Action::Commands => runtime.block_on(crate::commands::list()),
         _ => runtime.block_on(run(args)),
-    };
-    match ran {
-        Ok(code) => code,
-        Err(error) => {
-            eprintln!("glave: {error:#}");
-            ExitCode::FAILURE
-        }
     }
 }
 
@@ -150,6 +167,7 @@ pub(crate) async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
             holder: Holder::new(&SystemClock, &OsEntropy)?,
             memory: wired.memory.as_ref(),
             processes: wired.servers.processes(),
+            said: args.said(),
         };
         // Boxed: the server's future is large.
         Box::pin(crate::server::run(

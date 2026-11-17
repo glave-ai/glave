@@ -177,11 +177,14 @@ impl Renew for ConnectionRenewal {
                 ..current.clone()
             }),
             Err(SignInError::Unreachable { message, .. }) => {
-                tracing::warn!("could not renew the sign-in to {url}: {message}");
+                tracing::warn!(%url, error = %message, "could not renew a sign-in");
                 Err(failed())
             }
             Err(refused) => {
-                tracing::warn!("{refused}: it is kept without what renewed it");
+                tracing::warn!(
+                    error = %refused,
+                    "a sign-in's renewal was refused: it is kept without what renewed it"
+                );
                 Ok(ConnectionConnected {
                     connection: id,
                     refresh: None,
