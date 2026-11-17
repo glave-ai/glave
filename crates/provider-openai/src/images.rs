@@ -7,6 +7,7 @@
 //! the image models glave defaults to are served by nothing else at OpenRouter.
 
 use glave_event::{ModelRef, Part, StopReason};
+use glave_ports::auth::not_json;
 use glave_ports::{
     Completion, Failure, InlineFile, Made, MadeFile, MediaAsk, Message, ModelRequest,
     ProviderError, Route,
@@ -95,12 +96,8 @@ impl OpenAiCompatible {
         let url = format!("{}/images", self.base);
         let response = self.post(&url, body).await?;
         let answer = self.whole(response, &url, MOST_ANSWER).await?;
-        let answer: ImagesAnswer = serde_json::from_slice(&answer).map_err(|e| {
-            ProviderError::Protocol(format!(
-                "{} did not answer with JSON: {e}",
-                glave_ports::host::shown(&url)
-            ))
-        })?;
+        let answer: ImagesAnswer =
+            serde_json::from_slice(&answer).map_err(|e| not_json(&url, &e))?;
         // An answer with no image is still billed as it says: its files are none.
         let (usage, cost) = usage_and_cost(answer.usage.as_deref(), false, &self.provider)?;
         let files = answer

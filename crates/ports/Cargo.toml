@@ -23,6 +23,9 @@ conformance = [
 # Looking a host's name up for an HTTP client, keeping the addresses a client may reach
 # (`host::Lookup`): the one resolver web_fetch, remote tool servers and pushes share.
 lookup = ["dep:reqwest", "dep:tokio", "tokio/net"]
+# What every model provider's HTTP client shares (`auth::http`): the header that proves who is
+# calling, what a failed request means, and an answer it cannot read.
+http = ["dep:reqwest"]
 
 [dependencies]
 # The operating system's randomness, for the random part of new ids.
