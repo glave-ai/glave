@@ -241,6 +241,15 @@ impl Projects for InMemoryProjects {
     ) -> BoxFuture<'a, Result<Option<Project>, ProjectError>> {
         Box::pin(std::future::ready(self.find_folder_now(org, keys)))
     }
+
+    fn organizations(&self) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>> {
+        let organizations = self.held().map(|held| {
+            let mut organizations: Vec<OrgId> = held.projects.keys().map(|(org, _)| *org).collect();
+            organizations.dedup();
+            organizations
+        });
+        Box::pin(std::future::ready(organizations))
+    }
 }
 
 #[cfg(test)]

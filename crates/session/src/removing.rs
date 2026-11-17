@@ -258,18 +258,18 @@ where
                 org,
                 project: project.id,
             };
-            self.catch_up(project).await?;
-            let schedules: Vec<_> = self
-                .ledgers()
-                .get(&project)
-                .map(|ledger| ledger.schedules.keys().copied().collect())
-                .unwrap_or_default();
+            // Read whole, apart from what this server keeps, which may forget it midway.
+            let ledger = self.ledger_apart(project).await?;
+            let schedules: Vec<_> = ledger.schedules.keys().copied().collect();
             for schedule in schedules {
                 let deleted = ScheduleDeleted {
                     schedule,
                     by: Some(by.clone()),
                 };
                 self.record_in_ledger(project, &deleted).await?;
+            }
+            if !ledger.schedules.is_empty() {
+                self.unplace_if_none(project).await?;
             }
         }
         Ok(())

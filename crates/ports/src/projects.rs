@@ -253,6 +253,11 @@ pub trait Projects: Send + Sync {
         org: OrgId,
         keys: &'a [FolderKey],
     ) -> BoxFuture<'a, Result<Option<Project>, ProjectError>>;
+
+    /// Every organization the store holds, each one a project was kept in among them, in id
+    /// order: ids alone, for glave's own work that runs
+    /// once per organization, as the scheduler's does, each then in its own scope.
+    fn organizations(&self) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>>;
 }
 
 #[cfg(test)]

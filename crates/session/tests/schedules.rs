@@ -241,11 +241,13 @@ fn a_fresh_server_runs_what_was_missed_while_none_ran_once() {
             .build_in_repository("schedule-restart", log.clone())
             .await;
         create(&server, cron("0 * * * *"), 10_000).await.unwrap();
+        let person = server.person();
         server.shutdown().await;
         drop(server);
         // Down for a day: 24 runs missed.
         let mut later = setup();
         later.clock = now.clone();
+        later.settings.person = person;
         later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
         set(&now, "2026-10-11T10:30:00Z");
         let (restarted, _) = later.build_on(&repo, log).await;

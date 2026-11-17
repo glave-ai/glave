@@ -17,7 +17,9 @@ pub(crate) use asked::asking;
 pub(crate) use card::{asked_in, card_in};
 pub(crate) use placed::Placed;
 
-use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, SchedulePaused, ThreadId, When};
+use glave_event::{
+    Principal, ScheduleCreated, ScheduleDeleted, ScheduleId, SchedulePaused, ThreadId, When,
+};
 use glave_harness::Change;
 use glave_ports::{
     BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, Standing, title_from,
@@ -104,7 +106,8 @@ where
             budget: new.budget,
             thread: Some(thread),
             from: new.from,
-            by: self.someone_else(caller.person),
+            // Named always, never left implied: another server's own person may be someone else.
+            by: Some(Principal::person(self.person_of(caller)?)),
         };
         let project = scope.located();
         if let Err(refused) = self.keep_schedule(caller, project, &created).await {
@@ -130,7 +133,9 @@ where
             self.rename(caller, thread, created.name.clone()).await?;
         }
         self.place_schedules(project).await?;
-        self.record_in_ledger(project, created).await
+        self.record_in_ledger(project, created).await?;
+        // Again, as the project's last other schedule may have gone, unlisting it, meanwhile.
+        self.place_schedules(project).await
     }
 
     /// A new chat in `scope` for a schedule's runs: on a copy of its project's folder where the
@@ -294,6 +299,7 @@ where
             by: self.someone_else(caller.person),
         };
         self.record_in_ledger(project, &deleted).await?;
+        self.unplace_if_none(project).await?;
         Ok(Reply::Done {})
     }
 
@@ -324,7 +330,8 @@ where
             schedule,
             by: self.someone_else(caller.person),
         };
-        self.record_in_ledger(project, &deleted).await
+        self.record_in_ledger(project, &deleted).await?;
+        self.unplace_if_none(project).await
     }
 
     /// The project of `caller`'s that keeps `schedule`, its ledger read up to now.

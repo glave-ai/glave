@@ -1,13 +1,15 @@
 //! A schedule's run as a task, claimed by its own `task.started`: recorded before its turn
 //! starts, and only while its project's ledger shows nothing of that run yet, so of servers
 //! that both fire it only the one whose claim lands starts it. A run whose turn then can't
-//! start is ended at once; one whose server stops between the two is left open, and recorded
-//! interrupted by the server that recovers tasks next, so the person learns it was lost.
+//! start is ended at once; one whose server stops between the two is left open under its task's
+//! lease, taken before the claim, and recorded interrupted once that lease lapses, at the next
+//! tick of the server firing schedules or as a server starts, so the person learns it was lost.
 
-use glave_event::{Fired, Outcome, TaskEnded, TaskStarted, ThreadId, TokenCounts};
+use glave_event::{Fired, Outcome, Principal, TaskEnded, TaskStarted, ThreadId, TokenCounts};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, title_from};
 
 use super::Work;
+use crate::leased::elsewhere;
 use crate::ledger::Ledger;
 use crate::protocol::{ApiError, TaskInfo};
 use crate::server::Server;
@@ -52,13 +54,21 @@ where
             model,
             budget: Some(budget),
             schedule: Some(fired),
-            by: self.someone_else(caller.person),
+            // Named always: another server's own person may be someone else.
+            by: (caller.person.or(self.inner.person)).map(Principal::person),
         };
+        // Its task's lease first, so a server recovering tasks never takes its claim, made
+        // before its turn starts, for one left by a server that stopped.
+        let lease = (self.take_task(project.org, thread).await).map_err(before)?;
+        let lease = lease.ok_or_else(|| before(elsewhere(thread)))?;
         let there = |ledger: &Ledger| ledger.settled(fired.schedule, fired.due);
-        if !(self.record_unless(project, &started, there).await).map_err(before)? {
-            return Ok(None);
+        let claimed = self.record_unless(project, &started, there).await;
+        if !matches!(claimed, Ok(true)) {
+            self.let_go(&lease).await;
+            return claimed.map(|_| None).map_err(before);
         }
-        let run = self.run_task(caller, (project, thread), work, Some(budget), Some(started));
+        let claim = Some((started, lease));
+        let run = self.run_task(caller, (project, thread), work, Some(budget), claim);
         match run.await {
             Ok(info) => Ok(Some(info)),
             Err(refused) => {
