@@ -45,6 +45,7 @@ mod providers;
 mod reach;
 mod remote;
 mod reread;
+mod said;
 mod sandboxing;
 mod search;
 mod server;
@@ -66,9 +67,9 @@ mod wiring;
 mod worktrees;
 
 fn main() -> std::process::ExitCode {
-    capabilities::keep_to_itself();
+    let kept = capabilities::keep_to_itself();
     if let Some(code) = helpers::run() {
         return code;
     }
-    session::main()
+    session::main(kept.as_deref())
 }
