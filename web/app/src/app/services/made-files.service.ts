@@ -1,6 +1,7 @@
 import { Service, computed, effect, inject, linkedSignal, untracked } from '@angular/core';
 import type { ThreadId, TurnFiles } from '@glave/client';
 
+import { OneAtATime } from '../lib/reads';
 import { SessionService } from './session.service';
 import { ThreadService } from './thread.service';
 
@@ -29,10 +30,8 @@ export class MadeFilesService {
   });
   /** Counts the reads begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
-  /** Whether a read is in flight. */
-  private reading = false;
-  /** Whether a read was asked for since the one in flight began. */
-  private again = false;
+  /** Its reads, one at a time. */
+  private readonly reads = new OneAtATime(() => this.read());
   /**
    * The files each turn made, and what they leave out, by the `seq` of its start; `null` until
    * first known.
@@ -59,26 +58,7 @@ export class MadeFilesService {
    * after it, however often it was asked meanwhile.
    */
   async refresh(): Promise<void> {
-    if (this.reading) {
-      this.again = true;
-      return;
-    }
-    this.reading = true;
-    this.again = false;
-    try {
-      do {
-        await this.read();
-      } while (this.asked());
-    } finally {
-      this.reading = false;
-    }
-  }
-
-  /** Whether a read was asked for since the last began, taking it as begun. */
-  private asked(): boolean {
-    const asked = this.again;
-    this.again = false;
-    return asked;
+    return this.reads.run();
   }
 
   /** Reads the files the thread's turns made, once. */
