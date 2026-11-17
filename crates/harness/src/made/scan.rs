@@ -72,7 +72,7 @@ pub(crate) fn scanned_within(bytes: &[u8], values: &[Vec<u8>], most: u64) -> Sca
     }
     let longest = needles.iter().map(Vec::len).max().unwrap_or(0);
     let mut scan = Scan {
-        finders: needles.iter().map(|needle| Finder::new(needle)).collect(),
+        finders: needles.iter().map(Finder::new).collect(),
         overlap: longest.saturating_sub(1),
         inflater: Decompress::new(false),
         piece: vec![0; PIECE],

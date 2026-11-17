@@ -65,7 +65,8 @@ fn deflated(head: &[u8], block: &[u8], times: usize, tail: &[u8]) -> Vec<u8> {
 /// reader finds only at its end.
 fn growing_workbook() -> Vec<u8> {
     let head = br#"<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">"#;
-    let entry = [b"<si><t>".as_slice(), &[b'a'; 65_536], b"</t></si>"].concat();
+    let text = vec![b'a'; 65_536];
+    let entry = [b"<si><t>".as_slice(), &text, b"</t></si>"].concat();
     let block = entry.repeat((1 << 20) / entry.len());
     let tail = b"</sst>";
     let strings = deflated(head, &block, STRINGS_MB, tail);

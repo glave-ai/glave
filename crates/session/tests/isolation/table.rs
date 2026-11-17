@@ -143,8 +143,8 @@ impl Kind {
             | Self::Code
             | Self::Session
             | Self::Files
-            | Self::Sha => None,
-            Self::Made => None,
+            | Self::Sha
+            | Self::Made => None,
         }
     }
 
@@ -175,8 +175,7 @@ impl Kind {
             Self::InviteCode => "1".repeat(64),
             Self::Device => uuid(0xdead_000d),
             Self::Asset => uuid(0xdead_000e),
-            Self::Sha => "e".repeat(64),
-            Self::Made => "e".repeat(64),
+            Self::Sha | Self::Made => "e".repeat(64),
             Self::Files => String::new(),
         })
     }
