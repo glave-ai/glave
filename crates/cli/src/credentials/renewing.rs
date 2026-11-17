@@ -217,8 +217,9 @@ impl<R: Renew> Renewing<R> {
                 }
                 Ok(false) => {
                     tracing::info!(
-                        "the sign-in to {url} was removed or replaced while it was renewed: \
-                         the renewed token is not kept"
+                        %url,
+                        "a sign-in was removed or replaced while it was renewed: the renewed \
+                         token is not kept"
                     );
                     return Ended::Done(Instant::now());
                 }
