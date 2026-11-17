@@ -156,8 +156,7 @@ fn filter(level: LevelFilter) -> anyhow::Result<EnvFilter> {
 
 #[cfg(feature = "otlp")]
 mod otlp {
-    use anyhow::Context as _;
-    use glave_ports::host::shown;
+    use glave_ports::host::{shown, urls_shown};
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_otlp::{MetricExporter, Protocol, SpanExporter, WithExportConfig as _};
     use opentelemetry_sdk::Resource;
@@ -183,13 +182,13 @@ mod otlp {
                 .with_protocol(Protocol::HttpBinary)
                 .with_endpoint(format!("{base}/v1/traces"))
                 .build()
-                .with_context(|| format!("could not export spans to {}", shown(base)))?;
+                .map_err(|error| unexported("spans", base, &error))?;
             let metrics = MetricExporter::builder()
                 .with_http()
                 .with_protocol(Protocol::HttpBinary)
                 .with_endpoint(format!("{base}/v1/metrics"))
                 .build()
-                .with_context(|| format!("could not export metrics to {}", shown(base)))?;
+                .map_err(|error| unexported("metrics", base, &error))?;
             Ok(Self {
                 spans: SdkTracerProvider::builder()
                     .with_batch_exporter(spans)
@@ -222,5 +221,12 @@ mod otlp {
             let _ = self.spans.shutdown();
             let _ = self.metrics.shutdown();
         }
+    }
+
+    /// Why exporting `what` to the collector at `base` could not start, each address as it may
+    /// be shown: the exporter's own error repeats the endpoint it was given.
+    fn unexported(what: &str, base: &str, error: &dyn std::fmt::Display) -> anyhow::Error {
+        let why = urls_shown(&error.to_string());
+        anyhow::anyhow!("could not export {what} to {}: {why}", shown(base))
     }
 }

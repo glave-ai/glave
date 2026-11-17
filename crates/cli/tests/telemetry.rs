@@ -229,7 +229,7 @@ fn a_collector_without_the_feature_is_refused_naming_it() {
     let place = place("no-otlp");
     std::fs::create_dir_all(&place.home).unwrap();
     // A token in its address, which the refusal never says.
-    let token = glave_ports::testing::any_secret();
+    let token = any_secret();
     std::fs::write(
         place.home.join("config.toml"),
         format!("[telemetry]\notlp = \"http://127.0.0.1:9/?token={token}\"\n"),

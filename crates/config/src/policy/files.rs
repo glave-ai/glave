@@ -620,13 +620,13 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
         Hooks::new(hooks.hooks())
             .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
     }
+    // A value refused is never repeated: malformed, it may be anything, a secret among it.
     if let Some(telemetry) = &file.telemetry {
         let url = telemetry.otlp.trim();
         if !(url.starts_with("http://") || url.starts_with("https://")) {
             invalid!(
-                "{}: [telemetry] otlp = {:?} is not an http or https URL",
-                path.display(),
-                shown(&telemetry.otlp)
+                "{}: [telemetry] otlp is not an http or https URL",
+                path.display()
             );
         }
     }
@@ -640,10 +640,9 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
         && !safe_to_send(&server.url, &[])
     {
         invalid!(
-            "{}: [server] url = {:?} is not https (http only to this computer): your sign-in \
-             goes there",
-            path.display(),
-            shown(&server.url)
+            "{}: [server] url is not https (http only to this computer), with no name or \
+             password in it: your sign-in goes there",
+            path.display()
         );
     }
     if let Some(problem) = file.serve.as_ref().and_then(ServeFile::problem) {
@@ -652,20 +651,12 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
     if let Some(url) = file.store.as_ref().and_then(|store| store.url.as_ref())
         && !StoreFile::postgres(url)
     {
-        invalid!(
-            "{}: [store] url = {:?} is not a postgres:// URL",
-            path.display(),
-            shown(url)
-        );
+        invalid!("{}: [store] url is not a postgres:// URL", path.display());
     }
     if let Some(bucket) = file.store.as_ref().and_then(|store| store.bucket.as_ref())
         && !StoreFile::bucket(bucket)
     {
-        invalid!(
-            "{}: [store] bucket = {:?} is not an s3:// bucket",
-            path.display(),
-            shown(bucket)
-        );
+        invalid!("{}: [store] bucket is not an s3:// bucket", path.display());
     }
     if let Some(web) = &file.web {
         web.policy().map_err(|error| {

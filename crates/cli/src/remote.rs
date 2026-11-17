@@ -43,16 +43,17 @@ pub(crate) async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
     if args.background {
         bail!("--background runs a task in glave on this computer: not with --server");
     }
+    let shown = glave_ports::host::shown(url);
     let Some(token) = std::env::var(TOKEN).ok().filter(|token| !token.is_empty()) else {
         bail!(
-            "to use the server at {url}, sign in: set {TOKEN} to an access token for it (sign-in \
-             in the terminal is not available yet)"
+            "to use the server at {shown}, sign in: set {TOKEN} to an access token for it \
+             (sign-in in the terminal is not available yet)"
         );
     };
     let remote = Remote::new(url, token)?;
     let elsewhere = Session::Elsewhere(&remote);
     let Reply::Server(_) = elsewhere.request(Request::Discover {}).await? else {
-        bail!("{url} is not a glave session server");
+        bail!("{shown} is not a glave session server");
     };
     let worktree = args.worktree.then_some(true);
     // A server elsewhere has no folder of this computer: the thread is in the person's Chats.

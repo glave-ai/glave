@@ -24,7 +24,7 @@ pub use lookup::Lookup;
 pub use metadata::{CLOUD_METADATA, Network, is_cloud_metadata};
 pub use named::Host;
 pub use pattern::{BadHostPattern, HostPattern};
-pub use shown::{has_password, shown, urls_shown};
+pub use shown::{has_password, shown, shown_with_path, urls_shown};
 
 /// Whether `host`, as a URL or a connection names it, is this computer: `localhost` in any
 /// case, or a loopback address, bare (`::1`) or bracketed (`[::1]`).
