@@ -2,8 +2,11 @@
 //! the next time one matches on the clocks of a time zone. Each field takes `*`, a number, a
 //! range `a-b`, a step `*/n` or `a-b/n`, or a comma list of those; weekdays run 0 to 7, both
 //! Sunday. As in Vixie cron, when both the day and the weekday are restricted, a time matches
-//! either. Across daylight saving, a time the clocks skip runs as they reach it, an hour on
-//! (jiff's compatible reading), and a time they repeat runs once, the first time.
+//! either. Across daylight saving, as classic cron does, an expression whose hour field is fixed
+//! runs a time the clocks skip as they reach it, an hour on (jiff's compatible reading), and a
+//! time they repeat once, the first time; one whose hour field is `*` (every hour, or every few
+//! minutes) runs on what the clocks show, through a repeated hour twice and never in a skipped
+//! one.
 
 use jiff::Timestamp;
 use jiff::civil::{Date, DateTime};
@@ -19,6 +22,10 @@ const LOOKAHEAD_DAYS: u32 = 366 * 5;
 /// times of the hour they repeat come before it, once each.
 const MOST_REPEATED: usize = 24 * 60;
 
+/// The zone's changes of offset looked across for what its clocks show next: two a year for
+/// five years, and room for a zone that changes more.
+const MOST_CHANGES: usize = 64;
+
 /// A parsed cron expression: the values each field allows, as bits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Cron {
@@ -30,6 +37,9 @@ pub(crate) struct Cron {
     /// Whether the day field was `*`, so only the weekday restricts days (and the reverse).
     pub(crate) any_day: bool,
     pub(crate) any_weekday: bool,
+    /// Whether the hour field was `*`: its times follow the clocks through daylight saving,
+    /// where a fixed hour's run once.
+    pub(crate) any_hour: bool,
 }
 
 impl Cron {
@@ -54,12 +64,16 @@ impl Cron {
             weekdays,
             any_day: day.starts_with('*'),
             any_weekday: weekday.starts_with('*'),
+            any_hour: hour.starts_with('*'),
         })
     }
 
     /// The first whole minute strictly after `after` that matches on the clocks of `zone`, if one
     /// comes within five years.
     pub(crate) fn next_after(&self, after: Timestamp, zone: &TimeZone) -> Option<Timestamp> {
+        if self.any_hour {
+            return self.next_shown(after, zone);
+        }
         let mut from = zone.to_datetime(after);
         for _ in 0..MOST_REPEATED {
             let civil = self.next_on_clocks(from)?;
@@ -69,6 +83,32 @@ impl Cron {
             }
             // A time of an hour the clocks repeat, which ran the first time.
             from = civil;
+        }
+        None
+    }
+
+    /// The first whole minute strictly after `after` when the clocks of `zone` show a matching
+    /// time: between two changes of offset the clocks run on, so the first match on them before
+    /// the next change is it; past one, the clocks read on from what they show then.
+    fn next_shown(&self, after: Timestamp, zone: &TimeZone) -> Option<Timestamp> {
+        let (mut from, mut shown) = (after, zone.to_datetime(after));
+        for _ in 0..MOST_CHANGES {
+            let change = zone.following(from).next().map(|change| change.timestamp());
+            let at = zone
+                .to_offset(from)
+                .to_timestamp(self.next_on_clocks(shown)?)
+                .ok()?;
+            match change {
+                Some(change) if at >= change => {
+                    // From what the clocks show as the offset changes, that minute included.
+                    shown = zone
+                        .to_datetime(change)
+                        .checked_sub(jiff::Span::new().minutes(1))
+                        .ok()?;
+                    from = change;
+                }
+                _ => return Some(at),
+            }
         }
         None
     }
@@ -216,11 +256,64 @@ mod tests {
             Some("2026-11-02T06:30:00Z"),
             "not again at 1:30 EST"
         );
-        // Every 20 minutes through the repeated hour: each time on the clocks once.
+        // A fixed hour every 20 minutes: the repeated hour's times once each.
         assert_eq!(
-            york("*/20 * * * *", "2026-11-01T05:40:00Z").as_deref(),
-            Some("2026-11-01T07:00:00Z"),
-            "1:00 to 1:40 EST were run as EDT; next is 2:00 EST"
+            york("*/20 1 * * *", "2026-11-01T05:40:00Z").as_deref(),
+            Some("2026-11-02T06:00:00Z"),
+            "1:00 to 1:40 EST were run as EDT"
+        );
+    }
+
+    /// Each run's time on New York's clocks, from `from` until `until`.
+    fn runs_in_york(cron: &str, from: &str, until: &str) -> Vec<String> {
+        let zone = TimeZone::get("America/New_York").unwrap();
+        let cron = Cron::parse(cron).unwrap();
+        let (mut at, until): (Timestamp, Timestamp) =
+            (from.parse().unwrap(), until.parse().unwrap());
+        let mut runs = Vec::new();
+        while let Some(next) = cron.next_after(at, &zone).filter(|next| *next <= until) {
+            runs.push(zone.to_datetime(next).time().to_string());
+            at = next;
+        }
+        runs
+    }
+
+    #[test]
+    fn every_hour_and_every_few_minutes_follow_the_clocks_through_daylight_saving() {
+        // 2026-11-01: 1:00 to 1:59 show twice, EDT then EST, and both run.
+        assert_eq!(
+            next_in("*/20 * * * *", "2026-11-01T05:40:00Z", "America/New_York").as_deref(),
+            Some("2026-11-01T06:00:00Z"),
+            "1:00 EST comes after 1:40 EDT"
+        );
+        assert_eq!(
+            runs_in_york(
+                "*/20 * * * *",
+                "2026-11-01T04:50:00Z",
+                "2026-11-01T07:00:00Z"
+            ),
+            [
+                "01:00:00", "01:20:00", "01:40:00", "01:00:00", "01:20:00", "01:40:00", "02:00:00"
+            ]
+        );
+        assert_eq!(
+            runs_in_york("30 * * * *", "2026-11-01T04:00:00Z", "2026-11-01T08:00:00Z"),
+            ["00:30:00", "01:30:00", "01:30:00", "02:30:00"],
+            "every hour, an hour apart each time"
+        );
+        // 2026-03-08: 2:00 to 2:59 never show; the runs go on at 3:00.
+        assert_eq!(
+            runs_in_york(
+                "*/30 * * * *",
+                "2026-03-08T06:00:00Z",
+                "2026-03-08T08:00:00Z"
+            ),
+            ["01:30:00", "03:00:00", "03:30:00", "04:00:00"]
+        );
+        // A zone that doesn't change runs as before.
+        assert_eq!(
+            next("*/20 * * * *", "2026-11-01T05:40:00Z").as_deref(),
+            Some("2026-11-01T06:00:00Z")
         );
     }
 
@@ -289,9 +382,10 @@ mod tests {
     proptest! {
         #[test]
         fn the_next_time_is_the_first_matching_minute_after(
-            minute in 0u8..60, hour in 0u8..24, step in 1u8..30, weekday in 0u8..8,
-            seconds in 1_700_000_000i64..1_900_000_000,
+            minute in 0u8..60, hour in prop::option::of(0u8..24), step in 1u8..30,
+            weekday in 0u8..8, seconds in 1_700_000_000i64..1_900_000_000,
         ) {
+            let hour = hour.map_or_else(|| "*".to_owned(), |hour| hour.to_string());
             let text = format!("{minute}/{step} {hour} * * {weekday}");
             let cron = Cron::parse(&text).unwrap();
             let after = Timestamp::from_second(seconds).unwrap();

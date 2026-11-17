@@ -472,9 +472,10 @@ sentences! {
         "{ $start ->\n    [yes] On\n   *[no] on\n } day { $day } of every month at { $time }",
     RepeatsOther { start: String } = "repeats-other"
         "{ $start ->\n    [yes] On\n   *[no] on\n } a repeating schedule",
-    // A time on a clock: `half` is `am` or `pm`, `minute` two digits.
+    // A time on a clock: `hour` 0 to 23, which English says on a 12-hour clock with `half`
+    // (`am` or `pm`) and a language whose clocks run to 24 as it is; `minute` two digits.
     Clock { hour: u64, minute: String, half: String } = "clock"
-        "{ $hour }:{ $minute } { $half ->\n    [am] am\n   *[pm] pm\n }",
+        "{ $hour ->\n    [0] 12\n    [13] 1\n    [14] 2\n    [15] 3\n    [16] 4\n    [17] 5\n    [18] 6\n    [19] 7\n    [20] 8\n    [21] 9\n    [22] 10\n    [23] 11\n   *[other] { $hour }\n }:{ $minute } { $half ->\n    [am] am\n   *[pm] pm\n }",
     // A weekday's name, Sunday as 0.
     Weekday { day: u64 } = "weekday"
         "{ $day ->\n    [0] Sunday\n    [1] Monday\n    [2] Tuesday\n    [3] Wednesday\n    [4] Thursday\n    [5] Friday\n   *[6] Saturday\n }",
