@@ -2,8 +2,8 @@
 //! of each, its title, its parts and its preview, is kept with it; one that couldn't be read is
 //! kept unread; one whose reading shows one of the person's secrets, as its text joined up does
 //! where its bytes never held it whole, is left on the computer. A look-over's files are read by
-//! one deadline, and until the turn is stopped: a turn the person stopped, or one stopped while
-//! its files are read, keeps them unread.
+//! one deadline; a turn the person stopped, or one stopped while its files are read, owes its
+//! look, which the next turn's start makes.
 
 use std::fmt::Write as _;
 use std::future::{Future, pending};
@@ -168,7 +168,7 @@ fn a_file_whose_reading_shows_a_secret_its_bytes_never_held_whole_is_left_on_the
 }
 
 /// A model that asks for a file to be written, then stops its turn as the person does, and
-/// never answers again.
+/// answers the next turn at once.
 struct WritesThenStops {
     cancel: Cancel,
     asked: AtomicUsize,
@@ -180,15 +180,18 @@ impl ModelProvider for WritesThenStops {
         _request: &ModelRequest,
         _on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        let first = self.asked.fetch_add(1, Ordering::SeqCst) == 0;
+        let asked = self.asked.fetch_add(1, Ordering::SeqCst);
         let write = json!({"path": "plan.csv", "content": "Item,Total\n"});
         let cancel = self.cancel.clone();
         Box::pin(async move {
-            if first {
-                return Ok(answer(None, vec![("write", write)], StopReason::ToolUse));
+            match asked {
+                0 => Ok(answer(None, vec![("write", write)], StopReason::ToolUse)),
+                1 => {
+                    cancel.cancel();
+                    pending().await
+                }
+                _ => Ok(answer(Some("Done."), vec![], StopReason::EndTurn)),
             }
-            cancel.cancel();
-            pending().await
         })
     }
 }
@@ -199,7 +202,7 @@ fn reads_all() -> ReadMade {
 }
 
 #[test]
-fn a_turn_the_person_stopped_keeps_what_it_made_unread() {
+fn a_turn_the_person_stopped_owes_its_look_which_the_next_turn_s_start_makes() {
     let dir = folder("made-stopped");
     block_on!(async {
         let cancel = Cancel::new();
@@ -222,16 +225,22 @@ fn a_turn_the_person_stopped_keeps_what_it_made_unread() {
             .await
             .unwrap();
         assert_eq!(summary.outcome, Outcome::Cancelled);
-        assert_eq!(told(&summary.made), [("plan.csv", "kept")]);
-        assert!(
-            summary.made.iter().all(|file| file.read.is_none()),
-            "kept unread"
-        );
+        assert_eq!(told(&summary.made), [], "stopped, its look is owed");
+        assert!(summary.made_waits);
+        // The next turn's start looks for it: what the stopped turn made is that turn's, read.
+        harness
+            .run_turn(&mut thread, "go on", &Cancel::new(), &mut |_| {})
+            .await
+            .unwrap();
+        let made = made(&events(harness.log(), thread.id).await);
+        let files: Vec<FileMade> = made.into_iter().flat_map(|(files, _)| files).collect();
+        assert_eq!(told(&files), [("plan.csv", "kept")]);
+        assert!(files.iter().all(|file| file.read.is_some()), "and read");
     });
 }
 
 #[test]
-fn a_turn_stopped_while_its_files_are_read_ends_at_once_keeping_them_unread() {
+fn a_turn_stopped_while_its_files_are_read_ends_at_once_owing_its_look() {
     let dir = folder("made-stopped-reading");
     std::fs::write(dir.join("plan.csv"), "Item,Total\n").unwrap();
     block_on!(async {
@@ -258,8 +267,8 @@ fn a_turn_stopped_while_its_files_are_read_ends_at_once_keeping_them_unread() {
             .run_turn(&mut thread, "make it", &cancel, &mut |_| {})
             .await
             .unwrap();
-        assert_eq!(told(&summary.made), [("plan.csv", "kept")]);
-        assert!(summary.made.iter().all(|file| file.read.is_none()));
+        assert_eq!(told(&summary.made), []);
+        assert!(summary.made_waits, "its look is owed");
     });
 }
 

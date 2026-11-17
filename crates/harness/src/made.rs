@@ -10,7 +10,8 @@
 //! next turn starts, else the next working turn's end. Each file is kept for the thread and read
 //! apart from glave (`keep.rs`, [`glave_ports::ReadMade`]) within one deadline for the whole
 //! look-over, or until the turn that ends with it is stopped. Where it stands is read again from
-//! the log (`log.rs`). At most [`MOST_LOOKING`] look-overs run at once on a server.
+//! the log (`log.rs`). At most [`MOST_LOOKING`] look-overs run at once on a server, and
+//! [`LOOKING_PER_ORG`] for one organization.
 
 mod keep;
 mod log;
@@ -22,12 +23,12 @@ use glave_event::AssetKind;
 use glave_event::{FileMade, MadeLeft, RawEvent, TurnMade};
 use glave_ports::computer::Glob;
 use glave_ports::{BlobStore, EventLog, ModelProvider, Standing};
-use tokio::sync::Semaphore;
 use tokio::time::Instant;
 
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::shares::Shares;
 use keep::Reading;
 
 pub(crate) use log::{Mark, TurnOpen, changes_files, from_log, opened_by};
@@ -51,8 +52,12 @@ const MARGIN: Duration = Duration::from_secs(2);
 /// [`MOST`] files of 10 MB.
 pub(crate) const MOST_LOOKING: usize = 4;
 
-/// The longest a look-over waits for its turn among [`MOST_LOOKING`]: past it, it is owed, as
-/// when its folder can't be looked over.
+/// The most look-overs that run at once for one organization, so no one's turns ending at once
+/// hold up everyone's.
+pub(crate) const LOOKING_PER_ORG: usize = 2;
+
+/// The longest a look-over waits for its place among the server's: past it, it is owed, as when
+/// its folder can't be looked over.
 const WAITS_TO_LOOK: Duration = Duration::from_secs(60);
 
 /// The longest the files of one look-over are read for, in all: past it, the rest are kept
@@ -70,9 +75,10 @@ pub(crate) struct Found {
     pub(crate) waits: bool,
 }
 
-/// The look-overs of one server, at most [`MOST_LOOKING`] at once.
-pub(crate) fn looking() -> Semaphore {
-    Semaphore::new(MOST_LOOKING)
+/// The places for look-overs on one server: [`MOST_LOOKING`] at once, [`LOOKING_PER_ORG`] for one
+/// organization.
+pub(crate) fn looking() -> Shares {
+    Shares::new(MOST_LOOKING, LOOKING_PER_ORG)
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -84,8 +90,8 @@ where
 {
     /// The files `thread`'s turn made, as it ends: none unless it called a tool that can change
     /// files there. Where it stops, and whether the rest is owed, becomes the thread's mark. Read
-    /// apart from glave until the look-over's deadline or until `cancel` stops the turn,
-    /// whichever comes first: a turn already stopped keeps them unread.
+    /// apart from glave until the look-over's deadline; once `cancel` stops the turn, the look is
+    /// owed, and the next turn's start makes it.
     pub(crate) async fn made_by_turn(&self, thread: &mut Thread, cancel: &Cancel) -> Found {
         let Some(turn) = thread.turn_open.take().filter(|turn| turn.works) else {
             return Found::default();
@@ -120,12 +126,14 @@ where
 
     /// Stages in `events` what the look-over a turn's mark owes found (`turn.made`), once no
     /// command of the thread's runs in the background: from the mark up to now, for that turn.
-    /// Nothing when the folder can't be looked over, the mark staying owed. Never on a person's
+    /// Nothing when the folder can't be looked over, or `cancel` stops it, the mark staying
+    /// owed. Never on a person's
     /// own computer, which looking would wake: the next turn that works there looks.
     pub(crate) async fn stage_marked(
         &self,
         thread: &mut Thread,
         events: &mut Vec<RawEvent>,
+        cancel: &Cancel,
     ) -> Result<(), HarnessError> {
         let looks = thread.home.is_none()
             && thread.standing == Standing::Active
@@ -133,7 +141,7 @@ where
         let Some(mark) = thread.made_mark.filter(|mark| mark.owed && looks) else {
             return Ok(());
         };
-        let reading = self.reading(Cancel::new());
+        let reading = self.reading(cancel.clone());
         let Some(found) = self.look_over(thread, mark.since_ns, &reading).await else {
             return Ok(());
         };
@@ -156,12 +164,14 @@ where
     /// kept or said why not, in path order: at most [`MOST`], the rest counted; and where it
     /// stopped. While a command of the thread's still runs, only those settled for [`MARGIN`],
     /// the rest owed. None, said so, when the folder holds too many files to look over in time;
-    /// `None` when it can't be looked over, or its turn among the server's look-overs doesn't
-    /// come in time.
+    /// `None` when it can't be looked over, its place among the server's look-overs doesn't come
+    /// in time, or `reading`'s stop comes first: the look is owed then.
     async fn look_over(&self, thread: &Thread, since_ns: u64, reading: &Reading) -> Option<Found> {
-        let _turn = tokio::time::timeout(WAITS_TO_LOOK, self.looking.acquire())
-            .await
-            .ok()?
+        let stop = &reading.cancel;
+        let place = self.looking.share(thread.scope.org());
+        let _place = stop
+            .run(tokio::time::timeout(WAITS_TO_LOOK, place))
+            .await?
             .ok()?;
         if thread.commands.any_running() {
             thread.commands.check().await;
@@ -176,7 +186,10 @@ where
             most_looked_at: Some(MOST_LOOKED_AT),
             settled_for_ns: running.then(|| nanos(MARGIN)),
         };
-        let found = self.workspace_for(thread).glob(&glob).await.ok()?;
+        let found = stop
+            .run(self.workspace_for(thread).glob(&glob))
+            .await?
+            .ok()?;
         let until_ns = found.cut_off_ns;
         if found.stopped {
             return Some(Found {
@@ -199,7 +212,10 @@ where
         for path in &paths {
             if made.len() >= MOST {
                 more = more.saturating_add(1);
-            } else if let Some(file) = self.keep_made_file(thread, path, Some(reading)).await {
+            } else if let Some(file) = stop
+                .run(self.keep_made_file(thread, path, Some(reading)))
+                .await?
+            {
                 made.push(file);
             }
         }

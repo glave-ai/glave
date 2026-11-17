@@ -315,11 +315,11 @@ fn the_store_is_the_person_s_choice_and_its_password_never_shown() {
     let loaded = load_all(&locations, None).unwrap();
     assert_eq!(loaded.choices.store.as_ref().unwrap().value, url);
     let (shown, _) = explain(&loaded, None);
+    assert!(!shown.contains(&password), "the password shown");
     assert!(
-        shown.contains("postgres://glave:***@db.example.com/glave"),
+        shown.contains("postgres://***@db.example.com/glave"),
         "{shown}"
     );
-    assert!(!shown.contains(&password), "{shown}");
     let wrong = format!("[store]\nurl = \"mysql://glave:{password}@db\"\n");
     let refused = files::config(&wrong, &locations.person)
         .unwrap_err()

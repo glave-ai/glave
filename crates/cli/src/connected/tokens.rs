@@ -10,6 +10,7 @@ use std::time::Instant;
 use glave_event::{ConnectionConnected, Secret};
 use glave_mcp::{Reachable, SignInError, address, renew};
 use glave_ports::auth::{Auth, AuthError, Header, Outgoing, RequestSigner};
+use glave_ports::host::{shown, urls_shown};
 use glave_ports::{BoxFuture, Clock as _, SystemClock};
 use glave_session::AccountsError;
 
@@ -43,7 +44,8 @@ impl Connected {
         match self.accounts().await {
             Ok(accounts) => accounts.sign_in(url, account).cloned(),
             Err(error) => {
-                tracing::warn!("could not read the sign-in to {url}: {}", error.message);
+                let (url, error) = (shown(url), &error.message);
+                tracing::warn!(%url, %error, "could not read a sign-in");
                 None
             }
         }
@@ -153,7 +155,8 @@ impl Renew for ConnectionRenewal {
                 .iter()
                 .any(|kept| kept.connection == current.connection),
             Err(error) => {
-                tracing::warn!("could not read the connections to renew {url}: {error:#}");
+                let error = format!("{error:#}");
+                tracing::warn!(url = %shown(url), %error, "could not read the connections to renew a sign-in");
                 return Err(failed());
             }
         };
@@ -162,7 +165,8 @@ impl Renew for ConnectionRenewal {
         };
         // Made before the refresh token is spent, so nothing after can lose what it gets.
         let id = new_id().map_err(|error| {
-            tracing::warn!("could not make an id to renew {url}: {error:#}");
+            let error = format!("{error:#}");
+            tracing::warn!(url = %shown(url), %error, "could not make an id to renew a sign-in");
             failed()
         })?;
         match renew(url, &current.client, refresh, self.reachable).await {
@@ -177,7 +181,8 @@ impl Renew for ConnectionRenewal {
                 ..current.clone()
             }),
             Err(SignInError::Unreachable { message, .. }) => {
-                tracing::warn!(%url, error = %message, "could not renew a sign-in");
+                let (url, error) = (shown(url), urls_shown(&message));
+                tracing::warn!(%url, %error, "could not renew a sign-in");
                 Err(failed())
             }
             Err(refused) => {

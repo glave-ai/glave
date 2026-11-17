@@ -3,6 +3,7 @@
 //! credentials, the one list of those addresses, and which addresses a client may reach. A host
 //! as a URL or a connection names it, and the one pattern every list of hosts is written in. And
 //! origins: where a host is, as its scheme and name, read one way for every origin glave keeps.
+//! And a URL as it may be shown, with what it carries hidden (`shown.rs`).
 
 mod address;
 mod inside;
@@ -11,6 +12,7 @@ mod lookup;
 mod metadata;
 mod named;
 mod pattern;
+mod shown;
 
 use std::fmt;
 use std::net::IpAddr;
@@ -22,6 +24,7 @@ pub use lookup::Lookup;
 pub use metadata::{CLOUD_METADATA, Network, is_cloud_metadata};
 pub use named::Host;
 pub use pattern::{BadHostPattern, HostPattern};
+pub use shown::{has_password, shown, shown_with_path, urls_shown};
 
 /// Whether `host`, as a URL or a connection names it, is this computer: `localhost` in any
 /// case, or a loopback address, bare (`::1`) or bracketed (`[::1]`).

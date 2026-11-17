@@ -42,7 +42,7 @@ pub struct Brave {
 impl fmt::Debug for Brave {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Brave")
-            .field("url", &self.url.as_str())
+            .field("url", &glave_ports::host::shown(self.url.as_str()))
             .finish_non_exhaustive()
     }
 }
@@ -50,8 +50,8 @@ impl fmt::Debug for Brave {
 /// Why Brave could not be set up.
 #[derive(Debug, thiserror::Error)]
 pub enum BraveError {
-    #[error("{url:?} is not an address web search can be reached at")]
-    Url { url: String },
+    #[error("the address web search is reached at is not an http or https URL")]
+    Url,
     #[error("could not set up web search's client: {0}")]
     Client(String),
 }
@@ -61,9 +61,9 @@ impl Brave {
     /// glave by hand, which never reach Brave.
     pub fn new(key: Secret, url: Option<&str>) -> Result<Self, BraveError> {
         let at = url.unwrap_or(BRAVE);
-        let url = Url::parse(at).map_err(|_| BraveError::Url { url: at.to_owned() })?;
+        let url = Url::parse(at).map_err(|_| BraveError::Url)?;
         if !matches!(url.scheme(), "http" | "https") {
-            return Err(BraveError::Url { url: at.to_owned() });
+            return Err(BraveError::Url);
         }
         let client = Client::builder()
             .timeout(TIMEOUT)

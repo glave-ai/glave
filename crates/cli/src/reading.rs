@@ -11,21 +11,23 @@
 //! on a server, and at most [`MOST_PER_ORG`] for one organization, so no one's files hold up
 //! everyone's: their memory, in all, is at most [`MOST_READERS`] times [`MOST_MEMORY`].
 
-use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::{Read as _, Write as _};
 use std::process::ExitCode;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
-use glave_harness::MAX_FILE;
-use glave_ports::{MadeRead, OrgId, ReadMade};
+use glave_harness::{MAX_FILE, Shares};
+use glave_ports::{MadeRead, ReadMade};
 use glave_process::{Processes, Program};
 use rustix::process::{Resource, Rlimit, setrlimit};
-use tokio::sync::Notify;
 
 /// What glave is started with to read a file a turn made, followed by its media type.
 const READER_ARG: &str = "--glave-read-made";
+
+/// What starts each line a reader writes to its standard error, which the server logs: why it
+/// couldn't hold itself to what reading may take, never anything of the file.
+const SAYS: &str = "glave's reader: ";
 
 /// The longest a file is read for.
 const WITHIN: Duration = Duration::from_secs(20);
@@ -52,7 +54,8 @@ pub(crate) fn helper(args: &[OsString]) -> Option<ExitCode> {
     let Some(media_type) = args.get(2).and_then(|media_type| media_type.to_str()) else {
         return Some(ExitCode::from(2));
     };
-    if held_to_reading().is_err() {
+    if let Err(why) = held_to_reading() {
+        let _ = writeln!(std::io::stderr(), "{SAYS}{why}");
         return Some(ExitCode::FAILURE);
     }
     let mut bytes = Vec::new();
@@ -79,30 +82,38 @@ pub(crate) fn helper(args: &[OsString]) -> Option<ExitCode> {
 
 /// Holds this process, a reader, to what reading a file may take, first thing: no core dump of
 /// what it decodes, which would leave the file unsealed on the drive; at most [`MOST_MEMORY`]
-/// of allocations; and on Linux, none dumped by anything else, and the first process the kernel
-/// ends when memory runs out.
+/// of allocations; and on Linux, the first process the kernel ends when memory runs out, and
+/// none dumped by anything else. That last comes last: once a process is not dumpable, the
+/// kernel gives its `/proc/self` files to root, which a server not run as root can't write.
+/// Says why, in a sentence of its own, when it can't.
 fn held_to_reading() -> Result<(), String> {
+    fn said(what: &'static str) -> impl Fn(rustix::io::Errno) -> String {
+        move |error| format!("{what}: {error}")
+    }
     let nothing = Rlimit {
         current: Some(0),
         maximum: Some(0),
     };
-    setrlimit(Resource::Core, nothing).map_err(|error| error.to_string())?;
+    setrlimit(Resource::Core, nothing).map_err(said("its core dumps couldn't be turned off"))?;
     #[cfg(target_os = "linux")]
     {
         use rustix::process::{DumpableBehavior, set_dumpable_behavior};
-        set_dumpable_behavior(DumpableBehavior::NotDumpable).map_err(|error| error.to_string())?;
-        std::fs::write("/proc/self/oom_score_adj", "1000").map_err(|error| error.to_string())?;
+        std::fs::write("/proc/self/oom_score_adj", "1000").map_err(|error| {
+            format!("it couldn't be put first to go when memory runs out: {error}")
+        })?;
         let most = u64::try_from(MOST_MEMORY).unwrap_or(u64::MAX);
         let data = Rlimit {
             current: Some(most),
             maximum: Some(most),
         };
-        setrlimit(Resource::Data, data).map_err(|error| error.to_string())?;
+        setrlimit(Resource::Data, data).map_err(said("its memory couldn't be limited"))?;
+        set_dumpable_behavior(DumpableBehavior::NotDumpable)
+            .map_err(said("it couldn't be kept from being dumped"))?;
     }
     #[cfg(target_os = "macos")]
     crate::allocator::GLOBAL
         .set_limit(MOST_MEMORY)
-        .map_err(|()| "the reader's memory couldn't be limited".to_owned())?;
+        .map_err(|()| "its memory couldn't be limited".to_owned())?;
     Ok(())
 }
 
@@ -111,7 +122,7 @@ fn held_to_reading() -> Result<(), String> {
 pub(crate) fn reader(processes: &Processes) -> Option<ReadMade> {
     let program = glave_process::this_program().ok()?;
     let processes = processes.clone();
-    let readers = Arc::new(Readers::default());
+    let readers = Arc::new(Shares::new(MOST_READERS, MOST_PER_ORG));
     Some(Arc::new(move |org, bytes, media_type| {
         let (processes, program, readers) =
             (processes.clone(), program.clone(), Arc::clone(&readers));
@@ -120,70 +131,18 @@ pub(crate) fn reader(processes: &Processes) -> Option<ReadMade> {
             let mut reading = Program::new(&program);
             reading.arg(READER_ARG).arg(&media_type).env_clear();
             let read = processes.output_with(&mut reading, &bytes, WITHIN, MOST_ANSWER);
-            let output = read.await.ok().filter(|output| output.status.success())?;
+            let output = read.await.ok()?;
+            // Why a reader couldn't hold itself to its limits, in its own words: never the file's.
+            let said = String::from_utf8_lossy(&output.stderr);
+            for why in said.lines().filter_map(|line| line.strip_prefix(SAYS)) {
+                tracing::warn!(why, "a reader of a file a turn made read nothing");
+            }
+            if !output.status.success() {
+                return None;
+            }
             serde_json::from_slice(&output.stdout).ok()
         })
     }))
-}
-
-/// The readers running now, in all and by organization, and what tells those waiting that one
-/// ended.
-#[derive(Default)]
-struct Readers {
-    running: Mutex<Running>,
-    ended: Notify,
-}
-
-#[derive(Default)]
-struct Running {
-    all: usize,
-    by_org: HashMap<OrgId, usize>,
-}
-
-/// A reader's place among those running, given up as it drops.
-struct Share<'a> {
-    readers: &'a Readers,
-    org: OrgId,
-}
-
-impl Readers {
-    /// A place for a reader of `org`'s, once fewer than [`MOST_READERS`] run in all and fewer
-    /// than [`MOST_PER_ORG`] of `org`'s. What waits for it is held to the look-over's deadline,
-    /// which the harness wraps every reader in.
-    async fn share(&self, org: OrgId) -> Share<'_> {
-        loop {
-            let ended = self.ended.notified();
-            {
-                let mut running = self.running.lock().unwrap_or_else(PoisonError::into_inner);
-                let theirs = running.by_org.get(&org).copied().unwrap_or(0);
-                if running.all < MOST_READERS && theirs < MOST_PER_ORG {
-                    running.all = running.all.saturating_add(1);
-                    running.by_org.insert(org, theirs.saturating_add(1));
-                    return Share { readers: self, org };
-                }
-            }
-            ended.await;
-        }
-    }
-}
-
-impl Drop for Share<'_> {
-    fn drop(&mut self) {
-        let mut running = self
-            .readers
-            .running
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        running.all = running.all.saturating_sub(1);
-        let left = running.by_org.get(&self.org).copied().unwrap_or(0);
-        if left <= 1 {
-            running.by_org.remove(&self.org);
-        } else {
-            running.by_org.insert(self.org, left.saturating_sub(1));
-        }
-        drop(running);
-        self.readers.ended.notify_waiters();
-    }
 }
 
 #[cfg(test)]

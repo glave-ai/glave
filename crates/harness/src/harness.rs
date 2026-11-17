@@ -107,8 +107,9 @@ pub struct Harness<P, L, B, A> {
     /// Where the commands on each person's own computer ask for credentials: theirs. None by
     /// default, so only the harness's person's computer gets the workspace's.
     pub(crate) credentials_of: Option<CredentialsOf>,
-    /// The look-overs of what turns made running now, at most a few at once (`made.rs`).
-    pub(crate) looking: tokio::sync::Semaphore,
+    /// The look-overs of what turns made running now, at most a few at once, and fewer for one
+    /// organization (`made.rs`).
+    pub(crate) looking: crate::shares::Shares,
     /// What reads each file a turn made apart from glave, for its title, parts and preview;
     /// none by default, so files are kept unread.
     pub(crate) reader: Option<ReadMade>,
