@@ -214,10 +214,7 @@ fn a_run_of_someone_removed_meanwhile_is_refused() {
         assert_eq!(server.tick().await.unwrap(), Vec::new());
         assert_eq!(runs_in(&log, theirs.project).await, Vec::new());
         let refused = refusal_in(&log, theirs.project).await;
-        assert!(
-            refused.contains("no longer in this organization"),
-            "{refused}"
-        );
+        assert_eq!(refused, "MAKER_REMOVED");
     });
 }
 
@@ -257,14 +254,14 @@ pub(crate) async fn append<T: Payload>(
         .unwrap();
 }
 
-/// Why `project`'s latest run was refused, as its ledger records it.
+/// Why `project`'s latest run was refused, as its ledger records it: its reason.
 pub(crate) async fn refusal_in(log: &Shared, project: ProjectId) -> String {
     let refused = (ledger_of(log, project).await.into_iter().rev()).find_map(|body| match body {
         Body::ScheduleSkipped(skipped) => Some(skipped.why),
         _ => None,
     });
     match refused {
-        Some(Skipped::Refused { why }) => why,
+        Some(Skipped::Refused { reason }) => reason,
         other => panic!("a refusal, not {other:?}"),
     }
 }
@@ -295,7 +292,7 @@ fn a_run_whose_maker_can_t_be_read_still_there_is_held_back_and_recorded_nowhere
         assert_eq!(server.tick().await.unwrap(), Vec::new());
         assert_eq!(runs_in(&log, theirs.project).await, Vec::new());
         let refused = refusal_in(&log, theirs.project).await;
-        assert!(refused.contains("no longer in this organization"));
+        assert_eq!(refused, "MAKER_REMOVED");
     });
 }
 

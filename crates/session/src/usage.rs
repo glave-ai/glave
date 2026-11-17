@@ -102,8 +102,8 @@ where
             let scope = match self.authorized(caller, project.project).await {
                 Ok((_, scope)) => scope,
                 Err(error) => {
-                    let project = project.project;
-                    tracing::warn!("calls in project {project} not counted: {}", error.message);
+                    let (project, error) = (project.project, error.message);
+                    tracing::warn!(%project, %error, "a project's calls were not counted");
                     continue;
                 }
             };

@@ -465,6 +465,10 @@ sentences! {
     CronTooOften { minutes: u16 } = "cron-too-often"
         "a schedule runs at most once every { $minutes } minutes: choose times further apart",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
+    ScheduleNoChatToResume = "schedule-no-chat-to-resume"
+        "this schedule was made before schedules had chats of their own, so it can't run again: set it up again",
+    ScheduleChatArchived = "schedule-chat-archived"
+        "this schedule's chat is archived: unarchive the chat first, then resume the schedule",
     ScheduleNoChat = "schedule-no-chat"
         "Made before schedules had chats of their own, so it runs no more: set it up again to run it",
     RunRunning = "run-running" "Running",
@@ -473,11 +477,17 @@ sentences! {
     RunUnfinished { outcome: String } = "run-unfinished"
         "{ $outcome ->\n    [cancelled] Stopped\n    [interrupted] Interrupted, as glave stopped\n    [limit_reached] Stopped at its budget\n   *[failed] Didn't finish\n }",
     RunSkipped = "run-skipped" "Skipped: the run before was still going",
-    RunRefused { why: String } = "run-refused" "Couldn't start: { $why }",
+    // Why a run couldn't start: `reason` names a refusal as the session API's error codes do,
+    // or finer where the scheduler says more (`MAKER_REMOVED`, `MAKER_UNKNOWN`); empty for one
+    // recorded before refusals had reasons.
+    RunRefused { reason: String } = "run-refused"
+        "Couldn't start: { $reason ->\n    [MAKER_REMOVED] whoever made it is no longer in this organization\n    [MAKER_UNKNOWN] glave can't tell who made it\n    [ARCHIVED] its chat is archived\n    [NO_THREAD] its chat is gone\n    [NOT_ALLOWED] it may not run here\n    [LIMIT] a limit was reached\n    [WORKSPACE] its chat's folder couldn't be opened\n    [NO_FOLDER] its project's folder isn't there anymore\n    [PROMPT_BLOCKED] a check set to run before each prompt stopped it\n    [NO_MODEL] its model isn't available here\n    [NO_PROVIDER] the model account it uses is gone\n    [PROVIDER] the model's provider failed\n    [NOT_AVAILABLE] the computer it works on can't run it now\n   *[other] something went wrong\n }",
     RunStarted = "run-started" "Started",
     RunMissed = "run-missed" "Missed: it was paused at its time",
-    RunKept = "run-kept"
-        "(This chat's copy of the project has changes of its own, so glave left it as it was rather than bringing it up to the project's latest version.)",
+    // Told to a schedule's run whose copy of its project was left as it was: `why` is
+    // `changed`, `diverged` or `failed`.
+    RunCopyLeft { why: String } = "run-copy-left"
+        "{ $why ->\n    [changed] This chat's copy of the project has changes of its own not yet committed, so glave left it as it was rather than bringing it up to the project's latest version.\n    [diverged] This chat's copy of the project has commits of its own, and the project has moved on since, so glave left it as it was rather than bringing it up to the project's latest version.\n   *[failed] glave couldn't bring this chat's copy of the project up to the project's latest version, so it may be behind.\n }",
     NoZone { zone: String } = "no-zone"
         "glave doesn't know the time zone \"{ $zone }\": name one as the world's time zone list does, such as Europe/Lisbon",
 
@@ -498,9 +508,10 @@ sentences! {
         "{ $start ->\n    [yes] On\n   *[no] on\n } day { $day } of every month at { $time }",
     RepeatsOther { start: String } = "repeats-other"
         "{ $start ->\n    [yes] On\n   *[no] on\n } a repeating schedule",
-    // A time on a clock: `half` is `am` or `pm`, `minute` two digits.
+    // A time on a clock: `hour` 0 to 23, which English says on a 12-hour clock with `half`
+    // (`am` or `pm`) and a language whose clocks run to 24 as it is; `minute` two digits.
     Clock { hour: u64, minute: String, half: String } = "clock"
-        "{ $hour }:{ $minute } { $half ->\n    [am] am\n   *[pm] pm\n }",
+        "{ $hour ->\n    [0] 12\n    [13] 1\n    [14] 2\n    [15] 3\n    [16] 4\n    [17] 5\n    [18] 6\n    [19] 7\n    [20] 8\n    [21] 9\n    [22] 10\n    [23] 11\n   *[other] { $hour }\n }:{ $minute } { $half ->\n    [am] am\n   *[pm] pm\n }",
     // A weekday's name, Sunday as 0.
     Weekday { day: u64 } = "weekday"
         "{ $day ->\n    [0] Sunday\n    [1] Monday\n    [2] Tuesday\n    [3] Wednesday\n    [4] Thursday\n    [5] Friday\n   *[6] Saturday\n }",

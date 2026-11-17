@@ -325,7 +325,7 @@ pub(super) fn expires(lasts: Option<Duration>) -> Option<At> {
 /// A sign-in to the server the person calls `name` that could not start or finish, in words
 /// they can act on; rmcp's own go to the log.
 fn refused(error: &SignInError, name: &str) -> ApiError {
-    tracing::warn!("{error}");
+    tracing::warn!(%error, "a sign-in to a connection could not start or finish");
     let said = match error {
         SignInError::NotOffered { .. } => {
             format!("{name} asks no one to sign in: it works as it is")

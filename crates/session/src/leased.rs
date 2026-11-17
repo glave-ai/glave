@@ -78,7 +78,21 @@ where
         org: OrgId,
         thread: ThreadId,
     ) -> Result<Option<Lease>, ApiError> {
-        let on = Leased::Thread(thread);
+        self.take_on(org, Leased::Thread(thread)).await
+    }
+
+    /// Takes the lease of the task in `thread`, in `org`, for this server to follow it: `None`
+    /// while another server follows it.
+    pub(crate) async fn take_task(
+        &self,
+        org: OrgId,
+        thread: ThreadId,
+    ) -> Result<Option<Lease>, ApiError> {
+        self.take_on(org, Leased::Task(thread)).await
+    }
+
+    /// Takes the lease `on`, in `org`, for this server: `None` while another server holds it.
+    async fn take_on(&self, org: OrgId, on: Leased) -> Result<Option<Lease>, ApiError> {
         let leases = &self.inner.leases;
         leases
             .acquire(org, on, self.holder()?, LEASE)
@@ -200,11 +214,14 @@ async fn keep(leases: &dyn Leases, lease: &Lease, cancel: &Cancel) -> Infallible
         tick.tick().await;
         match leases.renew(&held, LEASE).await {
             Ok(Some(renewed)) => held = renewed,
+            // A warning: it lapsed while this server was away (a computer asleep, a pause), and
+            // the turn is interrupted, as another may now hold it; nothing is left to mend.
             Ok(None) => {
                 tracing::warn!(lease = %lease.on.key(), "a thread's lease was lost");
                 cancel.interrupt();
             }
-            Err(error) => tracing::warn!(%error, "a thread's lease could not be renewed"),
+            // The store failing: the lease lapses, and the turn with it, unless someone acts.
+            Err(error) => tracing::error!(%error, "a thread's lease could not be renewed"),
         }
     }
 }
