@@ -129,6 +129,14 @@ pub(crate) async fn run(
     let said = args.said();
     // What a glave before this one left running, and later what its leases still held.
     let mut left_open = recover(server, said).await;
+    // The key every push is signed with, made now where there is none, so reading it never
+    // has to; a server that can't make it says so and pushes nothing until it can.
+    if let Err(error) = server.ready_to_push().await {
+        said.warned(
+            "the key notifications are signed with could not be made",
+            &error,
+        );
+    }
     said.info(&format!("serving you on {}", path.display()));
     let mut terminate = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;

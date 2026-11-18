@@ -458,6 +458,8 @@ impl Setup {
             server.answer_filters(filters);
         }
         keep_own_project(&server, home).await;
+        // As a server that pushes starts: the key every push is signed with, made now.
+        server.ready_to_push().await.unwrap();
         (server, seen)
     }
 }
