@@ -389,6 +389,16 @@ where
         Ok(self.people(org, |people| people.role(person)))
     }
 
+    /// Whether `person` was taken out of `org`, as its people ledger says now.
+    pub(crate) async fn removed_from(
+        &self,
+        org: OrgId,
+        person: PrincipalId,
+    ) -> Result<bool, ApiError> {
+        self.catch_up_people(org).await?;
+        Ok(self.people(org, |people| people.removed(person)))
+    }
+
     /// Whether `caller`'s organization is shown (`specs/model.md`, "Identity"): where people
     /// sign in through a company login, or, to someone signed in, where it holds more than one
     /// person, the local person counting in the server's own, or an invite to it waits, so the
