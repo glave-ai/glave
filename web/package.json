@@ -28,7 +28,7 @@
     "i18n": "node tools/i18n.mjs",
     "i18n:check": "node tools/i18n.mjs fresh",
     "licenses": "node tools/licenses.mjs",
-    "audit": "npm audit --omit=dev --audit-level=high"
+    "audit": "node tools/audit.mjs"
   },
   "dependencies": {
     "@angular/cdk": "22.2.5",

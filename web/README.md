@@ -50,7 +50,7 @@ npm run build:glaze    # Glaze as a publishable Angular package (ng-packagr)
 npm run build          # the app, production, within its size budget (angular.json)
 npm run build:showcase # Glaze's showcase, for the end-to-end tests
 npm run licenses       # every production dependency's licence is one deny.toml allows (plus OFL fonts, 0BSD)
-npm run audit          # npm audit of production dependencies, high and above
+npm run audit          # every production dependency against the registry's advisories, high and above
 npm run e2e            # Playwright in Chromium and WebKit against glave serve --http --web, axe in light and dark
 ```
 
