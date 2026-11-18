@@ -130,16 +130,22 @@ where
         }
         crate::prefix::heard(thread, offer);
         thread.commands.told(&told);
+        Self::begun(thread, parts, prompt, by_glave);
+        Ok(())
+    }
+
+    /// Notes in `thread` the turn begun with the person's `parts`, `prompt` among them: what
+    /// they asked, unless glave asked it (`by_glave`).
+    fn begun(thread: &mut Thread, parts: Vec<Part>, prompt: &str, by_glave: bool) {
         thread.turns = thread.turns.saturating_add(1);
         thread.messages.push(Message::User { parts });
         if by_glave {
-            return Ok(());
+            return;
         }
         thread.request = Some(prompt.to_owned());
         if !thread.delegated() {
             thread.asked.push(prompt.to_owned());
         }
-        Ok(())
     }
 
     /// Stores the turn's full configuration, as sent to `model` at `provider`, and answers
