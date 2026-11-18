@@ -65,9 +65,10 @@ fn is_paused(scheduled: &Scheduled) -> bool {
     scheduled.paused || scheduled.created.thread.is_none()
 }
 
-/// Whether `ledger` holds a schedule that will still run, or will once resumed, at `now`.
+/// Whether `ledger` holds a run still open, as one waiting for the person is, or a schedule that
+/// will still run, or will once resumed, at `now`.
 pub(super) fn live(ledger: &Ledger, now: Timestamp) -> bool {
-    (ledger.schedules.values()).any(|scheduled| kept(scheduled, now))
+    !ledger.open.is_empty() || (ledger.schedules.values()).any(|scheduled| kept(scheduled, now))
 }
 
 /// Since when `ledger` has held nothing to run, as far as it says: its last schedule's going, or
