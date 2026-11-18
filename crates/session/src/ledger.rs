@@ -95,6 +95,8 @@ pub(crate) struct Ledger {
     /// The `seq` the next event will take.
     next: u64,
     pub(crate) schedules: BTreeMap<ScheduleId, Scheduled>,
+    /// When its last schedule went, while it holds none.
+    pub(crate) emptied: Option<At>,
     /// Tasks started and not ended.
     pub(crate) open: HashMap<ThreadId, Recorded>,
     /// Tasks ended, newest last.
@@ -143,6 +145,9 @@ impl Ledger {
             }
             Body::ScheduleDeleted(deleted) => {
                 let gone = self.schedules.remove(&deleted.schedule)?;
+                if self.schedules.is_empty() {
+                    self.emptied = Some(at);
+                }
                 gone.created.thread
             }
             Body::SchedulePaused(paused) => {

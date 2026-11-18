@@ -11,8 +11,7 @@ use glave_ports::testing::{FaultyLog, ManualClock};
 use std::sync::Arc;
 
 use glave_ports::{
-    Caller, EventLog as _, InMemoryLeases, InMemoryLog, InMemoryProjects, Leases, OrgId, ProjectId,
-    Projects, Scope,
+    Caller, EventLog as _, InMemoryLog, InMemoryProjects, OrgId, ProjectId, Projects, Scope,
 };
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 
@@ -100,9 +99,9 @@ fn a_server_started_since_fires_everyone_s_schedules_each_as_whoever_made_it() {
 fn where_schedules_are_is_one_stream_of_ids_while_they_are() {
     block_on!(async {
         let log = Shared::default();
-        let (server, _, _, _dir) = setup()
-            .build_in_repository("people-index", log.clone())
-            .await;
+        let first = setup();
+        let now = first.clock.clone();
+        let (server, _, _, _dir) = first.build_in_repository("people-index", log.clone()).await;
         let third = OrgId::from_uuid(uuid::Uuid::from_u128(3));
         let grace = Caller {
             org: Some(third),
@@ -120,16 +119,24 @@ fn where_schedules_are_is_one_stream_of_ids_while_they_are() {
                 if placed.org == third.as_uuid() && placed.project == hers.project.as_uuid()),
             "her project's ids, in the one stream: {listed:?}"
         );
-        // Her last schedule there gone, the stream lists her project no more.
+        // Her last schedule there gone, the stream still lists her project: requests only
+        // place; a day on, the scheduler unplaces it.
         let deleted = Request::ScheduleDelete {
             schedule: hers.schedule,
         };
         server.request_as(&grace, deleted).await.unwrap();
         let listed = index_of(&log, scope().org()).await;
         assert!(
+            matches!(listed.as_slice(), [Body::SchedulePlaced(_)]),
+            "{listed:?}"
+        );
+        set(&now, "2026-10-11T10:30:00Z");
+        server.tick().await.unwrap();
+        let listed = index_of(&log, scope().org()).await;
+        assert!(
             matches!(listed.as_slice(), [Body::SchedulePlaced(_), Body::ScheduleUnplaced(gone)]
                 if gone.org == third.as_uuid() && gone.project == hers.project.as_uuid()),
-            "unlisted as its last schedule went: {listed:?}"
+            "unlisted a day after its last schedule went: {listed:?}"
         );
     });
 }
@@ -145,89 +152,97 @@ async fn index_of(log: &Shared, org: OrgId) -> Vec<Body> {
 }
 
 #[test]
-fn a_schedule_made_while_its_project_s_last_one_goes_waits_then_lists_the_project_again() {
+fn a_schedule_made_as_the_scheduler_unplaces_its_project_is_placed_back_and_fired() {
     block_on!(async {
         let log = Shared::default();
         let faulty = FaultyLog::over(Arc::clone(&log.0));
-        let (server, _, _, _dir) = setup()
+        let first = setup();
+        let now = first.clock.clone();
+        let (server, _, _, _dir) = first
             .build_in_repository("people-relisted", faulty.clone())
             .await;
         let grace = elsewhere();
-        let first = daily(&server, &grace).await.unwrap();
-        // Her last schedule there is deleted, and its project's removal held as it is written:
-        // another of hers made meanwhile waits for it, never made under a removal.
-        faulty.hold("schedule.unplaced");
+        let gone = daily(&server, &grace).await.unwrap();
         let deleted = Request::ScheduleDelete {
-            schedule: first.schedule,
+            schedule: gone.schedule,
         };
-        let deleting = server.request_as(&grace, deleted);
+        server.request_as(&grace, deleted).await.unwrap();
+        // A day on, the scheduler unplaces her project, held as it is written, while she makes
+        // another there, which finds the project still listed.
+        set(&now, "2026-10-11T10:30:00Z");
+        faulty.hold("schedule.unplaced");
         let making = async {
             faulty.held().await;
-            let made = daily(&server, &grace).await;
+            let made = daily(&server, &grace).await.unwrap();
             faulty.release();
             made
         };
-        let (deleted, made) = tokio::join!(deleting, making);
-        deleted.unwrap();
-        assert_eq!(made.unwrap_err(), code::INTERNAL, "told to try again");
-        let made = daily(&server, &grace).await.unwrap();
-        assert_eq!(made.project, first.project);
+        let (ticked, made) = tokio::join!(server.tick(), making);
+        ticked.unwrap();
         let listed = index_of(&log, scope().org()).await;
         assert!(
-            matches!(listed.as_slice(), [.., Body::ScheduleUnplaced(_), Body::SchedulePlaced(again)] if again.project == first.project.as_uuid()),
-            "listed again as it is made: {listed:?}"
+            matches!(listed.as_slice(), [.., Body::ScheduleUnplaced(_), Body::SchedulePlaced(again)] if again.project == made.project.as_uuid()),
+            "placed back as the ledger is read again: {listed:?}"
         );
+        set(&now, "2026-10-11T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![made.thread.unwrap()]);
+        settle_for(&server, &grace).await;
     });
 }
 
 #[test]
-fn a_deleter_that_stops_holding_someone_s_schedules_holds_their_next_back_until_it_lapses() {
+fn the_server_s_own_person_removed_from_another_organization_has_their_run_there_refused() {
     block_on!(async {
         let log = Shared::default();
-        let mut first = setup();
+        let first = setup();
         let now = first.clock.clone();
-        let leases = Arc::new(InMemoryLeases::new(Arc::new(now.clone())));
-        first.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
         let (server, _, _, _dir) = first
-            .build_in_repository("people-deleter-stopped", log.clone())
+            .build_in_repository("people-own-elsewhere", log.clone())
             .await;
-        let grace = elsewhere();
-        let made = daily(&server, &grace).await.unwrap();
-        // Another server deleted her schedule, unplaced her project and stopped, still holding
-        // her schedules until its lease lapses.
-        let entropy = glave_ports::testing::CountingEntropy::starting_at(0x7e);
-        let other = glave_ports::Holder::new(&now, &entropy).unwrap();
-        let hers = glave_ports::Leased::Schedules(grace.person.unwrap());
-        let minute = std::time::Duration::from_secs(60);
-        let held = leases
-            .acquire(scope().org(), hers, other, minute)
+        // The person on this computer joined Bob's organization, and made a schedule there.
+        let bobs = OrgId::from_uuid(uuid::Uuid::from_u128(2));
+        let own = server.person().unwrap();
+        let people = Scope::of_organization(bobs);
+        let ledger = Reserved::People.id();
+        let joined = glave_event::PersonJoined {
+            person: own,
+            issuer: None,
+            subject: None,
+            profile: glave_event::Profile::default(),
+        };
+        append(&log, &people, ledger, 1, &joined).await;
+        let there = Caller {
+            org: Some(bobs),
+            ..Caller::default()
+        };
+        let made = daily(&server, &there).await.unwrap();
+        // Bob removed them meanwhile.
+        let removed = PersonRemoved {
+            person: own,
+            by: Principal::person(id("bob")),
+        };
+        append(&log, &people, ledger, 2, &removed).await;
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(
+            server.tick().await.unwrap(),
+            Vec::new(),
+            "never run as them there"
+        );
+        let theirs = Scope::glaves_own(bobs, made.project);
+        let read = log
+            .read(&theirs, Reserved::Tasks.id(), None, usize::MAX)
             .await
             .unwrap();
-        assert!(held.is_some());
-        let ledger = Scope::glaves_own(scope().org(), made.project);
-        let deleted = glave_event::ScheduleDeleted {
-            schedule: made.schedule,
-            by: grace.person.map(Principal::person),
-        };
-        let next = u64::try_from(ledger_of(&log, made.project).await.len()).unwrap() + 1;
-        append(&log, &ledger, Reserved::Tasks.id(), next, &deleted).await;
-        let gone = glave_event::ScheduleUnplaced {
-            org: scope().org().as_uuid(),
-            project: made.project.as_uuid(),
-        };
-        let stream = Scope::of_organization(scope().org());
-        append(&log, &stream, Reserved::Scheduled.id(), 2, &gone).await;
+        let refused = (read.into_iter()).find_map(|raw| match decode(raw).unwrap().body {
+            Body::ScheduleSkipped(skipped) => Some(skipped.why),
+            _ => None,
+        });
         assert_eq!(
-            daily(&server, &grace).await.unwrap_err(),
-            code::INTERNAL,
-            "held"
+            refused,
+            Some(Skipped::Refused {
+                reason: "MAKER_REMOVED".into()
+            })
         );
-        // Once it lapses, her next is made, listed and fired.
-        set(&now, "2026-10-10T10:05:00Z");
-        let again = daily(&server, &grace).await.unwrap();
-        set(&now, "2026-10-10T11:00:00Z");
-        assert_eq!(server.tick().await.unwrap(), vec![again.thread.unwrap()]);
-        settle_for(&server, &grace).await;
     });
 }
 

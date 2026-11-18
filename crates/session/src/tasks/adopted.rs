@@ -49,6 +49,7 @@ where
         project: Located,
         thread: ThreadId,
         lease: Lease,
+        people: &super::PeopleOnce,
     ) -> Result<bool, ApiError> {
         let open =
             (self.ledgers().get(&project)).and_then(|ledger| ledger.open.get(&thread).cloned());
@@ -57,11 +58,11 @@ where
         };
         // As whoever's run it is: never one of someone glave can't tell, or of anyone its
         // organization's people ledger doesn't list as there now, or can't be read to tell.
-        let Ok(person) = super::whose(recorded.started.by.as_ref()) else {
+        let Ok(person) = self.maker_of(recorded.started.by.as_ref()) else {
             return Ok(false);
         };
-        let caller = self.acting_as(person, project.org);
-        match self.membership(&caller).await {
+        let caller = self.acting_as(Some(person), project.org);
+        match self.membership(person, project.org, people).await {
             Ok(super::Membership::Member) => {}
             Ok(super::Membership::Removed | super::Membership::Unknown) => return Ok(false),
             Err(error) => {
