@@ -409,24 +409,14 @@ impl Projects for PostgresProjects {
         })
     }
 
-    fn organizations(&self) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>> {
+    fn organizations(
+        &self,
+        after: Option<OrgId>,
+        limit: usize,
+    ) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>> {
+        // Every organization a project was kept in is one the store holds (`insert`).
         Box::pin(async move {
-            // Every organization's, so no one organization's connection: ids alone.
-            let client = crate::store::unscoped(&self.pool)
-                .await
-                .map_err(unavailable)?;
-            // Every organization a project was kept in is one the store holds.
-            let rows = client
-                .query("SELECT org FROM glave_orgs ORDER BY org", &[])
-                .await
-                .map_err(database(ProjectError::Storage))?;
-            (rows.iter())
-                .map(|row| {
-                    Ok(OrgId::from_uuid(
-                        row.try_get::<_, Uuid>(0).map_err(corrupt)?,
-                    ))
-                })
-                .collect()
+            (crate::store::organizations(&self.pool, after, limit).await).map_err(unavailable)
         })
     }
 }

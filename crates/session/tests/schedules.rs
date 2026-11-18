@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use glave_event::Outcome;
 use glave_event::{At, Opened, ScheduleId, When};
-use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
+use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock, TempDir};
 use glave_ports::{
     Caller, EventLog, Holder, InMemoryLeases, InMemoryLog, Leased, Leases, OrgId, ProjectId,
 };
@@ -288,6 +288,69 @@ fn a_person_keeps_a_hundred_schedules_where_policy_sets_no_limit() {
 }
 
 #[test]
+fn schedules_made_at_once_never_keep_more_than_policy_allows() {
+    block_on!(async {
+        let log = Arc::new(InMemoryLog::new());
+        let faulty = FaultyLog::over(Arc::clone(&log));
+        let mut first = setup();
+        first.limits.max_schedules = Some(1);
+        let (server, _, _, _dir) = first
+            .build_in_repository("schedule-racing", faulty.clone())
+            .await;
+        // The first is held as it is kept, while the second is made: each found room for one.
+        faulty.hold("schedule.created");
+        let one = create(&server, cron("0 9 * * *"), 10);
+        let two = async {
+            faulty.held().await;
+            let made = create(&server, cron("0 10 * * *"), 10).await;
+            faulty.release();
+            made
+        };
+        let (one, two) = tokio::join!(one, two);
+        assert_eq!(
+            one.unwrap_err(),
+            code::LIMIT,
+            "counted once kept: one too many, it goes"
+        );
+        assert!(two.is_ok());
+        assert_eq!(list(&server).await.len(), 1);
+    });
+}
+
+/// `setup()` on a repository of its own in the fresh folder `name`, its leases shared with the
+/// test as with another server: the server, its clock, the leases and the folder.
+async fn with_leases(name: &str) -> (Tested, ManualClock, Arc<InMemoryLeases>, TempDir) {
+    let mut first = setup();
+    let now = first.clock.clone();
+    let leases = Arc::new(InMemoryLeases::new(Arc::new(now.clone())));
+    first.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
+    let (server, _, _, dir) = first.build_in_repository(name, InMemoryLog::new()).await;
+    (server, now, leases, dir)
+}
+
+#[test]
+fn a_run_whose_task_another_server_holds_is_held_back_and_recorded_nowhere() {
+    block_on!(async {
+        let (server, now, leases, _dir) = with_leases("schedule-held-task").await;
+        let made = create(&server, cron("0 11 * * *"), 5_000).await.unwrap();
+        set(&now, "2026-10-10T11:00:00Z");
+        // Another server holds the run's task, as it claims the run.
+        let entropy = CountingEntropy::starting_at(0x7e);
+        let other = Holder::new(&now, &entropy).unwrap();
+        let minute = std::time::Duration::from_secs(60);
+        let task = Leased::Task(made.thread.unwrap());
+        let held = leases.acquire(scope().org(), task, other, minute).await;
+        let held = held.unwrap().unwrap();
+        assert_eq!(tick(&server).await, 0);
+        assert_eq!(list(&server).await[0].last, None, "recorded nowhere");
+        leases.release(&held).await.unwrap();
+        set(&now, "2026-10-10T11:00:05Z");
+        assert_eq!(tick(&server).await, 1, "started once it is let go");
+        settle(&server).await;
+    });
+}
+
+#[test]
 fn schedules_need_a_budget_a_valid_time_and_room_under_policy() {
     let dir = folder("schedule-limits");
     block_on!(async {
@@ -438,13 +501,7 @@ fn schedules_fire_from_one_server_at_a_time() {
 #[test]
 fn one_server_keeps_every_organizations_schedules_under_the_store_s_lease() {
     block_on!(async {
-        let mut first = setup();
-        let now = first.clock.clone();
-        let leases = Arc::new(InMemoryLeases::new(Arc::new(now.clone())));
-        first.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
-        let (server, _, _, _dir) = first
-            .build_in_repository("schedule-orgs", InMemoryLog::new())
-            .await;
+        let (server, now, leases, _dir) = with_leases("schedule-orgs").await;
         let third = OrgId::from_uuid(uuid::Uuid::from_u128(3));
         let grace = Caller {
             org: Some(third),

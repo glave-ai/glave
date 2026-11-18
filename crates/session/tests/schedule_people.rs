@@ -108,14 +108,7 @@ fn where_schedules_are_is_kept_in_each_organization_s_own_scope_while_they_are()
             ..elsewhere()
         };
         let hers = daily(&server, &grace).await.unwrap();
-        let log = &log;
-        let index = |org| async move {
-            let scope = Scope::of_organization(org);
-            let read = log.read(&scope, Reserved::Scheduled.id(), None, usize::MAX);
-            (read.await.unwrap().into_iter())
-                .map(|raw| decode(raw).unwrap().body)
-                .collect::<Vec<Body>>()
-        };
+        let index = |org| index_of(&log, org);
         let own = index(scope().org()).await;
         assert!(
             own.is_empty(),
@@ -135,6 +128,49 @@ fn where_schedules_are_is_kept_in_each_organization_s_own_scope_while_they_are()
         assert!(
             matches!(theirs.as_slice(), [Body::SchedulePlaced(_), Body::ScheduleUnplaced(gone)] if gone.project == hers.project.as_uuid()),
             "unlisted as its last schedule went: {theirs:?}"
+        );
+    });
+}
+
+/// What `org`'s index of where schedules are holds, in order.
+async fn index_of(log: &Shared, org: OrgId) -> Vec<Body> {
+    let scope = Scope::of_organization(org);
+    let read = log.read(&scope, Reserved::Scheduled.id(), None, usize::MAX);
+    (read.await.unwrap().into_iter())
+        .map(|raw| decode(raw).unwrap().body)
+        .collect()
+}
+
+#[test]
+fn a_schedule_made_as_its_project_s_last_one_goes_lists_the_project_again() {
+    block_on!(async {
+        let log = Shared::default();
+        let faulty = FaultyLog::over(Arc::clone(&log.0));
+        let (server, _, _, _dir) = setup()
+            .build_in_repository("people-relisted", faulty.clone())
+            .await;
+        let grace = elsewhere();
+        let first = daily(&server, &grace).await.unwrap();
+        // Her last schedule there is deleted, and its project's removal from the index held as
+        // it is written, while she makes another there, which finds the project still listed.
+        faulty.hold("schedule.unplaced");
+        let deleted = Request::ScheduleDelete {
+            schedule: first.schedule,
+        };
+        let deleting = server.request_as(&grace, deleted);
+        let making = async {
+            faulty.held().await;
+            let made = daily(&server, &grace).await.unwrap();
+            faulty.release();
+            made
+        };
+        let (deleted, made) = tokio::join!(deleting, making);
+        deleted.unwrap();
+        assert_eq!(made.project, first.project);
+        let listed = index_of(&log, scope().org()).await;
+        assert!(
+            matches!(listed.as_slice(), [.., Body::ScheduleUnplaced(_), Body::SchedulePlaced(again)] if again.project == first.project.as_uuid()),
+            "listed again once the removal landed: {listed:?}"
         );
     });
 }
