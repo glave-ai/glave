@@ -116,7 +116,23 @@ pub(crate) struct Launch {
     pub(crate) temp: RunTemp,
     /// What launching left in the workspace, removed once the command has ended.
     pub(crate) _held: platform::Held,
+    /// How the wrapper says it could not start the command (`command/started.rs`).
+    pub(crate) refuses: Refuses,
 }
+
+/// How a wrapper says it could not start the command: what its own errors start with, on its
+/// error output, and whether one may mean only that a place it hides went away while it was
+/// made, so that a sandbox made again from a fresh look may start the command.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Refuses {
+    pub(crate) saying: &'static str,
+    pub(crate) passing: bool,
+}
+
+/// What a program that runs [`sandbox_helper`] prints on its error output before why the
+/// helper could not confine itself or start the command, so that glave tells it from what the
+/// command's shell says.
+pub const SANDBOX_HELPER_FAILED: &str = "glave sandbox: ";
 
 impl Prepared {
     /// Prepares `sandbox` for every command run in `root`. `git_common`, for a worktree, is
