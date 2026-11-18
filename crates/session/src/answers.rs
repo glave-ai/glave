@@ -336,7 +336,7 @@ where
     }
 
     /// The view of the subagent's thread `call` in `parent` started, if any.
-    async fn child_view(
+    pub(crate) async fn child_view(
         &self,
         scope: &Scope,
         parent: ThreadId,
