@@ -73,7 +73,12 @@ describe('AwakeComponent', () => {
   });
 
   it('shows nothing on a server, which does not sleep', async () => {
-    const fake = new FakeSession().answer('awake/get', { awake: { kind: 'never' } });
+    const fake = new FakeSession().answer('awake/get', {
+      awake: {
+        kind: 'never',
+        reason: "this glave is a server, which doesn't sleep: there is nothing to keep awake",
+      },
+    });
     const { root } = await render(fake);
     expect(find(root, 'awake')).toBeNull();
     expect(getComputedStyle(root).display).toBe('contents');

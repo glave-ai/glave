@@ -267,11 +267,12 @@ const LOCAL_ONLY: &[&str] = &[
 ];
 
 /// The places the session checks that a caller is the person on its computer (`local`, and
-/// `theirs` and `by_program`, which ask it), each one's methods in [`LOCAL_ONLY`]: browsers 3, awake 1,
-/// connections 1, credits 2, gone folders 2, folders 3 (one only for a project made with a
-/// folder, which no template asks for), memory 1, model accounts 1, search 1, secrets 1,
-/// sign-ups 1, trust 2 (one only says whether a folder asks).
-const LOCAL_CHECKS: usize = 19;
+/// `theirs` and `by_program`, which ask it), each one's methods in [`LOCAL_ONLY`]: browsers 3,
+/// awake 2 (one only says it is never theirs), connections 1, credits 2, gone folders 2,
+/// folders 3 (one only for a project made with a folder, which no template asks for), memory 1,
+/// model accounts 1, search 1, secrets 1, sign-ups 1, trust 2 (one only says whether a folder
+/// asks).
+const LOCAL_CHECKS: usize = 20;
 
 /// How many places in the session's sources check that a caller is the person on its computer.
 fn local_checks() -> usize {

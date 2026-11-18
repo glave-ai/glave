@@ -70,8 +70,7 @@ pub(crate) fn endpoint(
     let api_key = std::env::var("GLAVE_API_KEY")
         .ok()
         .filter(|key| !key.is_empty());
-    let mut provider = Config::for_url(base_url.clone(), api_key)
-        .with_context(|| format!("GLAVE_BASE_URL is not a URL: {base_url}"))?;
+    let mut provider = Config::for_url(base_url, api_key).context("GLAVE_BASE_URL is not a URL")?;
     if let Ok(name) = std::env::var("GLAVE_PROVIDER") {
         provider.provider = name;
     } else if model::speaks_anthropic(&provider) {
