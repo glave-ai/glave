@@ -19,7 +19,7 @@ use glave_ports::testing::{FaultyLog, FixedGitCredentials, ManualClock, TempDir,
 use glave_ports::{
     Caller, EventLog as _, InMemoryLeases, InMemoryProjects, Leases, ProjectId, Projects, Scope,
 };
-use glave_session::protocol::{Answer, Reply, Request, ScheduleInfo, code};
+use glave_session::protocol::{Answer, Reply, Request, ScheduleInfo};
 use jiff::Timestamp;
 use serde_json::json;
 
@@ -367,6 +367,7 @@ fn past_the_ledgers_a_server_keeps_every_project_s_runs_are_still_looked_at() {
         let projects: Vec<ProjectId> = (0..1_030).map(|n| ProjectId::from_uuid(v7(3, n))).collect();
         for (n, project) in (0u64..).zip(&projects) {
             let placed = SchedulePlaced {
+                org: org.as_uuid(),
                 project: project.as_uuid(),
             };
             append(&log, &Scope::of_organization(org), index, n + 1, &placed).await;
@@ -432,26 +433,17 @@ fn a_schedule_made_to_run_more_often_than_one_may_is_refused_at_its_time() {
 }
 
 #[test]
-fn an_organization_has_schedules_in_at_most_its_own_share_of_projects() {
+fn a_schedule_made_on_one_server_is_fired_by_the_other_at_its_next_tick() {
     block_on!(async {
         let log = Shared::default();
-        let (server, _, _, _dir) = setup()
-            .build_in_repository("firing-share", log.clone())
-            .await;
-        // As many of its projects listed as one organization may have.
-        let org = scope().org();
-        let index = (Scope::of_organization(org), Reserved::Scheduled.id());
-        for n in 0..10_000u64 {
-            let placed = SchedulePlaced {
-                project: v7(5, n.into()),
-            };
-            append(&log, &index.0, index.1, n + 1, &placed).await;
-        }
-        assert_eq!(
-            daily(&server, &Caller::default()).await.unwrap_err(),
-            code::LIMIT,
-            "a project of its own not listed yet"
-        );
+        let faulty = FaultyLog::over(Arc::clone(&log.0));
+        // One lease for both, as a store's: the first fires, the second makes the schedule.
+        let (_dir, one, two, now) = two_on_a_store("firing-elsewhere", &log, &faulty, true).await;
+        let grace = elsewhere();
+        let made = daily(&two, &grace).await.unwrap();
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(one.tick().await.unwrap(), vec![made.thread.unwrap()]);
+        settle_for(&one, &grace).await;
     });
 }
 
