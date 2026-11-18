@@ -433,7 +433,8 @@ where
     /// they signed in through the company login and it does not have them as they are now:
     /// the first time, or when their token says something new of them.
     pub(crate) async fn seen(&self, caller: &Caller, request: &Request) -> Result<(), ApiError> {
-        let Some(person) = caller.person else {
+        // No one, not signed in, is in no ledger, which is read for no one either.
+        let Some(person) = caller.person.filter(|_| !caller.is_no_one()) else {
             return Ok(());
         };
         let org = self.org_of(caller);

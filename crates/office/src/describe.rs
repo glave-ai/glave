@@ -38,6 +38,14 @@ const FILE_ENDS: [&str; 16] = [
     "txt", "md", "html",
 ];
 
+/// How the titles Office's printers to PDF give start, in lowercase: "Microsoft Word - " and
+/// the file's name.
+const PRINTED: [&str; 3] = [
+    "microsoft word - ",
+    "microsoft excel - ",
+    "microsoft powerpoint - ",
+];
+
 /// The longest title kept, in characters.
 const MOST_TITLE: usize = 200;
 
@@ -80,7 +88,13 @@ pub fn describe(bytes: &[u8], media_type: &str) -> Described {
                     let slides = package.listed(&main, "p:sldIdLst").ok();
                     slides.map(|slides| Parts::Slides(slides.len() as u64))
                 }
-                Kind::Workbook => sheets(bytes).map(Parts::Sheets),
+                // The sheets its workbook part lists; calamine's count only when that part
+                // isn't XML (an .xlsb's).
+                Kind::Workbook => match package.listed(&main, "sheets") {
+                    Ok(listed) => Some(listed.len() as u64),
+                    Err(_) => sheets(bytes),
+                }
+                .map(Parts::Sheets),
             };
             Described {
                 title,
@@ -114,8 +128,7 @@ fn naming(title: &str) -> Option<String> {
     let a_file = lower
         .rsplit_once('.')
         .is_some_and(|(_, end)| FILE_ENDS.contains(&end));
-    // Word's printer to PDF titles each one "Microsoft Word - " and the file's name.
-    let printed = lower.starts_with("microsoft ") && lower.contains(" - ");
+    let printed = PRINTED.iter().any(|start| lower.starts_with(start));
     if title.is_empty() || DEFAULT_TITLES.contains(&lower.as_str()) || a_file || printed {
         return None;
     }
@@ -128,7 +141,8 @@ fn counted(package: &mut Package<'_>, name: &str) -> Option<u64> {
     app.child(name)?.text().trim().parse().ok()
 }
 
-/// How many worksheets the workbook in `bytes` has, when calamine reads it.
+/// How many worksheets the workbook in `bytes` has, when calamine reads it: a workbook that is
+/// not Office's XML (xls, xlsb, ods).
 fn sheets(bytes: &[u8]) -> Option<u64> {
     let book = calamine::open_workbook_auto_from_rs(Cursor::new(bytes.to_vec())).ok()?;
     Some(book.sheet_names().len() as u64)
@@ -156,6 +170,8 @@ mod tests {
             "",
             "report.docx",
             "Microsoft Word - report.docx",
+            "Microsoft Excel - budget",
+            "Microsoft PowerPoint - deck",
         ] {
             assert_eq!(naming(left), None, "{left}");
         }
@@ -164,6 +180,11 @@ mod tests {
             Some("Trip budget 2026")
         );
         assert_eq!(naming("Release v2.1").as_deref(), Some("Release v2.1"));
+        // A title of its own that names Microsoft is kept: only the printers' are left out.
+        assert_eq!(
+            naming("Microsoft Teams - rollout plan").as_deref(),
+            Some("Microsoft Teams - rollout plan")
+        );
         assert_eq!(naming(&"a".repeat(300)).map(|title| title.len()), Some(200));
     }
 }

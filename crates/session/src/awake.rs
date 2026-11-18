@@ -150,13 +150,20 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Answers `awake/get`.
-    pub(crate) async fn awake(&self) -> Reply {
-        let Some(awake) = &self.inner.awake else {
-            return Reply::Awake {
-                awake: AwakeInfo::Never,
-            };
+    /// Answers `awake/get`: never `caller`'s to choose, with why, where `awake/set` would refuse
+    /// them, and nothing of the person's read for them.
+    pub(crate) async fn awake(&self, caller: &Caller) -> Reply {
+        let never = |reason: Sentence| Reply::Awake {
+            awake: AwakeInfo::Never {
+                reason: reason.into(),
+            },
         };
+        let Some(awake) = &self.inner.awake else {
+            return never(Sentence::AwakeOnServer);
+        };
+        if !local(caller, self.inner.person) {
+            return never(Sentence::AwakeOnlyHere);
+        }
         self.read_choice(awake).await;
         Reply::Awake {
             awake: awake.info(),
