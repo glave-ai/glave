@@ -445,10 +445,9 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         offset: Option<u64>,
     } -> [FilePiece],
-    /// A file `thread` made, as Markdown to preview it by: a spreadsheet's sheets and a CSV
-    /// file as tables of their first rows, a document or a deck as its text, at most 256 KB,
-    /// with the server's sentence when more was left out. Refused for any other file, which a
-    /// client draws itself (a PDF) or offers to download.
+    /// A file `thread` made, as Markdown to preview it by: sheets and a CSV file as tables of
+    /// their first rows, a document or a deck as its text, at most 256 KB, with the server's
+    /// sentence when more was left out. Refused for a file a client draws or downloads itself.
     "file/preview" => FilePreview {
         thread: ThreadId,
         #[schemars(with = "String")]
