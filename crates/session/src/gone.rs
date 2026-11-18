@@ -3,7 +3,8 @@
 //! and says so as a fact with its sentence: `project/list`'s `gone`, and `-32029` for what would
 //! run there, so nothing starts and nothing is made in the folder's place. The person on this
 //! computer mends it: `project/folder/set` gives the project its folder's new place, where its
-//! threads work from then on; `project/remove` archives its threads and lists it no more.
+//! threads work from then on; `project/remove` deletes its schedules, archives its threads and
+//! lists it no more.
 
 use glave_event::{Principal, ProjectRemoved, ThreadId};
 use glave_harness::{Change, HarnessError, change_standing};
@@ -127,8 +128,9 @@ where
         })
     }
 
-    /// Answers `project/remove`: every thread of the project `project` goes to the archive, their
-    /// history kept, then the project is recorded removed. Refused while a turn runs in it.
+    /// Answers `project/remove`: the project `project`'s schedules are deleted, every thread of
+    /// it goes to the archive, their history kept, then the project is recorded removed. Refused
+    /// while a turn runs in it.
     pub(crate) async fn remove_project(
         &self,
         caller: &Caller,
@@ -147,6 +149,9 @@ where
             return Err(ApiError::new(code::TURN_RUNNING, Sentence::ProjectBusy));
         }
         self.let_go_in(at);
+        // Its schedules go first, so none fires in a project no longer listed: deleted by its
+        // owner, its person. A failure after them leaves the project listed, to remove again.
+        self.delete_schedules_in(at, None).await?;
         // Glave's own: archiving the threads of a project its owner removes.
         let scope = own_scope(at);
         for thread in threads {

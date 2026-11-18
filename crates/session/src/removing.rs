@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
-use glave_event::{OrgRole, PersonRemoved, Principal, PrincipalId, ScheduleDeleted, ThreadId};
+use glave_event::{OrgRole, PersonRemoved, Principal, PrincipalId, ThreadId};
 use glave_harness::{Cancel, Commands};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, OrgId};
 use tokio::task::JoinSet;
@@ -256,19 +256,7 @@ where
                 org,
                 project: project.id,
             };
-            self.catch_up(project).await?;
-            let schedules: Vec<_> = self
-                .ledgers()
-                .get(&project)
-                .map(|ledger| ledger.schedules.keys().copied().collect())
-                .unwrap_or_default();
-            for schedule in schedules {
-                let deleted = ScheduleDeleted {
-                    schedule,
-                    by: Some(by.clone()),
-                };
-                self.record_in_ledger(project, &deleted).await?;
-            }
+            self.delete_schedules_in(project, Some(by)).await?;
         }
         Ok(())
     }

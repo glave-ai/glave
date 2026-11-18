@@ -577,8 +577,9 @@ methods! {
         /// The folder's full path.
         path: String,
     } -> [Project],
-    /// Removes a project: its threads go to the archive, their history kept, and it is listed
-    /// no more until it is given a folder again. Only the person on this computer.
+    /// Removes a project: its schedules are deleted, its threads go to the archive, their
+    /// history kept, and it is listed no more until it is given a folder again. Only the person
+    /// on this computer.
     "project/remove" => ProjectRemove { project: ProjectId } -> [Done],
     /// The folders inside a folder on this computer, by name, to choose a project's folder
     /// from: the home folder when `path` is absent. Only the person on this computer.
