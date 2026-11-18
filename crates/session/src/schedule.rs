@@ -124,7 +124,8 @@ where
     }
 
     /// Names `created`'s chat for it, then keeps it in `project`'s ledger, for `caller`: its
-    /// project listed first, so every server that fires schedules finds it once it is recorded.
+    /// project listed before and after, so the server that fires schedules finds it once it is
+    /// recorded, whatever it unplaced meanwhile; counted again once kept.
     async fn keep_schedule(
         &self,
         caller: &Caller,
@@ -134,20 +135,21 @@ where
         if let Some(thread) = created.thread {
             self.rename(caller, thread, created.name.clone()).await?;
         }
-        // The person's schedules, one at a time on any server: counted, listed and kept while
-        // no other server makes one of theirs or unplaces their project, so none keeps more
-        // than policy allows, and no project is unplaced under a schedule made in it.
-        let person = self.person_of(caller)?;
-        let schedules =
-            (self.take_schedules(project.org, person).await?).ok_or_else(placed::schedules_busy)?;
-        let kept = async {
-            self.room_for_one_more(caller).await?;
-            self.place_schedules(project).await?;
-            self.record_in_ledger(project, created).await
-        };
-        let kept = kept.await;
-        self.let_go_schedules(schedules).await;
-        kept
+        self.room_for_one_more(caller).await?;
+        self.place_schedules(project).await?;
+        self.record_in_ledger(project, created).await?;
+        self.place_schedules(project).await?;
+        // Counted again once kept, so schedules made at once on any server never keep more than
+        // policy allows: one that finds too many goes, to be made again; both may.
+        if self.kept_schedules(caller).await? > self.most_schedules() {
+            let deleted = ScheduleDeleted {
+                schedule: created.schedule,
+                by: self.someone_else(caller.person),
+            };
+            self.record_in_ledger(project, &deleted).await?;
+            return Err(ApiError::new(code::LIMIT, Sentence::WrittenElsewhere));
+        }
+        Ok(())
     }
 
     /// Deletes `schedule` from `project`'s ledger where its record landed though keeping it
@@ -161,8 +163,7 @@ where
                 schedule,
                 by: self.someone_else(caller.person),
             };
-            self.record_in_ledger(project, &deleted).await?;
-            self.unplace_if_none(project, self.person_of(caller)?).await
+            self.record_in_ledger(project, &deleted).await
         };
         if let Err(error) = forgot.await {
             tracing::warn!(error = %error.message, %schedule, "a schedule not kept was left");
@@ -226,11 +227,12 @@ where
     /// the ledger of each project of theirs the index lists, apart from what this server keeps:
     /// so one made on another server a moment ago counts.
     async fn kept_schedules(&self, caller: &Caller) -> Result<usize, ApiError> {
-        let listed = self.placed().await;
+        // The list read up to now; each project of theirs looked up in it.
+        self.placed().await;
         let theirs = self.projects_of(caller).await?;
         let now = self.inner.harness.clock().now();
         let mut kept = 0usize;
-        for project in theirs.into_iter().filter(|at| listed.contains(at)) {
+        for project in theirs.into_iter().filter(|at| self.is_placed(*at)) {
             let ledger = self.ledger_apart(project).await?;
             let here = (ledger.schedules.values()).filter(|scheduled| info::kept(scheduled, now));
             kept = kept.saturating_add(here.count());
@@ -343,8 +345,6 @@ where
             by: self.someone_else(caller.person),
         };
         self.record_in_ledger(project, &deleted).await?;
-        self.unplace_if_none(project, self.person_of(caller)?)
-            .await?;
         Ok(Reply::Done {})
     }
 
@@ -375,8 +375,7 @@ where
             schedule,
             by: self.someone_else(caller.person),
         };
-        self.record_in_ledger(project, &deleted).await?;
-        self.unplace_if_none(project, self.person_of(caller)?).await
+        self.record_in_ledger(project, &deleted).await
     }
 
     /// The project of `caller`'s that keeps `schedule`, its ledger read up to now.
