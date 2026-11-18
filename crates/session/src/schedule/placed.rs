@@ -1,80 +1,62 @@
 //! Where schedules are on the store, so the server firing schedules fires everyone's, though no
 //! one asked it anything since it started: one stream of glave's own beside threads, in the
-//! server's own organization's scope, records a project placed as its first schedule is made
-//! (`schedule.placed`) and unplaced as its last goes (`schedule.unplaced`), each naming its
-//! organization and project, ids alone. It is read from where this server last read it, each
-//! tick and as anything is placed, and from its start once; what this server keeps of it is the
-//! projects with schedules now, as many as people keep schedules, never one for each
-//! organization the store holds. A person's schedules are made and unplaced one at a time, on
-//! any server (`Leased::Schedules`), so a project is never unplaced while a schedule is made in
-//! it.
+//! server's own organization's scope, records a project placed as a schedule is made there
+//! (`schedule.placed`) and unplaced (`schedule.unplaced`), each naming its organization and
+//! project, ids alone. It is read from where this server last read it, each tick and as anything
+//! is placed, and from its start once; what this server keeps of it is the projects with
+//! schedules now, as many as people keep schedules, never one for each organization the store
+//! holds. Requests only ever place a project; the scheduler alone unplaces one, once its ledger
+//! has held no schedule for a day, and places it back at once if a schedule came meanwhile, so
+//! no order of steps loses a schedule.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::PoisonError;
 
 use glave_event::{
-    At, Body, EventId, Header, Payload, PrincipalId, RawEvent, SchedulePlaced, ScheduleUnplaced,
-    Seq, encode,
+    At, Body, EventId, Header, Payload, RawEvent, SchedulePlaced, ScheduleUnplaced, Seq, encode,
 };
 use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
-use glave_ports::{BlobStore, EventLog, Lease, Leased, Located, ModelProvider, OrgId, ProjectId};
+use glave_ports::{BlobStore, EventLog, Located, ModelProvider, OrgId, ProjectId, Scope};
+use jiff::SignedDuration;
 
 use crate::protocol::ApiError;
 use crate::server::Server;
-use crate::words::Sentence;
+
+/// How long a project's ledger holds no schedule before the scheduler unplaces it: a day, so a
+/// project whose schedules come and go costs at most one pair of events a day.
+const IDLE: SignedDuration = SignedDuration::from_hours(24);
 
 /// The stream as far as this server has read it: the projects with schedules, in the order
-/// they were placed; how many ticks of the scheduler read it, where in each organization's
-/// projects the last tick stopped, kept only for organizations with projects listed, and whose
-/// schedules a request here holds now.
+/// they were placed, each with when; how many ticks of the scheduler read it, and where in each
+/// organization's projects the last tick stopped, kept only for organizations it goes through.
 #[derive(Debug, Default)]
 pub(crate) struct Placed {
     next: u64,
     items: Vec<Located>,
-    held: HashSet<Located>,
+    held: HashMap<Located, At>,
     ticks: usize,
     stopped: HashMap<OrgId, usize>,
-    making: HashSet<(OrgId, PrincipalId)>,
-}
-
-/// A person's schedules, held by one request of this server's: let go with
-/// [`Server::let_go_schedules`], or, dropped as a request is cancelled, here at once and on the
-/// store as the lease lapses.
-pub(crate) struct HeldSchedules<P, L, B> {
-    server: Server<P, L, B>,
-    lease: Option<Lease>,
-    whose: (OrgId, PrincipalId),
-}
-
-impl<P, L, B> Drop for HeldSchedules<P, L, B> {
-    fn drop(&mut self) {
-        let mut held = (self.server.inner.placed)
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        held.making.remove(&self.whose);
-    }
 }
 
 impl Placed {
     /// Takes in the event at the next `seq`.
     fn apply(&mut self, raw: RawEvent) {
-        let Some((_, body)) = in_order(&mut self.next, raw) else {
+        let Some((at, body)) = in_order(&mut self.next, raw) else {
             return;
         };
         match body {
             Body::SchedulePlaced(placed) => {
-                let at = located(placed.org, placed.project);
-                if self.held.insert(at) {
-                    self.items.push(at);
+                let project = located(placed.org, placed.project);
+                if let Entry::Vacant(vacant) = self.held.entry(project) {
+                    vacant.insert(at);
+                    self.items.push(project);
                 }
             }
             Body::ScheduleUnplaced(unplaced) => {
-                let at = located(unplaced.org, unplaced.project);
-                if self.held.remove(&at) {
-                    self.items.retain(|item| *item != at);
-                    if !self.items.iter().any(|item| item.org == at.org) {
-                        self.stopped.remove(&at.org);
-                    }
+                let project = located(unplaced.org, unplaced.project);
+                if self.held.remove(&project).is_some() {
+                    self.items.retain(|item| *item != project);
                 }
             }
             _ => {}
@@ -110,16 +92,14 @@ where
         self.held_placed(|held| held.items.clone())
     }
 
-    /// The organizations with projects listed, of `placed`, and `mine`'s: each one the tick
-    /// goes through; where a tick stopped is kept for these alone.
-    pub(crate) fn tick_organizations(
-        &self,
-        placed: &[Located],
-        mine: &[Located],
-    ) -> BTreeSet<OrgId> {
-        let organizations: BTreeSet<OrgId> = placed.iter().chain(mine).map(|at| at.org).collect();
+    /// Whether the stream, as last read, lists the project `at`.
+    pub(crate) fn is_placed(&self, at: Located) -> bool {
+        self.held_placed(|held| held.held.contains_key(&at))
+    }
+
+    /// Keeps where a tick stopped for `organizations` alone, those the tick goes through.
+    pub(crate) fn tick_organizations(&self, organizations: &BTreeSet<OrgId>) {
         self.held_placed(|held| held.stopped.retain(|org, _| organizations.contains(org)));
-        organizations
     }
 
     /// Which organization, counting from the first, this tick of the scheduler starts from:
@@ -151,71 +131,47 @@ where
         });
     }
 
-    /// Takes `person`'s schedules in `org` for one request of this server's, so making one and
-    /// unplacing a project are one step at a time, here and on any server: `None` while another
-    /// request here, or another server, holds them.
-    pub(crate) async fn take_schedules(
-        &self,
-        org: OrgId,
-        person: PrincipalId,
-    ) -> Result<Option<HeldSchedules<P, L, B>>, ApiError> {
-        let whose = (org, person);
-        if !self.held_placed(|held| held.making.insert(whose)) {
-            return Ok(None);
-        }
-        let mut schedules = HeldSchedules {
-            server: self.clone(),
-            lease: None,
-            whose,
-        };
-        schedules.lease = self.take_on(org, Leased::Schedules(person)).await?;
-        Ok(schedules.lease.is_some().then_some(schedules))
-    }
-
-    /// Lets go of a person's schedules a request here held.
-    pub(crate) async fn let_go_schedules(&self, mut schedules: HeldSchedules<P, L, B>) {
-        if let Some(lease) = schedules.lease.take() {
-            self.let_go(&lease).await;
-        }
-    }
-
-    /// Lists the project `at` where schedules are, unless it is listed already, for its
-    /// owner, who holds their schedules (`take_schedules`).
+    /// Lists the project `at` where schedules are, unless it is listed already.
     pub(crate) async fn place_schedules(&self, at: Located) -> Result<(), ApiError> {
         let placed = SchedulePlaced {
             org: at.org.as_uuid(),
             project: at.project.as_uuid(),
         };
-        let absent = |held: &Placed| (!held.held.contains(&at)).then(|| held.next_seq());
+        let absent = |held: &Placed| (!held.held.contains_key(&at)).then(|| held.next_seq());
         self.list_once(&placed, absent).await
     }
 
-    /// Takes the project `at` off where schedules are once its ledger, read now, holds no
-    /// schedule, for `owner`, whose schedules it holds the while; while another server holds
-    /// them, as it makes one, the project stays listed, which costs only its ledger read each
-    /// tick.
-    pub(crate) async fn unplace_if_none(
+    /// For the scheduler: unplaces the project `at` where its ledger, just read, has held no
+    /// schedule for [`IDLE`], `emptied` being when its last went (none: it held none since it
+    /// was placed), then reads the ledger again whole and places the project back where a
+    /// schedule came meanwhile.
+    pub(crate) async fn unplace_if_idle(
         &self,
         at: Located,
-        owner: PrincipalId,
+        emptied: Option<At>,
     ) -> Result<(), ApiError> {
-        let Some(schedules) = self.take_schedules(at.org, owner).await? else {
+        let Some(placed) = self.held_placed(|held| held.held.get(&at).copied()) else {
             return Ok(());
         };
-        let unplaced = async {
-            if !self.ledger_apart(at).await?.schedules.is_empty() {
-                return Ok(());
-            }
-            let gone = ScheduleUnplaced {
-                org: at.org.as_uuid(),
-                project: at.project.as_uuid(),
-            };
-            let listed = |held: &Placed| held.held.contains(&at).then(|| held.next_seq());
-            self.list_once(&gone, listed).await
+        let since = emptied.map_or(placed, |emptied| emptied.max(placed));
+        let now = self.inner.harness.clock().now();
+        if since
+            .timestamp()
+            .checked_add(IDLE)
+            .is_ok_and(|idle| idle > now)
+        {
+            return Ok(());
+        }
+        let gone = ScheduleUnplaced {
+            org: at.org.as_uuid(),
+            project: at.project.as_uuid(),
         };
-        let done = unplaced.await;
-        self.let_go_schedules(schedules).await;
-        done
+        let listed = |held: &Placed| held.held.contains_key(&at).then(|| held.next_seq());
+        self.list_once(&gone, listed).await?;
+        if self.ledger_apart(at).await?.schedules.is_empty() {
+            return Ok(());
+        }
+        self.place_schedules(at).await
     }
 
     /// Appends `payload` to the stream, after anything others wrote meanwhile, at the `seq`
@@ -270,8 +226,8 @@ where
 
     /// Where the stream is: the server's own organization's scope, glave's own, every
     /// organization's ids in it and nothing more, read by the scheduler alone.
-    fn placed_scope(&self) -> glave_ports::Scope {
-        glave_ports::Scope::of_organization(self.inner.own)
+    fn placed_scope(&self) -> Scope {
+        Scope::of_organization(self.inner.own)
     }
 
     fn held_placed<R>(&self, look: impl FnOnce(&mut Placed) -> R) -> R {
@@ -280,10 +236,4 @@ where
             .unwrap_or_else(PoisonError::into_inner);
         look(&mut held)
     }
-}
-
-/// Refused while another server makes or unplaces a schedule of the same person's: they try
-/// again.
-pub(crate) fn schedules_busy() -> ApiError {
-    ApiError::new(crate::protocol::code::INTERNAL, Sentence::WrittenElsewhere)
 }
