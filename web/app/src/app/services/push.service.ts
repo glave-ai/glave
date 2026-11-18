@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { InjectionToken, Service, computed, inject, signal } from '@angular/core';
+import { DestroyRef, InjectionToken, Service, computed, inject, signal } from '@angular/core';
 import { ApiError, type PushDevice, type PushInfo } from '@glave/client';
 
 import {
@@ -27,6 +27,13 @@ export const PUSH_BROWSER = new InjectionToken<PushBrowser | null>('PUSH_BROWSER
 
 /** Where the service worker that shows glave's notifications is served, and the only one. */
 export const WORKER = '/push-worker.js';
+
+/**
+ * The least time between two quiet resyncs as the tab is shown again, in milliseconds: an
+ * hour, so a tab left open for weeks still subscribes again in time, without asking the server
+ * at every glance.
+ */
+const RESYNC_EVERY = 60 * 60 * 1000;
 
 /** The Trusted Types policy that names the worker's script (the server's CSP allows it). */
 const POLICY = 'glave-push';
@@ -98,6 +105,8 @@ export class PushService {
   private readonly failed = signal<string | null>(null);
   /** The device the server keeps for this browser, by its id, when it keeps one. */
   private readonly mine = signal<string | null>(null);
+  /** When this tab last gave the server this browser again, or checked it had it. */
+  private resynced = 0;
   private policy: ReturnType<TrustedTypes['createPolicy']> | null = null;
 
   /** Whether the server pushes notifications, as it said before the app started. */
@@ -134,6 +143,20 @@ export class PushService {
     // A tapped notification opens here from now on, when the worker asks.
     inject(TapsService);
     void this.resync();
+    // A tab left open, or an app installed and never reloaded, is told when to subscribe again
+    // as it is shown, at most once an hour.
+    const shown = (): void => {
+      if (
+        this.document.visibilityState === 'visible' &&
+        Date.now() - this.resynced >= RESYNC_EVERY
+      ) {
+        void this.resync();
+      }
+    };
+    this.document.addEventListener('visibilitychange', shown);
+    inject(DestroyRef).onDestroy(() => {
+      this.document.removeEventListener('visibilitychange', shown);
+    });
   }
 
   /** Puts the offer off in this browser, for good: Settings still turns them on. */
@@ -230,6 +253,7 @@ export class PushService {
    * subscribe again, which keeps it on the server.
    */
   private async resync(): Promise<void> {
+    this.resynced = Date.now();
     const browser = this.browser;
     const on = readStored(this.storage, ON_HERE) === true;
     if (!on || browser === null || !this.possible() || this.permitted() !== 'granted') {

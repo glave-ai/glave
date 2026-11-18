@@ -13,6 +13,17 @@ fn renew(listed: &[PushDevice]) -> bool {
     listed.iter().any(|device| device.current && device.renew)
 }
 
+/// How many records `personal`'s push ledger holds.
+async fn recorded(store: &Store, personal: Scope) -> usize {
+    let log = store.log();
+    log.read(&personal, Reserved::Push.id(), None, 1_000)
+        .await
+        .unwrap()
+        .len()
+}
+
+/// Not subscribed again, a browser lapses at 30 days: `push/get` lists it no more, though as a
+/// read it writes nothing (`specs/invariants.md`, 5); the next change forgets and erases it.
 #[test]
 fn a_browser_not_subscribed_again_lapses_at_thirty_days() {
     let dir = folder("push-lapses");
@@ -31,10 +42,19 @@ fn a_browser_not_subscribed_again_lapses_at_thirty_days() {
             "a minute left"
         );
         clock.advance_millis(60_000);
+        let before = recorded(&store, personal).await;
         assert_eq!(names(&server, &me).await, Vec::<String>::new(), "lapsed");
-        assert!(
-            sealed_names(&store, personal).await.is_empty(),
-            "and erased"
+        assert_eq!(
+            recorded(&store, personal).await,
+            before,
+            "the read wrote nothing"
+        );
+        let other = "https://fcm.googleapis.com/fcm/send/another";
+        subscribe(&server, &me, &Browser::new(15), other).await;
+        assert_eq!(
+            sealed_names(&store, personal).await.len(),
+            1,
+            "forgotten and erased"
         );
         server.shutdown().await;
     });

@@ -140,7 +140,6 @@ where
         let (_, personal) = self.personal_project(caller).await?;
         let kept = self.devices(&personal, person).await?;
         let now = self.inner.harness.clock().now();
-        let until = Some(At::from(ledger::later(now)));
         let same = kept
             .iter()
             .find(|kept| kept.subscribed.endpoint == endpoint);
@@ -149,14 +148,10 @@ where
             (&kept.p256dh, &kept.auth, kept.name.as_str(), &kept.session)
                 == (&p256dh, &auth, name, &session)
         }) {
-            // Kept as it is: subscribed again only once its time is half gone, so the ledger
-            // grows by a renewal a fortnight, not by every time the app opens.
+            // Kept as it is: kept again, which renews it, only once its time is half gone, so
+            // the ledger grows by a renewal a fortnight, not by every time the app opens.
             if same.renew(now) {
-                let renewed = PushSubscribed {
-                    until,
-                    ..same.subscribed.clone()
-                };
-                self.keep_latest(&personal, Reserved::Push.id(), &KEPT, &renewed)
+                self.keep_latest(&personal, Reserved::Push.id(), &KEPT, &same.subscribed)
                     .await?;
             }
             self.claim(&endpoint, person, same.subscribed.device)
@@ -184,7 +179,6 @@ where
             auth,
             name: name.to_owned(),
             session,
-            until,
         };
         self.keep_latest(&personal, Reserved::Push.id(), &KEPT, &subscribed)
             .await?;
@@ -232,7 +226,7 @@ where
         let (_, personal) = self.personal_project(caller).await?;
         let now = self.inner.harness.clock().now();
         let mut devices: Vec<PushDevice> = self
-            .devices(&personal, person)
+            .devices_read(&personal, person)
             .await?
             .into_iter()
             .map(|device| {

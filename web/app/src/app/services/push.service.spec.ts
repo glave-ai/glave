@@ -133,6 +133,37 @@ describe('PushService', () => {
     expect(fake.paramsOf('push/subscribe')).toHaveLength(1);
   });
 
+  it('checks again as the tab is shown, at most once an hour, and subscribes when it is time', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    try {
+      localStorage.setItem(ON_HERE, 'true');
+      const browser = new FakePushBrowser('granted');
+      browser.holding(keyBytes(KEY));
+      const due = { ...device('d1', 'A browser', true), renew: true };
+      const fake = new FakeSession()
+        .answer('push/get', { push: offered([device('d1', 'A browser', true)]) })
+        .answer('push/subscribe', { push: offered([device('d1', 'A browser', true)]) });
+      await service(fake, browser);
+      await settle();
+      const shown = async (): Promise<void> => {
+        document.dispatchEvent(new Event('visibilitychange'));
+        await settle();
+      };
+      await shown();
+      expect(fake.paramsOf('push/get')).toHaveLength(1);
+      fake.answer('push/get', { push: offered([due]) });
+      vi.setSystemTime(Date.now() + 60 * 60 * 1000);
+      await shown();
+      // Asked again, told it is time, and subscribed: this browser's own, then the key.
+      expect(fake.paramsOf('push/get')).toHaveLength(3);
+      expect(fake.paramsOf('push/subscribe')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+  });
+
   it('gives the server nothing again where the person turned them off, or the server still has it', async () => {
     for (const [on, kept] of [
       ['false', []],

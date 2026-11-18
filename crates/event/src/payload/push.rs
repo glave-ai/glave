@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use crate::codec::{Body, Payload, parse};
-use crate::envelope::At;
 use crate::id::{DeviceId, PrincipalId};
 use crate::secret::Secret;
 
@@ -52,38 +51,6 @@ pub struct PushSubscribed {
     /// browser is forgotten, so no one who uses it next sees the person's notifications.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
-    /// When it lapses unless the person's browser subscribes it again first, which renews it
-    /// (v2). None for one subscribed before, which lapses as long after it was written as one
-    /// subscribed now does after now.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub until: Option<At>,
-}
-
-/// `push.subscribed` at version 1, before a subscription lapsed.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PushSubscribedV1 {
-    device: DeviceId,
-    endpoint: String,
-    p256dh: String,
-    auth: Secret,
-    name: String,
-    #[serde(default)]
-    session: Option<String>,
-}
-
-impl From<PushSubscribedV1> for PushSubscribed {
-    fn from(old: PushSubscribedV1) -> Self {
-        Self {
-            device: old.device,
-            endpoint: old.endpoint,
-            p256dh: old.p256dh,
-            auth: old.auth,
-            name: old.name,
-            session: old.session,
-            until: None,
-        }
-    }
 }
 
 impl fmt::Debug for PushSubscribed {
@@ -122,7 +89,7 @@ impl Payload for PushKeyMade {
 
 impl Payload for PushSubscribed {
     const TYPE: &'static str = SUBSCRIBED;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 1;
 }
 
 impl Payload for PushUnsubscribed {
@@ -152,14 +119,14 @@ pub(crate) fn decode(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<Body>> {
-    Some(match (kind, version) {
-        (KEY_MADE, 1) => parse(data).map(Body::PushKeyMade),
-        (SUBSCRIBED, 1) => {
-            parse::<PushSubscribedV1>(data).map(|old| Body::PushSubscribed(old.into()))
-        }
-        (SUBSCRIBED, 2) => parse(data).map(Body::PushSubscribed),
-        (UNSUBSCRIBED, 1) => parse(data).map(Body::PushUnsubscribed),
-        (CLAIMED, 1) => parse(data).map(Body::PushClaimed),
+    if version != 1 {
+        return None;
+    }
+    Some(match kind {
+        KEY_MADE => parse(data).map(Body::PushKeyMade),
+        SUBSCRIBED => parse(data).map(Body::PushSubscribed),
+        UNSUBSCRIBED => parse(data).map(Body::PushUnsubscribed),
+        CLAIMED => parse(data).map(Body::PushClaimed),
         _ => return None,
     })
 }
