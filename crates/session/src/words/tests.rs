@@ -510,6 +510,24 @@ fn why_this_computer_cannot_be_kept_awake_is_written_again() {
 }
 
 #[test]
+fn why_it_is_never_the_caller_s_to_keep_awake_is_written_again() {
+    let mut never: Result<Reply, ApiError> = Ok(Reply::Awake {
+        awake: AwakeInfo::Never {
+            reason: Sentence::AwakeOnlyHere.into(),
+        },
+    });
+    assert!(says(&never));
+    translate(&mut never, Language::Accented);
+    let Ok(Reply::Awake {
+        awake: AwakeInfo::Never { reason },
+    }) = never
+    else {
+        panic!("never theirs")
+    };
+    assert!(reason.starts_with("[öñļý"), "{}", &*reason);
+}
+
+#[test]
 fn what_a_project_brings_is_written_again_in_its_threads() {
     use glave_ports::settings::Brings;
 

@@ -98,6 +98,7 @@ async fn globs<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
         pattern: pattern.to_owned(),
         path: "find".into(),
         limit: 10,
+        ..Glob::default()
     };
     let found = computers
         .glob(here, &glob("*.rs"))
@@ -113,6 +114,62 @@ async fn globs<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
             Err(ComputerError::Refused(_))
         ),
         "an invalid file pattern must be refused",
+    )?;
+    narrowed_globs(computers, here, glob("*.rs")).await
+}
+
+/// A glob that leaves out what is hidden, what changed before a time, and stops past a number
+/// of entries looked at, saying so.
+async fn narrowed_globs<C: Computers>(computers: &C, here: WorkspaceId, rs: Glob) -> Verdict {
+    computers
+        .write(here, &files(&[("find/.cache/kept.rs", b"// kept\n")]))
+        .await
+        .map_err(failed("write a hidden file to find"))?;
+    let found = |glob: Glob| async move {
+        computers
+            .glob(here, &glob)
+            .await
+            .map_err(failed("a narrowed glob"))
+    };
+    let hidden = found(rs.clone()).await?;
+    let visible = found(Glob {
+        visible: true,
+        ..rs.clone()
+    })
+    .await?;
+    ensure(
+        hidden.total == 2 && visible.files == ["find/src/lib.rs"] && !visible.stopped,
+        "a glob of what is visible leaves out hidden folders",
+    )?;
+    let since = |nanos| Glob {
+        changed_since_ns: Some(nanos),
+        ..rs.clone()
+    };
+    let (none, all) = (found(since(u64::MAX)).await?, found(since(0)).await?);
+    ensure(
+        none.total == 0 && all.total == 2,
+        "a glob of what changed since a time leaves out what changed before it",
+    )?;
+    let looked_at = |most| Glob {
+        most_looked_at: Some(most),
+        ..rs.clone()
+    };
+    let (stopped, whole) = (found(looked_at(1)).await?, found(looked_at(1_000)).await?);
+    ensure(
+        stopped.stopped && stopped.total <= 1 && !whole.stopped && whole.total == 2,
+        "a glob stops past the entries it may look at, and says so",
+    )?;
+    let settled = |nanos| Glob {
+        settled_for_ns: Some(nanos),
+        ..rs.clone()
+    };
+    let (fresh, old) = (
+        found(settled(u64::MAX >> 1)).await?,
+        found(settled(0)).await?,
+    );
+    ensure(
+        fresh.total == 0 && fresh.cut_off_ns.is_some() && old.total == 2,
+        "a glob of what settled leaves out what changed since its cut-off, and says when that was",
     )
 }
 

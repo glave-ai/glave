@@ -41,7 +41,7 @@ pub(crate) const SESSION_PREFIX: &str = "glave_session_";
 pub(crate) const CODE_LIFETIME: SignedDuration = SignedDuration::from_mins(5);
 
 /// How long a session lasts after it was last used.
-pub(crate) const SESSION_LIFETIME: SignedDuration = SignedDuration::from_hours(30 * 24);
+pub const SESSION_LIFETIME: SignedDuration = SignedDuration::from_hours(30 * 24);
 
 /// How stale a session's last use may be before a use is recorded again, so a busy tab does
 /// not write at every request and the ledger grows by a few events a day at most.

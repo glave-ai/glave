@@ -39,14 +39,39 @@ use super::script::{ScriptedModel, Seen};
 pub(crate) type Tested<L = InMemoryLog> = Server<ScriptedModel, L, SharedBlobs>;
 
 /// A test server's blobs, in memory, on its clock, which the test holds too, so it can sweep them,
-/// and fail the next release when told, as a store that blips does.
+/// fail the next release when told, as a store that blips does, and hold what is put until let
+/// go, as a slow store does.
 #[derive(Clone)]
-pub(crate) struct SharedBlobs(Arc<InMemoryBlobs>, Arc<AtomicBool>);
+pub(crate) struct SharedBlobs(Arc<InMemoryBlobs>, Arc<AtomicBool>, Arc<Holding>);
+
+/// Whether what is put is held, and what tells that a put is held and that it may go on.
+#[derive(Default)]
+pub(crate) struct Holding {
+    held: AtomicBool,
+    reached: Notify,
+    let_go: Notify,
+}
 
 impl SharedBlobs {
     /// Fails the next release, letting go of nothing.
     pub(crate) fn fail_release(&self) {
         self.1.store(true, Ordering::SeqCst);
+    }
+
+    /// Holds each put from now on, until [`SharedBlobs::let_go`].
+    pub(crate) fn hold_puts(&self) {
+        self.2.held.store(true, Ordering::SeqCst);
+    }
+
+    /// Waits until a put is held.
+    pub(crate) async fn put_held(&self) {
+        self.2.reached.notified().await;
+    }
+
+    /// Lets the held puts, and every one after, go on.
+    pub(crate) fn let_go(&self) {
+        self.2.held.store(false, Ordering::SeqCst);
+        self.2.let_go.notify_waiters();
     }
 }
 
@@ -60,7 +85,16 @@ impl BlobStore for SharedBlobs {
         limit: u64,
         bytes: Box<dyn Chunks>,
     ) -> impl Future<Output = Result<BlobRef, BlobError>> + Send {
-        self.0.put(scope, thread, media_type, limit, bytes)
+        let holding = Arc::clone(&self.2);
+        let put = self.0.put(scope, thread, media_type, limit, bytes);
+        async move {
+            let let_go = holding.let_go.notified();
+            if holding.held.load(Ordering::SeqCst) {
+                holding.reached.notify_one();
+                let_go.await;
+            }
+            put.await
+        }
     }
 
     fn get(
@@ -233,6 +267,7 @@ impl Setup {
         Self {
             blobs: SharedBlobs(
                 Arc::new(InMemoryBlobs::with_clock(Arc::new(clock.clone()))),
+                Arc::default(),
                 Arc::default(),
             ),
             answers,
