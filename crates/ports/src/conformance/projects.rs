@@ -90,35 +90,7 @@ pub async fn projects(store: &dyn Projects) -> Verdict {
     personal(store, org, other_org, &ada).await?;
     folders(store, org, other_org, &ada).await?;
     names(store, org, [&ada, &grace]).await?;
-    let racing = OrgId::from_uuid(uuid_v7(1_103));
-    racing::racing(store, racing, &linus).await?;
-    let listed = store
-        .organizations(None, usize::MAX)
-        .await
-        .map_err(failed)?;
-    ensure(
-        [org, other_org, racing]
-            .iter()
-            .all(|held| listed.contains(held))
-            && listed.windows(2).all(|pair| pair.first() < pair.last()),
-        "every organization with a project is listed, once each, in id order",
-    )?;
-    // A page at a time: each after the one before, the last one short.
-    let mut paged = Vec::new();
-    let mut after = None;
-    loop {
-        let page = store.organizations(after, 2).await.map_err(failed)?;
-        ensure(page.len() <= 2, "a page holds at most what was asked")?;
-        paged.extend(page.iter().copied());
-        match page.last() {
-            Some(last) if page.len() == 2 => after = Some(*last),
-            _ => break,
-        }
-    }
-    ensure(
-        paged == listed,
-        "the pages, one after another, are the whole list",
-    )
+    racing::racing(store, OrgId::from_uuid(uuid_v7(1_103)), &linus).await
 }
 
 /// One owner's projects never share a name, ignoring case: a new one takes the next free

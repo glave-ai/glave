@@ -234,21 +234,24 @@ pub struct ScheduleDeleted {
     pub by: Option<Principal>,
 }
 
-/// Someone made a schedule in a project, which its organization's index of schedules now lists,
-/// in that organization's own scope: every server that fires schedules reads the task ledger of
-/// each project it lists, so a schedule runs though no one asked that server for anything since
-/// it started. Recorded once for each project.
+/// Someone made a schedule in a project, which the store's list of where schedules are now
+/// holds, ids alone: the server that fires schedules reads the task ledger of each project it
+/// lists, so a schedule runs though no one asked that server for anything since it started.
+/// Recorded once for each project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SchedulePlaced {
+    pub org: Uuid,
     pub project: Uuid,
 }
 
-/// A project's last schedule went, so its organization's index of them no longer lists it:
-/// what that index holds is the projects with schedules now, never every one that once had one.
+/// A project's last schedule went, so the store's list of where schedules are no longer holds
+/// it: what the list holds is the projects with schedules now, never every one that once had
+/// one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScheduleUnplaced {
+    pub org: Uuid,
     pub project: Uuid,
 }
 

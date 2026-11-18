@@ -464,8 +464,6 @@ sentences! {
         "whoever made it is no longer in this organization",
     MakerUnknown = "maker-unknown"
         "glave can't tell who made it, so it doesn't run it for anyone",
-    TooManyProjectsScheduled { most: usize } = "too-many-projects-scheduled"
-        "schedules run here in at most { $most } projects of one organization: make this one in a project that has one already",
     CronTooOften { minutes: u16 } = "cron-too-often"
         "a schedule runs at most once every { $minutes } minutes: choose times further apart",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
