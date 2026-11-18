@@ -72,6 +72,7 @@ export type AttachedFile = {
  */
 export type AwakeInfo = {
   readonly kind: "never";
+  readonly reason: string;
 } | {
   readonly kind: "chosen";
   readonly on: boolean;
@@ -686,6 +687,16 @@ export type Kept = {
   readonly blob: BlobRef;
 } | "too_large" | "secret" | "unchecked";
 
+/** A schedule's latest run: when it was due, what came of it, and that in the server's words. */
+export type LastRun = {
+  readonly due: At;
+  /** How it ended, once it has. */
+  readonly outcome?: Outcome | null;
+  /** What came of it, in a few words: "Done", "Skipped: the run before was still going". */
+  readonly said: string;
+  readonly status: RunStatus;
+};
+
 /** The chat a Library item was made in. */
 export type LibraryChat = {
   readonly thread: ThreadId;
@@ -1254,6 +1265,9 @@ export type ReplySources = {
   readonly sentence: string;
 };
 
+/** What came of a schedule's run. */
+export type RunStatus = "running" | "ended" | "skipped" | "refused" | "started";
+
 /** Identifies one schedule: a prompt that runs as a task at set times. */
 export type ScheduleId = string;
 
@@ -1261,13 +1275,33 @@ export type ScheduleId = string;
 export type ScheduleInfo = {
   readonly budget: number;
   readonly created_at: At;
-  /** When it last ran: the time that run was due. */
-  readonly last?: At | null;
-  /** When it runs next; absent once a one-off has run. */
+  /** The chat it was set up from, if it was. */
+  readonly from?: ThreadId | null;
+  /** Its latest run, once one was due. */
+  readonly last?: LastRun | null;
+  /** What it is called, as its chat is. */
+  readonly name: string;
+  /** When it runs next; absent once a one-off has run, and when it runs no more. */
   readonly next?: At | null;
+  /**
+   * What the person should know of it beyond that, in the server's words, such as that it
+   * runs no more.
+   */
+  readonly note?: string | null;
+  /** The project its chat is in. */
+  readonly project: ProjectId;
   readonly prompt: string;
+  /** When it repeats, in the server's words: "Every weekday at 8:00 am". */
+  readonly repeats: string;
   readonly schedule: ScheduleId;
+  /**
+   * Its own chat, which each run adds a turn to; absent for one made before schedules had
+   * chats, which runs no more (`note` says so).
+   */
+  readonly thread?: ThreadId | null;
   readonly when: When;
+  /** The time zone `when` is read in, by its IANA name. */
+  readonly zone: string;
 };
 
 /**
@@ -2902,10 +2936,17 @@ export type RoleSetResult = {
 export type ScheduleCreateParams = {
   /** Tokens each run may use. Required: no schedule runs unbounded. */
   readonly budget: number;
-  /** The project its runs are in, by default as `thread/start` picks one. */
+  /** What it is called, and so its chat; by default, its prompt's first line. */
+  readonly name?: string | null;
+  /** The project its chat is in, by default as `thread/start` picks one. */
   readonly project?: ProjectId | null;
   readonly prompt: string;
   readonly when: When;
+  /**
+   * The time zone a cron expression is read in, by its IANA name (`Europe/Lisbon`); by
+   * default the caller's (`zone/set`), else UTC.
+   */
+  readonly zone?: string | null;
 };
 
 export type ScheduleCreateResult = {
@@ -3412,6 +3453,12 @@ export type TurnStartResult = {
   readonly queued: QueuedMessage;
 };
 
+export type ZoneSetParams = {
+  readonly zone: string;
+};
+
+export type ZoneSetResult = Readonly<Record<string, never>>;
+
 /** Every method, with its params and result. */
 export interface Methods {
   readonly "appearance/get": { readonly params: AppearanceGetParams; readonly result: AppearanceGetResult };
@@ -3552,6 +3599,7 @@ export interface Methods {
   readonly "trust/answer": { readonly params: TrustAnswerParams; readonly result: TrustAnswerResult };
   readonly "turn/cancel": { readonly params: TurnCancelParams; readonly result: TurnCancelResult };
   readonly "turn/start": { readonly params: TurnStartParams; readonly result: TurnStartResult };
+  readonly "zone/set": { readonly params: ZoneSetParams; readonly result: ZoneSetResult };
 }
 
 export type Method = keyof Methods;

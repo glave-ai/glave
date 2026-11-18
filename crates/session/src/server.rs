@@ -317,6 +317,9 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) scheduling: Mutex<BTreeMap<OrgId, Lease>>,
     /// Where each waiting turn sends how it ends, for whoever follows it (`answers.rs`).
     pub(crate) followed: Followed,
+    /// Told each time a task ends here, so a run the task limit held back starts then
+    /// (`schedule/fire.rs`).
+    pub(crate) tasks_ended: tokio::sync::Notify,
     /// The computer held awake while work runs, where it is.
     pub(crate) awake: Option<Awake>,
     /// Set once the person on this computer's web search switch was read (`search.rs`).
@@ -417,6 +420,7 @@ where
                 holder: OnceLock::new(),
                 scheduling: Mutex::new(BTreeMap::new()),
                 followed: Followed::default(),
+                tasks_ended: tokio::sync::Notify::new(),
                 awake: wiring.awake.map(Awake::new),
                 searching: tokio::sync::OnceCell::new(),
                 worktrees: wiring.worktrees,
@@ -481,7 +485,9 @@ where
             .start_thread_in(scope, caller, place)
             .await
             .map_err(|error| match error {
-                HarnessError::Workspace(ComputerError::Refused(_)) if copy => {
+                HarnessError::Workspace(ComputerError::Refused(reason))
+                    if copy && crate::tasks::no_repository(&reason) =>
+                {
                     crate::tasks::no_copy()
                 }
                 error => ApiError::from(&error),

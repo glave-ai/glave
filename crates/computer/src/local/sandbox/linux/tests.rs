@@ -16,6 +16,7 @@ use glave_ports::computer::{
 
 use super::landlocked;
 use crate::local::sandbox::tests::terminals::AnotherTerminal;
+use crate::local::sandbox::tests::token;
 use crate::local::sandbox_available;
 use crate::{CancelSwitch, LocalComputers};
 
@@ -500,6 +501,35 @@ fn bubblewrap_shows_no_process_but_the_command_s_own() {
     assert!(open.contains(&name), "{open}");
 }
 
+/// Computers with `helper`, the read-only sandbox Landlock runs, with `dir` as the home folder
+/// and `dir/.glave` as glave's folder, and `dir/project` opened on one of them, its root.
+fn landlocked(dir: &Path, helper: &Path) -> (LocalComputers, Sandbox, WorkspaceId, PathBuf) {
+    let glave_home = dir.join(".glave");
+    std::fs::create_dir_all(&glave_home).unwrap();
+    let environment: Vec<(OsString, OsString)> = std::env::vars_os()
+        .filter(|(name, _)| name == "PATH")
+        .chain([("HOME".into(), dir.as_os_str().to_owned())])
+        .collect();
+    let computers = LocalComputers::new(dir.join("copies"), environment).with_helper(helper);
+    // As `glave computer serve` makes them, the folder of a computer's token hidden too.
+    let computers = token::serving(computers, &glave_home);
+    let sandbox = Sandbox {
+        level: SandboxLevel::ReadOnly,
+        network: SandboxNetwork::Off,
+        home: Some(dir.to_path_buf()),
+        glave_home: Some(glave_home),
+    };
+    let root = dir.join("project");
+    let workspace = block_on!(async {
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        let sources = Sources::Folder {
+            path: root.to_string_lossy().into_owned(),
+        };
+        computers.open(computer.id, &sources).await.unwrap().id
+    });
+    (computers, sandbox, workspace, root)
+}
+
 /// Under Landlock too, what glave writes in its folder while a command runs stays hidden from
 /// it, and its package cache works.
 #[test]
@@ -508,29 +538,22 @@ fn landlock_keeps_what_glave_writes_later_hidden() {
         return;
     };
     let dir = scratch("landlock-late");
-    let glave_home = dir.join(".glave");
-    std::fs::create_dir_all(&glave_home).unwrap();
-    let environment: Vec<(OsString, OsString)> = std::env::vars_os()
-        .filter(|(name, _)| name == "PATH")
-        .chain([("HOME".into(), dir.as_os_str().to_owned())])
-        .collect();
-    let computers = LocalComputers::new(dir.join("copies"), environment).with_helper(&helper);
-    let sandbox = Sandbox {
-        level: SandboxLevel::ReadOnly,
-        network: SandboxNetwork::Off,
-        home: Some(dir.to_path_buf()),
-        glave_home: Some(glave_home),
+    let (computers, sandbox, here, root) = landlocked(&dir, &helper);
+    block_on!(super::super::tests::written_later_stays_hidden(
+        &computers, here, &root, &sandbox
+    ));
+}
+
+/// Under Landlock too, a computer's token in glave's folder is neither read nor replaced, nor
+/// its key read (#1502).
+#[test]
+fn landlock_keeps_a_computer_s_token_unread_and_unreplaced() {
+    let Some(helper) = landlock() else {
+        return;
     };
-    let root = dir.join("project");
-    block_on!(async {
-        let computer = computers.create(&Environment::host()).await.unwrap();
-        let sources = Sources::Folder {
-            path: root.to_string_lossy().into_owned(),
-        };
-        let opened = computers.open(computer.id, &sources).await.unwrap();
-        super::super::tests::written_later_stays_hidden(&computers, opened.id, &root, &sandbox)
-            .await;
-    });
+    let dir = scratch("landlock-token");
+    let (computers, sandbox, here, _) = landlocked(&dir, &helper);
+    block_on!(token::kept_from_a_command(&computers, here, &sandbox));
 }
 
 /// Under Landlock too, glave's folder on commands' `PATH` stays readable though the rest of

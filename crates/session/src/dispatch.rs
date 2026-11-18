@@ -13,8 +13,8 @@ use crate::choice::Choice;
 use crate::connectors::Narrowed;
 use crate::credentials::NewCredential;
 use crate::lists::ListWatch;
-use crate::protocol::{ApiError, LinkKind, Reply, Request, ServerInfo, code};
-use crate::providers::{NewProvider, unsigned};
+use crate::protocol::{ApiError, LinkKind, Reply, Request, code};
+use crate::providers::NewProvider;
 use crate::schedule::NewSchedule;
 use crate::server::Server;
 use crate::signups::Emailed;
@@ -126,61 +126,7 @@ where
             Err(refused) => Answered::Reply(Err(refused)),
         };
         Answered::Reply(match request {
-            Request::Discover {} => {
-                // Someone not signed in reads nothing of the person here: neither their settings,
-                // where reading makes their Chats, nor their secrets, nor a refresh at their word.
-                if !unsigned(caller) {
-                    boxed(|| self.reread()).await;
-                }
-                let organization = match boxed(|| self.organization_shown(caller)).await {
-                    Ok(shown) => shown,
-                    Err(failed) => return Answered::Reply(Err(failed)),
-                };
-                let invites = match boxed(|| self.may_invite(caller)).await {
-                    Ok(may) => may,
-                    Err(failed) => return Answered::Reply(Err(failed)),
-                };
-                let personal = match boxed(|| self.in_personal(caller)).await {
-                    Ok(personal) => personal,
-                    Err(failed) => return Answered::Reply(Err(failed)),
-                };
-                let role = if organization && caller.auth.is_some() {
-                    match boxed(|| self.role_of(caller)).await {
-                        Ok(role) => Some(role),
-                        Err(failed) => return Answered::Reply(Err(failed)),
-                    }
-                } else {
-                    None
-                };
-                Ok(Reply::Server(ServerInfo {
-                    name: "glave".to_owned(),
-                    version: env!("CARGO_PKG_VERSION").to_owned(),
-                    protocols: vec![crate::protocol::PROTOCOL.to_owned()],
-                    permissions: self
-                        .within_sandbox(caller.person, self.inner.harness.defaults().permissions),
-                    modes: self.modes(caller.person),
-                    unsandboxed: self
-                        .unsandboxed(caller.person)
-                        .map(crate::protocol::Told::from),
-                    id: self.server_id(),
-                    origin: self.inner.origin.as_ref().map(ToString::to_string),
-                    here: self.passkeys_here(),
-                    signin: self.signin_ways(),
-                    invite_only: self.invite_only(),
-                    exists: crate::protocol::Exists {
-                        organization,
-                        credits: self.inner.credits.is_some(),
-                    },
-                    role,
-                    email: self.inner.mail.is_some() && self.inner.origin.is_some(),
-                    invites,
-                    personal,
-                    organizations: self.account_of(caller).is_some(),
-                    model_accounts: self.providers_for(caller).is_ok(),
-                    push: self.inner.push.is_some(),
-                    connects: self.connects(caller),
-                }))
-            }
+            Request::Discover {} => boxed(|| self.discover(caller)).await,
             Request::PeopleList { after, limit } => {
                 boxed(|| self.list_people(caller, after, limit)).await
             }
@@ -212,7 +158,7 @@ where
             Request::InviteAccept { code } => {
                 boxed(|| self.accept_invite(caller, code.expose())).await
             }
-            Request::AwakeGet {} => Ok(boxed(|| self.awake()).await),
+            Request::AwakeGet {} => Ok(boxed(|| self.awake(caller)).await),
             Request::AwakeSet { on } => boxed(|| self.set_awake(caller, on)).await,
             Request::PushGet { endpoint } => {
                 boxed(|| self.push_info(caller, endpoint.as_deref())).await
@@ -223,6 +169,7 @@ where
             Request::LanguageSet { language } => {
                 boxed(|| self.set_language(caller, language)).await
             }
+            Request::ZoneSet { zone } => boxed(|| self.set_zone(caller, zone)).await,
             Request::GroupingGet {} => boxed(|| self.grouping(caller)).await,
             Request::GroupingSet { grouping } => {
                 boxed(|| self.set_grouping(caller, grouping)).await
@@ -521,19 +468,28 @@ where
             }
             Request::ScheduleCreate {
                 project,
+                name,
                 when,
+                zone,
                 prompt,
                 budget,
             } => {
                 let new = NewSchedule {
                     project,
+                    name,
                     when,
+                    zone,
                     prompt,
                     budget,
+                    from: None,
                 };
-                boxed(|| self.create_schedule(caller, new)).await
+                let made = boxed(|| self.create_schedule(caller, new)).await;
+                made.map(|schedule| Reply::Schedule { schedule })
             }
-            Request::ScheduleList {} => boxed(|| self.list_schedules(caller)).await,
+            Request::ScheduleList {} => {
+                let listed = boxed(|| self.list_schedules(caller)).await;
+                listed.map(|schedules| Reply::Schedules { schedules })
+            }
             Request::ScheduleDelete { schedule } => {
                 boxed(|| self.delete_schedule(caller, schedule)).await
             }

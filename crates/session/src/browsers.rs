@@ -296,10 +296,11 @@ where
 /// Refuses `caller` unless they are a program on this computer signed in as the person: never
 /// a browser with a session of its own.
 fn by_program(caller: &Caller) -> Result<(), ApiError> {
-    let by_program = caller
-        .auth
-        .as_ref()
-        .is_none_or(|auth| auth.method == AuthMethod::Local && auth.session.is_none());
+    let by_program = local(caller)
+        && caller
+            .auth
+            .as_ref()
+            .is_none_or(|auth| auth.session.is_none());
     if by_program {
         Ok(())
     } else {

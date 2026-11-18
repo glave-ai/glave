@@ -102,6 +102,12 @@ impl Discoverer {
             state,
         })
     }
+
+    /// Why `discovered` is refused when no glave account here knows its passkey: the same
+    /// whether or not its handle is an account's.
+    pub(crate) fn no_account_knows(&self, discovered: &Discovered) -> BrowserError {
+        self.relying.no_account_knows(&discovered.answer)
+    }
 }
 
 impl Browsers {
