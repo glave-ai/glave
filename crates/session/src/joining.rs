@@ -103,15 +103,10 @@ where
         let checked = browsers.checked(&joining.ceremony, credential, name)?;
         self.spend_joining(&joining, person_name).await?;
         let session = browsers.keep(checked).await?;
+        // The address an invite names is never claimed for the account, as its way back in:
+        // the invite's code went to whoever made it too, so opening it proves nothing of the
+        // mailbox. It stays what the organization knows them by.
         accounts.join(joining.person, joining.org).await?;
-        // The address the invite went to, which they opened, is theirs for getting back in,
-        // unless another account has it.
-        let emailed = self.people(joining.org, |people| {
-            people.info(joining.person).and_then(|info| info.email)
-        });
-        if let Some(email) = emailed {
-            accounts.claim_email(&email, joining.person).await?;
-        }
         Ok(self.signed_in(session, &browsers))
     }
 

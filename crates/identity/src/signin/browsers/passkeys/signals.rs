@@ -9,7 +9,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 use webauthn_rs::prelude::PublicKeyCredential;
 
-use super::{Party, Relying};
+use super::{HERE, Party, Relying};
 use crate::signin::browsers::{BrowserError, Browsers};
 
 /// Every passkey that signs the person in with a relying party, after a sign-in, for the
@@ -70,12 +70,36 @@ impl Relying {
     /// program's at `localhost` may, which is not this server's to judge.
     pub(super) fn unknown(&self, answer: &PublicKeyCredential) -> BrowserError {
         if answer.get_user_unique_id() == Some(self.handle.as_bytes().as_slice()) {
-            BrowserError::Unknown(UnknownPasskey {
-                party: self.id.clone(),
-                credential: URL_SAFE_NO_PAD.encode(answer.get_credential_id()),
-            })
+            forget(&self.id, answer)
         } else {
-            BrowserError::Passkey("it is not one of this glave's".into())
+            not_glaves()
         }
     }
+
+    /// Why `answer`, with a passkey no glave account here knows, is refused, whoever's handle
+    /// it carries, so the answer never says whether that handle is an account's: as
+    /// [`BrowserError::Unknown`] where the relying party is a name the server alone makes
+    /// passkeys for; plainly at `localhost`, every local program's, where another's passkey is
+    /// not this server's to judge.
+    pub(super) fn no_account_knows(&self, answer: &PublicKeyCredential) -> BrowserError {
+        if self.id == HERE {
+            not_glaves()
+        } else {
+            forget(&self.id, answer)
+        }
+    }
+}
+
+/// `answer`'s passkey, of the relying party `party`, refused as one the server does not know,
+/// for the browser's passkey manager to forget.
+fn forget(party: &str, answer: &PublicKeyCredential) -> BrowserError {
+    BrowserError::Unknown(UnknownPasskey {
+        party: party.to_owned(),
+        credential: URL_SAFE_NO_PAD.encode(answer.get_credential_id()),
+    })
+}
+
+/// A passkey refused as not this server's, which no passkey manager is told to forget.
+fn not_glaves() -> BrowserError {
+    BrowserError::Passkey("it is not one of this glave's".into())
 }
