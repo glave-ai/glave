@@ -406,6 +406,25 @@ where
         Some(info::info(project, scheduled, ledger, now))
     }
 
+    /// Deletes every schedule of the project `project`, as `by` (absent: the project's person),
+    /// so none fires again, on this server or any other: its ledger read whole, apart from what
+    /// this server keeps, which may forget it midway.
+    pub(crate) async fn delete_schedules_in(
+        &self,
+        project: Located,
+        by: Option<&Principal>,
+    ) -> Result<(), ApiError> {
+        let ledger = self.ledger_apart(project).await?;
+        for schedule in ledger.schedules.into_keys() {
+            let deleted = ScheduleDeleted {
+                schedule,
+                by: by.cloned(),
+            };
+            self.record_in_ledger(project, &deleted).await?;
+        }
+        Ok(())
+    }
+
     /// The projects `caller` works in, each one's ledger read up to now.
     async fn read_ledgers_of(&self, caller: &Caller) -> Result<Vec<Located>, ApiError> {
         let projects = self.projects_of(caller).await?;

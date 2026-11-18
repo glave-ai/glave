@@ -26,6 +26,7 @@ describe('library', () => {
       { value: 'picture', label: 'Pictures' },
     ]);
     expect(kindLabel('picture')).toBe('Pictures');
+    expect(kindLabel('pdf')).toBe('PDFs');
     const projects = [
       record('p1', 'glave'),
       record('p2', 'empty'),
