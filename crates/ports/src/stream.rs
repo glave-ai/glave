@@ -7,7 +7,7 @@ use std::future::Future;
 
 use glave_event::{
     AppearanceSet, At, AwakeSet, Body, FiltersSet, GroupingSet, LanguageSet, MemorySet, Payload,
-    RawEvent, SearchSet, Seq, ThreadId, decode,
+    RawEvent, SearchSet, Seq, ThreadId, ZoneSet, decode,
 };
 use thiserror::Error;
 
@@ -134,7 +134,7 @@ impl Reserved {
 
 /// The settings ledger's events, each one a choice of the person's whose latest counts. A
 /// writer numbers its event after the latest of any of them.
-pub const SETTINGS: [&str; 7] = [
+pub const SETTINGS: [&str; 8] = [
     AwakeSet::TYPE,
     SearchSet::TYPE,
     LanguageSet::TYPE,
@@ -142,6 +142,7 @@ pub const SETTINGS: [&str; 7] = [
     MemorySet::TYPE,
     FiltersSet::TYPE,
     AppearanceSet::TYPE,
+    ZoneSet::TYPE,
 ];
 
 /// Why a stream could not be read or written.

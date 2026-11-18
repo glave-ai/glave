@@ -156,8 +156,9 @@ impl Exists {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AwakeInfo {
-    /// Never: a server, which does not sleep. There is nothing to choose.
-    Never,
+    /// Not the caller's to choose, and `reason`, why: a server, which does not sleep, or only
+    /// the person on this computer chooses.
+    Never { reason: Told },
     /// On a person's own computer, as they choose: kept awake while glave works when `on`, the
     /// screen still free to sleep and closing the lid still sleeping it.
     Chosen { on: bool },

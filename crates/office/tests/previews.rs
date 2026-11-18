@@ -84,6 +84,9 @@ fn a_file_is_described_by_its_title_and_its_parts() {
     let deck = describe(&bytes("deck.pptx"), "");
     assert_eq!(deck.parts, Some(Parts::Slides(2)));
     assert!(deck.previews);
+    // Every sheet its workbook part lists, a hidden one and a chart's among them.
+    let book = describe(&bytes("workbook.xlsx"), XLSX);
+    assert_eq!(book.parts, Some(Parts::Sheets(7)));
     let mut pdf = Vec::new();
     paged(&["one", "two", "three"]).save_to(&mut pdf).unwrap();
     assert_eq!(
