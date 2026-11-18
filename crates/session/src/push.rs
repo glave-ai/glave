@@ -139,6 +139,7 @@ where
         let session = session_of(caller).map(str::to_owned);
         let (_, personal) = self.personal_project(caller).await?;
         let kept = self.devices(&personal, person).await?;
+        let now = self.inner.harness.clock().now();
         let same = kept
             .iter()
             .find(|kept| kept.subscribed.endpoint == endpoint);
@@ -147,6 +148,12 @@ where
             (&kept.p256dh, &kept.auth, kept.name.as_str(), &kept.session)
                 == (&p256dh, &auth, name, &session)
         }) {
+            // Kept as it is: kept again, which renews it, only once its time is half gone, so
+            // the ledger grows by a renewal a fortnight, not by every time the app opens.
+            if same.renew(now) {
+                self.keep_latest(&personal, Reserved::Push.id(), &KEPT, &same.subscribed)
+                    .await?;
+            }
             self.claim(&endpoint, person, same.subscribed.device)
                 .await?;
             return self.offered(caller, Some(&endpoint)).await;
@@ -164,7 +171,6 @@ where
         {
             self.forget_device(&personal, old, false).await?;
         }
-        let now = self.inner.harness.clock().now();
         let device = DeviceId::new(now, self.inner.harness.entropy().bytes()?)?;
         let subscribed = PushSubscribed {
             device,
@@ -213,20 +219,25 @@ where
     }
 
     /// What `push/get` says where the server pushes: the key to subscribe with and the caller's
-    /// browsers, the latest first, `endpoint`'s current.
+    /// browsers, the latest first, `endpoint`'s current, and whether it should subscribe again.
     async fn offered(&self, caller: &Caller, endpoint: Option<&str>) -> Result<Reply, ApiError> {
         let key = self.push_key().await?;
         let person = self.person_of(caller)?;
         let (_, personal) = self.personal_project(caller).await?;
+        let now = self.inner.harness.clock().now();
         let mut devices: Vec<PushDevice> = self
-            .devices(&personal, person)
+            .devices_read(&personal, person)
             .await?
             .into_iter()
-            .map(|device| PushDevice {
-                id: device.subscribed.device,
-                current: endpoint == Some(device.subscribed.endpoint.as_str()),
-                name: device.subscribed.name,
-                added: device.added,
+            .map(|device| {
+                let current = endpoint == Some(device.subscribed.endpoint.as_str());
+                PushDevice {
+                    renew: current && device.renew(now),
+                    id: device.subscribed.device,
+                    current,
+                    name: device.subscribed.name,
+                    added: device.added,
+                }
             })
             .collect();
         devices.sort_by_key(|device| std::cmp::Reverse(device.added));

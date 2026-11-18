@@ -68,6 +68,14 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<(), HarnessError> {
+        // A turn that calls a tool that can change files has its folder looked over as it ends,
+        // for the files it made (`made.rs`).
+        let at_home = thread.home.is_some();
+        if let Some(turn) = thread.turn_open.as_mut() {
+            turn.works |= calls
+                .iter()
+                .any(|call| crate::made::changes_files(&call.tool, at_home));
+        }
         let mut rest = calls;
         while let Some(first) = rest.first() {
             let subagents = rest

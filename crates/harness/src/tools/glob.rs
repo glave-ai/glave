@@ -24,6 +24,7 @@ pub(crate) async fn glob(workspace: &Workspace, args: GlobArgs) -> ToolOutcome {
         pattern: args.pattern.clone(),
         path: args.path.unwrap_or_else(|| ".".into()),
         limit: MAX_FILES,
+        ..Glob::default()
     };
     let found = match workspace.glob(&glob).await {
         Ok(found) => found,

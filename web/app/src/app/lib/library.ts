@@ -44,6 +44,11 @@ export function kindChoices(): readonly FilterChoice[] {
 export function kindLabel(kind: AssetKind): string {
   const labels: Readonly<Record<AssetKind, () => string>> = {
     picture: () => $localize`:@@library.pictures:Pictures`,
+    document: () => $localize`:@@library.documents:Documents`,
+    spreadsheet: () => $localize`:@@library.spreadsheets:Spreadsheets`,
+    deck: () => $localize`:@@library.decks:Slides`,
+    pdf: () => $localize`:@@library.pdfs:PDFs`,
+    other: () => $localize`:@@library.others:Other files`,
   };
   return labels[kind]();
 }

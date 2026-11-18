@@ -311,6 +311,7 @@ async fn finding<C: Computers>(computers: &C, fixture: &Confinement, path: &str)
         pattern: "*".into(),
         path: path.to_owned(),
         limit: 100,
+        ..Glob::default()
     };
     let globbed = computers.glob(here, &glob).await;
     ensure(acceptable(&globbed), "a glob must be answered or refused")?;

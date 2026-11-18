@@ -97,6 +97,7 @@ fn a_thread_is_for_its_caller_and_anyone_else_who_acts_in_it_is_recorded() {
             profile: None,
             org: None,
             from: None,
+            until: None,
         };
         let mut thread = harness.start_thread_as(scope(), &signed_in).await.unwrap();
         for caller in [
@@ -108,6 +109,7 @@ fn a_thread_is_for_its_caller_and_anyone_else_who_acts_in_it_is_recorded() {
                 profile: None,
                 org: None,
                 from: None,
+                until: None,
             },
         ] {
             harness
