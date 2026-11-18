@@ -12,7 +12,7 @@ use glave_ports::testing::ManualClock;
 use glave_ports::{Caller, Completion, InMemoryLog};
 use glave_session::protocol::{ApiError, Notification, Reply, Request, Update, code};
 use glave_session::signin::Browsers;
-use glave_session::{Answering, Sent, TurnItem, TurnStream, Watched};
+use glave_session::{Answering, ListWatch, Sent, TurnItem, TurnStream, Watched};
 use jiff::Timestamp;
 use serde_json::json;
 
@@ -303,15 +303,7 @@ fn a_list_watch_sends_nothing_begun_after_its_token_expires() {
             tokio::task::yield_now().await;
         }
         clock.advance_millis(TAKEN);
-        let mut sent = 0;
-        let ended = loop {
-            match list.next().await {
-                Some(Watched::Note(_)) => sent += 1,
-                Some(Watched::Ended(ended)) => break ended,
-                None => panic!("the list watch ended without saying why"),
-            }
-        };
-        no_sign_in(&ended);
+        let sent = sent_until_ended(&mut list).await;
         assert!(
             sent <= 2,
             "{sent} sent: one held, and one begun before its end"
@@ -342,20 +334,27 @@ fn a_list_watch_sends_nothing_begun_after_its_browser_signs_out() {
             .request_as(&browser, Request::SigninEnd {})
             .await
             .unwrap();
-        let mut sent = 0;
-        let ended = loop {
-            match list.next().await {
-                Some(Watched::Note(_)) => sent += 1,
-                Some(Watched::Ended(ended)) => break ended,
-                None => panic!("the list watch ended without saying why"),
-            }
-        };
-        no_sign_in(&ended);
+        let sent = sent_until_ended(&mut list).await;
         assert!(
             sent <= 2,
             "{sent} sent: one held, and one begun before the sign-out"
         );
     });
+}
+
+/// How many summaries `list` sends before it ends, as an ended sign-in ends it.
+async fn sent_until_ended(list: &mut ListWatch) -> usize {
+    let mut sent = 0;
+    loop {
+        match list.next().await {
+            Some(Watched::Note(_)) => sent += 1,
+            Some(Watched::Ended(ended)) => {
+                no_sign_in(&ended);
+                return sent;
+            }
+            None => panic!("the list watch ended without saying why"),
+        }
+    }
 }
 
 /// Follows `stream` until its turn waits for an approval.
