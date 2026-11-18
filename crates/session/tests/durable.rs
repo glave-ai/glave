@@ -313,7 +313,8 @@ async fn compared<L: EventLog + 'static>(
 
 /// `value` with every id in it, a string that reads as a UUID, the same placeholder (the
 /// person's and the agent's are the same in every run, and kept), and the time a command's
-/// result says it took (`[exit 0 · 0.1 s]`) the same too.
+/// result says it took (`[exit 0 · 0.1 s]`) and the time a turn's look over what it made stopped
+/// (`made_until_ns`) the same too.
 fn but_for_ids(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::String(text) => {
@@ -329,7 +330,12 @@ fn but_for_ids(value: &mut serde_json::Value) {
             }
         }
         serde_json::Value::Array(items) => items.iter_mut().for_each(but_for_ids),
-        serde_json::Value::Object(fields) => fields.values_mut().for_each(but_for_ids),
+        serde_json::Value::Object(fields) => {
+            if let Some(until) = fields.get_mut("made_until_ns") {
+                *until = 0.into();
+            }
+            fields.values_mut().for_each(but_for_ids);
+        }
         _ => {}
     }
 }
