@@ -391,11 +391,21 @@ impl Projects for SqliteProjects {
         Box::pin(self.with(move |connection| find_folder_now(connection, &org.to_string(), &keys)))
     }
 
-    fn organizations(&self) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>> {
-        Box::pin(self.with(|connection| {
+    fn organizations(
+        &self,
+        after: Option<OrgId>,
+        limit: usize,
+    ) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>> {
+        // Ids as text order as they do as bytes: lowercase hexadecimal, of one length.
+        let after = after.map(|org| org.as_uuid().to_string());
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        Box::pin(self.with(move |connection| {
             let ids: Vec<String> = connection
-                .prepare("SELECT DISTINCT org FROM project_records ORDER BY org")?
-                .query_map([], |row| row.get(0))?
+                .prepare(
+                    "SELECT DISTINCT org FROM project_records WHERE ?1 IS NULL OR org > ?1 \
+                     ORDER BY org LIMIT ?2",
+                )?
+                .query_map(rusqlite::params![after, limit], |row| row.get(0))?
                 .collect::<rusqlite::Result<_>>()?;
             (ids.iter())
                 .map(|id| Ok(OrgId::from_uuid(Uuid::parse_str(id).map_err(corrupt)?)))

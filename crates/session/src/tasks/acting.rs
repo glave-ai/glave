@@ -36,17 +36,16 @@ pub(crate) fn acting_for(person: Option<PrincipalId>, org: OrgId) -> Caller {
     }
 }
 
-/// The person `by` names, as a task's or a schedule's events record them: none for the server's
-/// own person, whom they leave implied. Refused for anything but a person with an id, whom glave
-/// could act for only as someone else.
+/// The person `by` names, as a schedule and its runs record them: always named, so a server
+/// whose own person is someone else acts for the one who made it. Refused for anything but a
+/// person with an id, none included, whom glave could act for only as someone else.
 pub(crate) fn whose(by: Option<&Principal>) -> Result<Option<PrincipalId>, ApiError> {
     match by {
-        None => Ok(None),
         Some(Principal {
             kind: PrincipalKind::Person,
             id: Some(person),
         }) => Ok(Some(*person)),
-        Some(_) => Err(ApiError::new(code::NOT_ALLOWED, Sentence::MakerUnknown)),
+        _ => Err(ApiError::new(code::NOT_ALLOWED, Sentence::MakerUnknown)),
     }
 }
 
