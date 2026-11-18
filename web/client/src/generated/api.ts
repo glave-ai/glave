@@ -72,6 +72,7 @@ export type AttachedFile = {
  */
 export type AwakeInfo = {
   readonly kind: "never";
+  readonly reason: string;
 } | {
   readonly kind: "chosen";
   readonly on: boolean;

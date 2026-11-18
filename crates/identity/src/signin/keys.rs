@@ -149,8 +149,8 @@ impl Keys {
         }
         if !safe_to_send(&discovery.jwks_uri, &[]) {
             return Err(self.failed(format!(
-                "its keys are at {:?}, which is not https",
-                discovery.jwks_uri
+                "its keys are at {}, which is not https with no name or password in it",
+                glave_ports::host::shown(&discovery.jwks_uri)
             )));
         }
         Ok(discovery.jwks_uri)
@@ -169,27 +169,22 @@ impl Keys {
     }
 
     async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, SignInError> {
-        let mut response = self
-            .http
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| self.failed(e.to_string()))?;
+        // Where it is, as it may be shown: an error says it, and reqwest's names it too.
+        let said = glave_ports::host::shown(url);
+        let failed =
+            |error: reqwest::Error| self.failed(glave_ports::host::urls_shown(&error.to_string()));
+        let mut response = self.http.get(url).send().await.map_err(failed)?;
         if !response.status().is_success() {
-            return Err(self.failed(format!("{url} answered {}", response.status())));
+            return Err(self.failed(format!("{said} answered {}", response.status())));
         }
         let mut body = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| self.failed(e.to_string()))?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(failed)? {
             if body.len().saturating_add(chunk.len()) > MOST_BYTES {
-                return Err(self.failed(format!("{url} sent more than {MOST_BYTES} bytes")));
+                return Err(self.failed(format!("{said} sent more than {MOST_BYTES} bytes")));
             }
             body.extend_from_slice(&chunk);
         }
-        serde_json::from_slice(&body).map_err(|e| self.failed(format!("{url}: {e}")))
+        serde_json::from_slice(&body).map_err(|e| self.failed(format!("{said}: {e}")))
     }
 
     fn failed(&self, reason: String) -> SignInError {

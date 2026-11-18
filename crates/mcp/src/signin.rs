@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::{Secret, SignInClient};
+use glave_ports::host::{shown, urls_shown};
 use rmcp::transport::auth::{
     AuthError, AuthorizationManager, AuthorizationMetadataResolution, AuthorizationRequest,
     AuthorizationSession, CredentialStore as _, InMemoryCredentialStore, OAuthTokenResponse,
@@ -26,28 +27,39 @@ use crate::reachable::Reachable;
 use crate::reason::causes;
 
 /// Why a sign-in could not start, finish or be renewed, in rmcp's words, for the log. Never
-/// holds a token.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+/// holds a token, and says its server's address, and any in rmcp's words, only as they may be
+/// shown ([`shown`]): a server's address can carry one.
+#[derive(Clone, PartialEq, Eq, Error)]
 pub enum SignInError {
     /// The server publishes nothing that says how to sign in to it.
-    #[error("{url} does not ask anyone to sign in, as an MCP server that needs it does")]
+    #[error(
+        "{} does not ask anyone to sign in, as an MCP server that needs it does",
+        shown(.url)
+    )]
     NotOffered { url: String },
     /// The server or its authorization server could not be reached, or what it publishes
     /// could not be used: asking again may work, and a refresh token is unspent.
-    #[error("could not reach the sign-in for {url}: {message}")]
+    #[error("could not reach the sign-in for {}: {}", shown(.url), urls_shown(.message))]
     Unreachable { url: String, message: String },
     /// The authorization server refused: the registration, the code, or the refresh token;
     /// or it is no longer the one that signed the person in.
-    #[error("the sign-in for {url} was refused: {message}")]
+    #[error("the sign-in for {} was refused: {}", shown(.url), urls_shown(.message))]
     Refused { url: String, message: String },
     /// The authorization server takes no registration, which glave signs in with. Asking
     /// again does not help.
-    #[error("glave cannot sign in to {url} yet: {message}")]
+    #[error("glave cannot sign in to {} yet: {}", shown(.url), urls_shown(.message))]
     Unregistered { url: String, message: String },
     /// The server is at an address glave does not reach from here ([`Reachable`]). Asking again
     /// does not help.
-    #[error("glave does not sign in to {url}: {message}")]
+    #[error("glave does not sign in to {}: {}", shown(.url), urls_shown(.message))]
     OutOfReach { url: String, message: String },
+}
+
+/// As it is said: its addresses as they may be shown.
+impl std::fmt::Debug for SignInError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SignInError({self})")
+    }
 }
 
 impl SignInError {

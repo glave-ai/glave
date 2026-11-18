@@ -62,14 +62,14 @@ pub trait Providers: Send + Sync {
 }
 
 /// Whether `caller` is the person on this computer, `own`: over a local transport, or signed in
-/// with the local token from a browser here. Never anyone else, however they call: a caller
-/// naming another person is not them, signed in or not.
+/// with the local token from a browser here. Never no one, who did not sign in, nor anyone else,
+/// however they call: a caller naming another person is not them, signed in or not.
 pub(crate) fn local(caller: &Caller, own: Option<PrincipalId>) -> bool {
     let theirs = caller
         .auth
         .as_ref()
         .is_none_or(|auth| auth.method == AuthMethod::Local);
-    theirs && caller.person.is_none_or(|person| Some(person) == own)
+    !caller.is_no_one() && theirs && caller.person.is_none_or(|person| Some(person) == own)
 }
 
 /// Whether `caller` came over the network with no sign-in, for what is open to anyone
