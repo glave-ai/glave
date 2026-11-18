@@ -5,8 +5,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use glave_event::Outcome;
-use glave_ports::{BoxFuture, EventLog};
+use glave_event::{Outcome, Principal};
+use glave_ports::{BoxFuture, EventLog, ProjectKind};
 use glave_session::protocol::{AwakeInfo, Reply, Request, code};
 use glave_session::{Answering, KeepAwake, Unawake};
 use tokio::sync::{Notify, watch};
@@ -196,12 +196,53 @@ fn the_person_turns_it_off_and_on_and_no_one_else_does() {
     });
 }
 
+/// Someone signed in from elsewhere asks whether the computer stays awake: not theirs to
+/// choose, they are told why, and nothing of the person's is read, so no Chats of theirs is
+/// made to read it from.
+#[test]
+fn someone_elsewhere_is_told_it_is_not_theirs_and_reads_nothing_of_the_person_s() {
+    let dir = folder("awake-elsewhere");
+    block_on!(async {
+        let computer = Arc::new(Computer::default());
+        let mut setup = Setup::asking(Vec::new(), Answering::NoOne);
+        setup.awake = Some(Arc::clone(&computer) as Arc<dyn KeepAwake>);
+        let (server, _) = setup.build(&dir).await;
+        let told = server.request_as(&elsewhere(), Request::AwakeGet {}).await;
+        let Ok(Reply::Awake {
+            awake: AwakeInfo::Never { reason },
+        }) = told
+        else {
+            panic!("not theirs to choose, not {told:?}");
+        };
+        assert_eq!(
+            &*reason,
+            "only the person on this computer chooses whether it stays awake"
+        );
+        let person = Principal::person(server.person().unwrap());
+        let theirs = server
+            .projects()
+            .list(scope().org(), &person, 10)
+            .await
+            .unwrap();
+        assert!(
+            theirs.iter().all(|it| it.kind != ProjectKind::Personal),
+            "no Chats made for the person here"
+        );
+    });
+}
+
 #[test]
 fn a_server_keeps_no_computer_awake() {
     let dir = folder("awake-never");
     block_on!(async {
         let (server, _) = Setup::new(Vec::new()).build(&dir).await;
-        assert_eq!(awake(&server).await, AwakeInfo::Never);
+        let AwakeInfo::Never { reason } = awake(&server).await else {
+            panic!("never, on a server");
+        };
+        assert_eq!(
+            &*reason,
+            "this glave is a server, which doesn't sleep: there is nothing to keep awake"
+        );
         let refused = server.request(Request::AwakeSet { on: true }).await;
         assert_eq!(
             refused.err().map(|error| error.code),

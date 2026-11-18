@@ -92,6 +92,15 @@ v7_id!(
     "principal id"
 );
 
+impl PrincipalId {
+    /// The id no one has, `00000000-0000-7000-8000-000000000000`: at time zero with no random
+    /// bits, where an account's id carries the time it was made and a company login's person
+    /// the start of a hash. Whoever reaches what is open without a sign-in is no one.
+    pub fn no_one() -> Self {
+        Self(Builder::from_unix_timestamp_millis(0, &[0; 10]).into_uuid())
+    }
+}
+
 /// Identifies one thread: a conversation or task with its own ordered log.
 #[derive(
     Debug,
