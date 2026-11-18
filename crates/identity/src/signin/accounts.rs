@@ -149,16 +149,22 @@ impl Accounts {
     }
 
     /// Takes `person` out of `org`: their sessions sign them in there no more. Left in no
-    /// organization, the account never signs in again, so its address leads to it no more:
-    /// a new invite or a sign-up may make it another account's way back in.
-    pub async fn leave(&self, person: PrincipalId, org: OrgId) -> Result<(), BrowserError> {
+    /// organization, the account never signs in again, so `email`, the address `org` knew
+    /// them by, leads to it no more, if it did: a new invite or a sign-up may make it another
+    /// account's way back in.
+    pub async fn leave(
+        &self,
+        person: PrincipalId,
+        org: OrgId,
+        email: Option<&str>,
+    ) -> Result<(), BrowserError> {
         self.directory
             .leave(person, org)
             .await
             .map_err(|e| BrowserError::Keep(e.to_string()))?;
-        if self.organizations(person).await?.is_empty() {
+        if let Some(address) = email {
             self.directory
-                .unlink(person)
+                .unlink_email_if_alone(&email_key(address)?, person)
                 .await
                 .map_err(|e| BrowserError::Keep(e.to_string()))?;
         }

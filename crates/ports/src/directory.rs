@@ -50,9 +50,16 @@ pub trait Directory: Send + Sync {
         person: PrincipalId,
     ) -> BoxFuture<'a, Result<PrincipalId, DirectoryError>>;
 
-    /// Unlinks every identity that leads to `person`, so each leads to no one and may be linked
-    /// to someone else: for an account that can never be signed in again.
-    fn unlink(&self, person: PrincipalId) -> BoxFuture<'_, Result<(), DirectoryError>>;
+    /// Unlinks `email`, an email address's key, from `person` when it leads to them and they
+    /// belong to no organization, all as one statement, so a join landing meanwhile keeps it:
+    /// an account in no organization never signs in again, and lets its address go. Anything
+    /// else changes nothing. Never for another kind of identity, such as a company login's,
+    /// which stays whatever becomes of the person's organizations.
+    fn unlink_email_if_alone<'a>(
+        &'a self,
+        email: &'a IdentityKey,
+        person: PrincipalId,
+    ) -> BoxFuture<'a, Result<(), DirectoryError>>;
 
     /// Whom `identity` leads to, if anyone.
     fn find<'a>(
