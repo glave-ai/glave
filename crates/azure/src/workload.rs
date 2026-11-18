@@ -110,7 +110,7 @@ impl WorkloadIdentity {
             .map_err(|error| {
                 AuthError::unreachable(format!(
                     "could not reach Microsoft Entra at {}: {}",
-                    self.token_url,
+                    glave_ports::host::shown(&self.token_url),
                     error.without_url()
                 ))
             })?;
@@ -172,9 +172,9 @@ impl RequestSigner for WorkloadIdentity {
 fn token_url(authority: &str, tenant: &str) -> Result<String, AuthError> {
     let authority = authority.trim().trim_end_matches('/');
     if !safe_to_send(authority, &[]) {
-        return Err(AuthError::refused(format!(
-            "AZURE_AUTHORITY_HOST = {authority:?} is not an https:// address"
-        )));
+        return Err(AuthError::refused(
+            "AZURE_AUTHORITY_HOST is not an https:// address with no name or password in it",
+        ));
     }
     let tenant = tenant.trim();
     let valid = !tenant.is_empty()
