@@ -11,7 +11,8 @@ use glave_ports::testing::{FaultyLog, ManualClock};
 use std::sync::Arc;
 
 use glave_ports::{
-    Caller, EventLog as _, InMemoryLog, InMemoryProjects, OrgId, ProjectId, Projects, Scope,
+    Caller, EventLog as _, InMemoryLeases, InMemoryLog, InMemoryProjects, Leases, OrgId, ProjectId,
+    Projects, Scope,
 };
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 
@@ -96,7 +97,7 @@ fn a_server_started_since_fires_everyone_s_schedules_each_as_whoever_made_it() {
 }
 
 #[test]
-fn where_schedules_are_is_kept_in_each_organization_s_own_scope_while_they_are() {
+fn where_schedules_are_is_one_stream_of_ids_while_they_are() {
     block_on!(async {
         let log = Shared::default();
         let (server, _, _, _dir) = setup()
@@ -108,31 +109,33 @@ fn where_schedules_are_is_kept_in_each_organization_s_own_scope_while_they_are()
             ..elsewhere()
         };
         let hers = daily(&server, &grace).await.unwrap();
-        let index = |org| index_of(&log, org);
-        let own = index(scope().org()).await;
+        let theirs = index_of(&log, third).await;
         assert!(
-            own.is_empty(),
-            "the server's own lists no one else's: {own:?}"
+            theirs.is_empty(),
+            "nothing in her organization's own: {theirs:?}"
         );
-        let theirs = index(third).await;
+        let listed = index_of(&log, scope().org()).await;
         assert!(
-            matches!(theirs.as_slice(), [Body::SchedulePlaced(placed)] if placed.project == hers.project.as_uuid()),
-            "her project, in her organization's own: {theirs:?}"
+            matches!(listed.as_slice(), [Body::SchedulePlaced(placed)]
+                if placed.org == third.as_uuid() && placed.project == hers.project.as_uuid()),
+            "her project's ids, in the one stream: {listed:?}"
         );
-        // Her last schedule there gone, the index lists her project no more.
+        // Her last schedule there gone, the stream lists her project no more.
         let deleted = Request::ScheduleDelete {
             schedule: hers.schedule,
         };
         server.request_as(&grace, deleted).await.unwrap();
-        let theirs = index(third).await;
+        let listed = index_of(&log, scope().org()).await;
         assert!(
-            matches!(theirs.as_slice(), [Body::SchedulePlaced(_), Body::ScheduleUnplaced(gone)] if gone.project == hers.project.as_uuid()),
-            "unlisted as its last schedule went: {theirs:?}"
+            matches!(listed.as_slice(), [Body::SchedulePlaced(_), Body::ScheduleUnplaced(gone)]
+                if gone.org == third.as_uuid() && gone.project == hers.project.as_uuid()),
+            "unlisted as its last schedule went: {listed:?}"
         );
     });
 }
 
-/// What `org`'s index of where schedules are holds, in order.
+/// What the stream of where schedules are holds in `org`'s scope, in order: the server's own
+/// organization's holds the store's.
 async fn index_of(log: &Shared, org: OrgId) -> Vec<Body> {
     let scope = Scope::of_organization(org);
     let read = log.read(&scope, Reserved::Scheduled.id(), None, usize::MAX);
@@ -142,7 +145,7 @@ async fn index_of(log: &Shared, org: OrgId) -> Vec<Body> {
 }
 
 #[test]
-fn a_schedule_made_as_its_project_s_last_one_goes_lists_the_project_again() {
+fn a_schedule_made_while_its_project_s_last_one_goes_waits_then_lists_the_project_again() {
     block_on!(async {
         let log = Shared::default();
         let faulty = FaultyLog::over(Arc::clone(&log.0));
@@ -151,8 +154,8 @@ fn a_schedule_made_as_its_project_s_last_one_goes_lists_the_project_again() {
             .await;
         let grace = elsewhere();
         let first = daily(&server, &grace).await.unwrap();
-        // Her last schedule there is deleted, and its project's removal from the index held as
-        // it is written, while she makes another there, which finds the project still listed.
+        // Her last schedule there is deleted, and its project's removal held as it is written:
+        // another of hers made meanwhile waits for it, never made under a removal.
         faulty.hold("schedule.unplaced");
         let deleted = Request::ScheduleDelete {
             schedule: first.schedule,
@@ -160,18 +163,71 @@ fn a_schedule_made_as_its_project_s_last_one_goes_lists_the_project_again() {
         let deleting = server.request_as(&grace, deleted);
         let making = async {
             faulty.held().await;
-            let made = daily(&server, &grace).await.unwrap();
+            let made = daily(&server, &grace).await;
             faulty.release();
             made
         };
         let (deleted, made) = tokio::join!(deleting, making);
         deleted.unwrap();
+        assert_eq!(made.unwrap_err(), code::INTERNAL, "told to try again");
+        let made = daily(&server, &grace).await.unwrap();
         assert_eq!(made.project, first.project);
         let listed = index_of(&log, scope().org()).await;
         assert!(
             matches!(listed.as_slice(), [.., Body::ScheduleUnplaced(_), Body::SchedulePlaced(again)] if again.project == first.project.as_uuid()),
-            "listed again once the removal landed: {listed:?}"
+            "listed again as it is made: {listed:?}"
         );
+    });
+}
+
+#[test]
+fn a_deleter_that_stops_holding_someone_s_schedules_holds_their_next_back_until_it_lapses() {
+    block_on!(async {
+        let log = Shared::default();
+        let mut first = setup();
+        let now = first.clock.clone();
+        let leases = Arc::new(InMemoryLeases::new(Arc::new(now.clone())));
+        first.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
+        let (server, _, _, _dir) = first
+            .build_in_repository("people-deleter-stopped", log.clone())
+            .await;
+        let grace = elsewhere();
+        let made = daily(&server, &grace).await.unwrap();
+        // Another server deleted her schedule, unplaced her project and stopped, still holding
+        // her schedules until its lease lapses.
+        let entropy = glave_ports::testing::CountingEntropy::starting_at(0x7e);
+        let other = glave_ports::Holder::new(&now, &entropy).unwrap();
+        let hers = glave_ports::Leased::Schedules(grace.person.unwrap());
+        let minute = std::time::Duration::from_secs(60);
+        let held = leases
+            .acquire(scope().org(), hers, other, minute)
+            .await
+            .unwrap();
+        assert!(held.is_some());
+        let ledger = Scope::glaves_own(scope().org(), made.project);
+        let deleted = glave_event::ScheduleDeleted {
+            schedule: made.schedule,
+            by: grace.person.map(Principal::person),
+        };
+        let next = u64::try_from(ledger_of(&log, made.project).await.len()).unwrap() + 1;
+        append(&log, &ledger, Reserved::Tasks.id(), next, &deleted).await;
+        let gone = glave_event::ScheduleUnplaced {
+            org: scope().org().as_uuid(),
+            project: made.project.as_uuid(),
+        };
+        let stream = Scope::of_organization(scope().org());
+        append(&log, &stream, Reserved::Scheduled.id(), 2, &gone).await;
+        assert_eq!(
+            daily(&server, &grace).await.unwrap_err(),
+            code::INTERNAL,
+            "held"
+        );
+        // Once it lapses, her next is made, listed and fired.
+        set(&now, "2026-10-10T10:05:00Z");
+        let again = daily(&server, &grace).await.unwrap();
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![again.thread.unwrap()]);
+        settle_for(&server, &grace).await;
     });
 }
 
@@ -461,7 +517,10 @@ fn removing_someone_deletes_every_schedule_of_theirs_though_a_tick_forgets_ledge
         for n in 1..=1_030u64 {
             let project =
                 uuid::Uuid::from_u128(0x0192_f5c3_0000_7000_8000_0000_0000_0000 + u128::from(n));
-            let placed = glave_event::SchedulePlaced { project };
+            let placed = glave_event::SchedulePlaced {
+                org: scope().org().as_uuid(),
+                project,
+            };
             append(&log, &index.0, index.1, next + n, &placed).await;
         }
         // The removal's read of her ledger is held at its second page while a tick forgets
