@@ -13,6 +13,7 @@ use glave_event::{
 };
 use glave_ports::stream::{Reserved, catch_up};
 use glave_ports::{BlobStore, Erasable, EventLog, ModelProvider, Scope};
+use jiff::{SignedDuration, Timestamp};
 use sha2::{Digest as _, Sha256};
 
 use crate::protocol::ApiError;
@@ -21,17 +22,45 @@ use crate::server::Server;
 /// The push ledger's events in a personal project, each numbered after the latest of them.
 pub(super) const KEPT: [&str; 2] = [PushSubscribed::TYPE, PushUnsubscribed::TYPE];
 
-/// A browser that takes the person's notifications, as its `push.subscribed` keeps it.
+/// How long a subscription is kept from when the person's browser last subscribed it: as long
+/// as a glave browser session lasts. Their app subscribes it again once less than half is
+/// left, so a browser in use is never forgotten for this, and one no one opens lapses.
+pub(crate) const KEPT_FOR: SignedDuration = SignedDuration::from_hours(30 * 24);
+
+/// When a subscription written at `at` lapses, unless subscribed again first.
+pub(crate) fn later(at: Timestamp) -> Timestamp {
+    at.saturating_add(KEPT_FOR).unwrap_or(Timestamp::MAX)
+}
+
+/// A browser that takes the person's notifications, as its `push.subscribed` keeps it: when it
+/// was first added, and as it was last subscribed.
 pub(crate) struct Device {
     pub(crate) added: At,
     pub(crate) subscribed: PushSubscribed,
+    /// When its latest subscription was written, which one from before subscriptions lapsed
+    /// lapses [`KEPT_FOR`] after.
+    written: At,
+}
+
+impl Device {
+    /// When it lapses unless its browser subscribes it again first.
+    pub(crate) fn lapses(&self) -> Timestamp {
+        self.subscribed
+            .until
+            .map_or_else(|| later(self.written.timestamp()), At::timestamp)
+    }
+
+    /// Whether its browser should subscribe it again now: less than half of its time is left.
+    pub(crate) fn renew(&self, now: Timestamp) -> bool {
+        self.lapses().duration_since(now) < KEPT_FOR / 2
+    }
 }
 
 /// The stream that says whose browser `endpoint` is, named by its hash, never the endpoint.
 fn claim_of(endpoint: &str) -> Result<ThreadId, ApiError> {
     let digest: [u8; 32] = Sha256::digest(endpoint.as_bytes()).into();
     let random = digest.first_chunk::<10>().copied().unwrap_or_default();
-    Ok(ThreadId::new(jiff::Timestamp::UNIX_EPOCH, random)?)
+    Ok(ThreadId::new(Timestamp::UNIX_EPOCH, random)?)
 }
 
 /// The browsers `kept` holds, one for each endpoint, the latest subscribed; and those it holds
@@ -83,8 +112,16 @@ where
                 };
                 match event.body {
                     Body::PushSubscribed(subscribed) => {
-                        let added = event.header.at;
-                        kept.insert(subscribed.device, Device { added, subscribed });
+                        let written = event.header.at;
+                        // Subscribed again, as renewing it does: added when it first was.
+                        let added = kept.get(&subscribed.device).map_or(written, |it| it.added);
+                        let device = subscribed.device;
+                        let kept_now = Device {
+                            added,
+                            subscribed,
+                            written,
+                        };
+                        kept.insert(device, kept_now);
                     }
                     Body::PushUnsubscribed(PushUnsubscribed { device, .. }) => {
                         forgotten.extend(kept.remove(&device).map(|_| device));
@@ -102,6 +139,7 @@ where
             self.forget_device(personal, device, false).await?;
         }
         let mut theirs = Vec::with_capacity(kept.len());
+        let now = self.inner.harness.clock().now();
         for device in kept {
             let claimant = self.claimant(&device.subscribed.endpoint).await?;
             let moved = claimant.is_some_and(|claimant| claimant.person != person);
@@ -109,8 +147,10 @@ where
                 Some(session) => self.session_ended(person, session).await?,
                 None => false,
             };
-            if moved || ended {
-                // Subscribed since by someone else, or signed out of where it was subscribed.
+            let lapsed = device.lapses() <= now;
+            if moved || ended || lapsed {
+                // Subscribed since by someone else, signed out of where it was subscribed, or
+                // not subscribed again in time.
                 self.forget_device(personal, device.subscribed.device, false)
                     .await?;
             } else {
@@ -208,9 +248,10 @@ mod tests {
     use glave_event::Secret;
 
     fn kept(n: u8, endpoint: &str, at: i64) -> Device {
-        let device = DeviceId::new(jiff::Timestamp::UNIX_EPOCH, [n; 10]).unwrap();
+        let device = DeviceId::new(Timestamp::UNIX_EPOCH, [n; 10]).unwrap();
+        let added = At::from(Timestamp::from_second(at).unwrap());
         Device {
-            added: At::from(jiff::Timestamp::from_second(at).unwrap()),
+            added,
             subscribed: PushSubscribed {
                 device,
                 endpoint: endpoint.to_owned(),
@@ -218,8 +259,33 @@ mod tests {
                 auth: Secret::new("auth"),
                 name: "Firefox".into(),
                 session: None,
+                until: None,
             },
+            written: added,
         }
+    }
+
+    /// One subscribed before subscriptions lapsed lapses as long after it was written as one
+    /// subscribed now; one subscribed now, when it says; and either is subscribed again once
+    /// less than half its time is left.
+    #[test]
+    fn a_subscription_lapses_when_it_says_or_as_long_after_it_was_written() {
+        let old = kept(1, "a", 1_000);
+        let written = old.written.timestamp();
+        assert_eq!(old.lapses(), later(written));
+        let mut renewed = kept(2, "b", 1_000);
+        let until = written
+            .saturating_add(SignedDuration::from_hours(1))
+            .unwrap();
+        renewed.subscribed.until = Some(At::from(until));
+        assert_eq!(renewed.lapses(), until);
+        let half = written.saturating_add(KEPT_FOR / 2).unwrap();
+        let before = half.saturating_sub(SignedDuration::from_secs(1)).unwrap();
+        let after = half.saturating_add(SignedDuration::from_secs(1)).unwrap();
+        assert!(!old.renew(before), "more than half left");
+        assert!(!old.renew(half), "half left");
+        assert!(old.renew(after), "less than half left");
+        assert!(renewed.renew(written), "an hour left");
     }
 
     #[test]

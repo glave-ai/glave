@@ -120,6 +120,19 @@ describe('PushService', () => {
     expect(push.problem()).toBeNull();
   });
 
+  it('subscribes this browser again, quietly, when the server says it is time to', async () => {
+    localStorage.setItem(ON_HERE, 'true');
+    const browser = new FakePushBrowser('granted');
+    browser.holding(keyBytes(KEY));
+    const due = { ...device('d1', 'A browser', true), renew: true };
+    const fake = new FakeSession()
+      .answer('push/get', { push: offered([due]) })
+      .answer('push/subscribe', { push: offered([device('d1', 'A browser', true)]) });
+    await service(fake, browser);
+    await settle();
+    expect(fake.paramsOf('push/subscribe')).toHaveLength(1);
+  });
+
   it('gives the server nothing again where the person turned them off, or the server still has it', async () => {
     for (const [on, kept] of [
       ['false', []],

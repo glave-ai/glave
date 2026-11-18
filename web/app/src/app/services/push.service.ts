@@ -225,8 +225,9 @@ export class PushService {
 
   /**
    * Gives the server this browser again, quietly, when the person turned notifications on here,
-   * the browser still lets them, and the server no longer has it: its subscription renewed by
-   * the browser, or forgotten once its push service failed.
+   * the browser still lets them, and the server no longer has it (its subscription renewed by
+   * the browser, forgotten once its push service failed, or lapsed), or says it is time to
+   * subscribe again, which keeps it on the server.
    */
   private async resync(): Promise<void> {
     const browser = this.browser;
@@ -238,7 +239,8 @@ export class PushService {
       const endpoint = (await this.subscription())?.endpoint ?? null;
       const asked = await this.session.call('push/get', endpoint === null ? {} : { endpoint });
       this.keep(asked.push);
-      if (asked.push.kind === 'offered' && marked(asked.push) === undefined) {
+      const here = marked(asked.push);
+      if (asked.push.kind === 'offered' && (here === undefined || here.renew === true)) {
         this.keep((await this.subscribeHere(browser)).push);
       }
     } catch {

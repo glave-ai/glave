@@ -135,6 +135,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (credits::HELD, 1),
     (push::KEY_MADE, 1),
     (push::SUBSCRIBED, 1),
+    (push::SUBSCRIBED, 2),
     (push::UNSUBSCRIBED, 1),
     (push::CLAIMED, 1),
     (library::KEPT, 1),
