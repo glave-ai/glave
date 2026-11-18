@@ -81,7 +81,7 @@ impl WebIdentity {
             .map_err(|error| {
                 AuthError::unreachable(format!(
                     "could not reach AWS STS at {}: {}",
-                    self.sts,
+                    glave_ports::host::shown(&self.sts),
                     error.without_url()
                 ))
             })?;
@@ -120,9 +120,9 @@ fn checked(url: &str) -> Result<String, AuthError> {
     if safe_to_send(url, &[]) {
         Ok(url.to_owned())
     } else {
-        Err(AuthError::refused(format!(
-            "AWS_ENDPOINT_URL_STS = {url:?} is not an https:// address"
-        )))
+        Err(AuthError::refused(
+            "AWS_ENDPOINT_URL_STS is not an https:// address with no name or password in it",
+        ))
     }
 }
 

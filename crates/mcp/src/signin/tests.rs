@@ -1,6 +1,28 @@
-use glave_ports::testing::FakeHttp;
+use glave_ports::testing::{FakeHttp, any_secret};
 
 use super::*;
+
+#[test]
+fn a_sign_in_error_never_says_what_its_addresses_carry() {
+    let secret = any_secret();
+    let url = format!("https://mcp.example.com/s/{secret}/mcp?key={secret}");
+    let errors = [
+        SignInError::NotOffered { url: url.clone() },
+        SignInError::Unreachable {
+            url: url.clone(),
+            message: format!("error sending request for url ({url})"),
+        },
+        SignInError::Refused {
+            url: url.clone(),
+            message: format!("at https://auth.example.com/token?code={secret}"),
+        },
+    ];
+    for error in errors {
+        let said = format!("{error} {error:?}");
+        assert!(!said.contains(&secret), "an address's secret said");
+        assert!(said.contains("https://mcp.example.com/…"), "{said}");
+    }
+}
 
 const ON_THE_INTERNET: &str = "https://mcp.example.com/mcp";
 

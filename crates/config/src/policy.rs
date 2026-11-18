@@ -8,7 +8,6 @@ mod explain;
 mod files;
 mod memory;
 mod provider;
-mod redact;
 mod rules;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -33,7 +32,6 @@ pub use files::{
 };
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use provider::{ApiChoice, BedrockEndpointChoice, ProviderFile};
-pub use redact::{has_password, redacted};
 pub use rules::Constraints;
 pub use web::WebFile;
 pub use workers::{ComputersFile, WorkersFile};
