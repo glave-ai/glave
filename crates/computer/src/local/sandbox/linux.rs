@@ -21,7 +21,9 @@ use std::sync::{Arc, Mutex};
 use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel};
 
 use super::run_temp::RunTemp;
-use super::{Launch, Reached, SANDBOX_HELPER_ARG, Temps, failed, resolved};
+use super::{
+    Launch, Reached, Refuses, SANDBOX_HELPER_ARG, SANDBOX_HELPER_FAILED, Temps, failed, resolved,
+};
 use mounts::{Layout, StandIns};
 use temp::RunFolder;
 
@@ -133,6 +135,7 @@ impl Enforcer {
                     own_session: false,
                     temp,
                     _held: Some(held),
+                    refuses: bubblewrap::REFUSES,
                 })
             }
             How::Landlock { helper } => {
@@ -148,6 +151,10 @@ impl Enforcer {
                     own_session: true,
                     temp,
                     _held: None,
+                    refuses: Refuses {
+                        saying: SANDBOX_HELPER_FAILED,
+                        passing: false,
+                    },
                 })
             }
         }

@@ -6650,7 +6650,7 @@
       "params": {
         "properties": {
           "email": {
-            "description": "Whom to email its link to, where the server sends email; else it is the caller's to\nshare. The address is not kept.",
+            "description": "Whom to email its link to, where the server sends email: sent there alone, and its\ncode not answered. Without it, the link is the caller's to share.",
             "type": [
               "string",
               "null"
@@ -6666,18 +6666,25 @@
         "type": "object"
       },
       "result": {
-        "description": "An invite just made, and its code, sent this once.",
+        "description": "An invite just made, and its code, sent this once when it is the caller's to share.",
         "properties": {
           "code": {
-            "$ref": "#/$defs/Secret"
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Secret"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None when its link was emailed to its address alone (`invite.email`): sent there,\nnever back to whoever made it, so whoever opens it holds that mailbox."
           },
           "invite": {
             "$ref": "#/$defs/InviteInfo"
           }
         },
         "required": [
-          "invite",
-          "code"
+          "invite"
         ],
         "type": "object"
       },
