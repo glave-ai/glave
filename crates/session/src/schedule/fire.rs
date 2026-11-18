@@ -27,7 +27,7 @@ use glave_ports::{BlobStore, Caller, EventLog, Leased, Located, ModelProvider, O
 use jiff::{SignedDuration, Timestamp};
 use tokio::task::JoinSet;
 
-use super::info::{due, next_fire};
+use super::info::{due, idle_since, live, next_fire};
 use crate::choice::Choice;
 use crate::cron::{Cron, SHORTEST_GAP};
 use crate::protocol::{ApiError, code};
@@ -84,7 +84,8 @@ where
         let past = || until.is_some_and(|until| clock.now() >= until);
         let mine = self.task_projects_here().await?;
         // Where schedules are on the store, read on from where this server last read it, each
-        // project once, by its organization.
+        // project once, by its organization; any an unplacing may have left out first.
+        self.place_again().await;
         let placed = self.placed().await;
         let (mut by_org, mut seen) = (BTreeMap::<OrgId, Vec<Located>>::new(), HashSet::new());
         for at in mine.iter().chain(&placed) {
@@ -171,17 +172,19 @@ where
     }
 
     /// Recovers the runs `project`'s ledger, just read, has open that a stopped server left,
-    /// then starts its runs due; one whose ledger has held no schedule for a day is unplaced.
+    /// then starts its runs due; one whose ledger has held nothing to run for a day is
+    /// unplaced.
     async fn recover_and_fire(&self, project: Located, people: &PeopleOnce) -> Vec<ThreadId> {
         if let Err(error) = self.recover_in(project, people).await {
             let at = project.project;
             tracing::warn!(%error, project = %at, "could not recover the project's runs left open");
         }
+        let now = self.inner.harness.clock().now();
         let idle = (self.ledgers().get(&project))
-            .filter(|ledger| ledger.schedules.is_empty())
-            .map(|ledger| ledger.emptied);
-        if let Some(emptied) = idle {
-            if let Err(error) = self.unplace_if_idle(project, emptied).await {
+            .filter(|ledger| !live(ledger, now))
+            .map(idle_since);
+        if let Some(since) = idle {
+            if let Err(error) = self.unplace_if_idle(project, since).await {
                 let at = project.project;
                 tracing::warn!(%error, project = %at, "could not unplace the project");
             }
