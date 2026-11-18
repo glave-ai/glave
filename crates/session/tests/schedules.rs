@@ -297,8 +297,7 @@ fn schedules_made_at_once_never_keep_more_than_policy_allows() {
         let (server, _, _, _dir) = first
             .build_in_repository("schedule-racing", faulty.clone())
             .await;
-        // The first is held as it is kept, while the second is made: each found room for one
-        // before its chat was made, but the person's schedules are kept one at a time.
+        // The first is held as it is kept, while the second is made: each found room for one.
         faulty.hold("schedule.created");
         let one = create(&server, cron("0 9 * * *"), 10);
         let two = async {
@@ -308,11 +307,12 @@ fn schedules_made_at_once_never_keep_more_than_policy_allows() {
             made
         };
         let (one, two) = tokio::join!(one, two);
-        assert!(one.is_ok());
-        assert_eq!(two.unwrap_err(), code::INTERNAL, "told to try again");
-        // Tried again, it finds no room.
-        let again = create(&server, cron("0 10 * * *"), 10).await;
-        assert_eq!(again.unwrap_err(), code::LIMIT);
+        assert_eq!(
+            one.unwrap_err(),
+            code::LIMIT,
+            "counted once kept: one too many, it goes"
+        );
+        assert!(two.is_ok());
         assert_eq!(list(&server).await.len(), 1);
     });
 }

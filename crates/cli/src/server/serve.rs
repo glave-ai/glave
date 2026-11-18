@@ -127,9 +127,6 @@ pub(crate) async fn run(
     // Only the lock's holder removes a socket a server before it left.
     let listener = crate::socket::listen(&path).await?;
     let said = args.said();
-    // What a glave before this one left running; what its leases still held is looked at
-    // again apart from the loop below, so no connection, nor the scheduler, waits on it.
-    let left_open = recover(server, said).await;
     said.info(&format!("serving you on {}", path.display()));
     let mut terminate = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
@@ -142,8 +139,10 @@ pub(crate) async fn run(
     let mut notifications = Box::pin(server.push_notifications());
     let mut daily = Box::pin(daily.run());
     let mut certificates = Box::pin(crate::serving::keep_https(reach, said));
-    let mut held = Box::pin(look_again(server, said, left_open));
-    let mut looked = left_open == 0;
+    // What a glave before this one left running, recorded apart from the loop below, so
+    // serving starts at once, and looked at again while another server's leases held any.
+    let mut held = Box::pin(look_again(server, said));
+    let mut looked = false;
     let mut clients = JoinSet::new();
     // Only a server started in the background writes to the log.
     let log = args.own_session.then(log_path).transpose()?;
@@ -189,9 +188,10 @@ pub(crate) async fn run(
     outcome
 }
 
-/// Looks again, every [`TICK`], at what another server's leases held of what a glave before
-/// this one left running, `left_open` of them at first, until none is held.
-async fn look_again(server: &Glave, said: Said, mut left_open: usize) {
+/// Records what a glave before this one left running, then looks again every [`TICK`] at what
+/// another server's leases held of it, until none is held.
+async fn look_again(server: &Glave, said: Said) {
+    let mut left_open = recover(server, said).await;
     let mut every = tokio::time::interval_at(Instant::now() + TICK, TICK);
     while left_open > 0 {
         every.tick().await;
