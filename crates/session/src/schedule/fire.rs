@@ -4,8 +4,8 @@
 //! its budget, as whoever made it, that waits for them where it needs them, as a chat does.
 //! One server on the store fires them, the holder of its scheduler lease; each run is claimed
 //! by its own `task.started`, so even two servers that both believe they hold it start it once
-//! (`tasks/run.rs`). Every organization known to list projects, then a page of the store's
-//! others: organization by organization, each tick starting one further on, a few projects'
+//! (`tasks/run.rs`). Where schedules are on the store is read on each tick (`placed.rs`):
+//! organization by organization, each tick starting one further on, a few projects'
 //! ledgers are read at once and each one's due runs started right after, for at most a share of
 //! the tick each organization, the first read whatever the time, the next tick going on where
 //! it stopped. A run due
@@ -27,7 +27,6 @@ use jiff::{SignedDuration, Timestamp};
 use tokio::task::JoinSet;
 
 use super::info::{due, next_fire};
-use super::placed::ORGANIZATIONS;
 use crate::choice::Choice;
 use crate::cron::{Cron, SHORTEST_GAP};
 use crate::protocol::{ApiError, code};
@@ -83,56 +82,29 @@ where
         let until = clock.now().checked_add(TICK).ok();
         let past = || until.is_some_and(|until| clock.now() >= until);
         let mine = self.task_projects_here().await?;
-        // Every organization this server knows has schedules, each tick starting one further on.
-        let mut known: BTreeSet<OrgId> = mine.iter().map(|at| at.org).collect();
-        known.extend(self.known_organizations());
-        let count = known.len();
+        // Where schedules are on the store, read on from where this server last read it.
+        let placed = self.placed().await;
+        let organizations = self.tick_organizations(&placed, &mine);
+        let count = organizations.len();
         let (mut started, mut reached) = (Vec::new(), 0usize);
-        for org in in_turn(known.clone(), self.next_turn()) {
+        for org in in_turn(organizations, self.next_turn()) {
             if past() {
                 let left = count.saturating_sub(reached);
                 tracing::warn!(left, "the tick took its time; the rest go on at the next");
                 break;
             }
-            started.extend(self.fire_org(org, &mine, until).await);
+            let theirs = mine.iter().chain(&placed).filter(|at| at.org == org);
+            let mut projects: Vec<Located> = Vec::new();
+            for at in theirs {
+                if !projects.contains(at) {
+                    projects.push(*at);
+                }
+            }
+            started.extend(self.fire_in(org, projects, until).await);
             reached = reached.saturating_add(1);
         }
         self.turned(reached, count);
-        // Then a page of the store's other organizations, from where the last page stopped, so
-        // a schedule made on another server is found.
-        let page = self.organizations_page().await;
-        let goes_round = page.len() < ORGANIZATIONS;
-        for (n, org) in page.iter().enumerate() {
-            if past() {
-                break;
-            }
-            if !known.contains(org) {
-                started.extend(self.fire_org(*org, &mine, until).await);
-            }
-            let last = goes_round && n.saturating_add(1) == page.len();
-            self.listed_through((!last).then_some(*org));
-        }
-        if page.is_empty() {
-            self.listed_through(None);
-        }
         Ok(started)
-    }
-
-    /// Starts the runs due in `org`'s projects: those of `mine` there, and every one its index
-    /// lists, not past `until`.
-    async fn fire_org(
-        &self,
-        org: OrgId,
-        mine: &[Located],
-        until: Option<Timestamp>,
-    ) -> Vec<ThreadId> {
-        let mut projects: Vec<Located> = mine.iter().filter(|at| at.org == org).copied().collect();
-        for placed in self.placed_in(org).await {
-            if !projects.contains(&placed) {
-                projects.push(placed);
-            }
-        }
-        self.fire_in(org, projects, until).await
     }
 
     /// Starts the runs due in `projects`, all `org`'s: from where the tick before stopped, a

@@ -147,15 +147,6 @@ async fn insert<C: GenericClient>(
         )
         .await
         .map_err(database(ProjectError::Storage))?;
-    // Its organization is one the store holds from now on, as one with a key is: what work
-    // that runs once per organization lists (`Projects::organizations`).
-    client
-        .execute(
-            "INSERT INTO glave_orgs (org) VALUES ($1) ON CONFLICT DO NOTHING",
-            &[&org],
-        )
-        .await
-        .map_err(database(ProjectError::Storage))?;
     Ok((inserted != 0).then(|| project.clone()))
 }
 
@@ -406,17 +397,6 @@ impl Projects for PostgresProjects {
                 }
             }
             Ok(None)
-        })
-    }
-
-    fn organizations(
-        &self,
-        after: Option<OrgId>,
-        limit: usize,
-    ) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>> {
-        // Every organization a project was kept in is one the store holds (`insert`).
-        Box::pin(async move {
-            (crate::store::organizations(&self.pool, after, limit).await).map_err(unavailable)
         })
     }
 }

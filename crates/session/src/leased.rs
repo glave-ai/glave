@@ -92,7 +92,7 @@ where
     }
 
     /// Takes the lease `on`, in `org`, for this server: `None` while another server holds it.
-    async fn take_on(&self, org: OrgId, on: Leased) -> Result<Option<Lease>, ApiError> {
+    pub(crate) async fn take_on(&self, org: OrgId, on: Leased) -> Result<Option<Lease>, ApiError> {
         let leases = &self.inner.leases;
         leases
             .acquire(org, on, self.holder()?, LEASE)
