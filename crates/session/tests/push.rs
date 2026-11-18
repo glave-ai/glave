@@ -33,6 +33,7 @@ use web_push_native::{Auth, decrypt};
 
 use crate::support::*;
 
+mod removed;
 mod restarts;
 mod sessions;
 
