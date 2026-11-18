@@ -128,7 +128,21 @@ fn a_server_that_is_not_there_says_why() {
         let server = launch(&at("http://127.0.0.1:9/mcp", &[]));
         let why = start_error(server.started().await);
         assert!(
-            why.starts_with("could not reach http://127.0.0.1:9/mcp: "),
+            why.starts_with("could not reach http://127.0.0.1:9/…: "),
+            "{why}"
+        );
+    });
+}
+
+#[test]
+fn a_server_not_there_never_says_what_its_address_carries() {
+    block_on!(async {
+        let secret = any_secret();
+        let url = format!("http://me:{secret}@127.0.0.1:9/mcp?token={secret}");
+        let why = start_error(launch(&at(&url, &[])).started().await);
+        assert!(!why.contains(&secret), "the address said");
+        assert!(
+            why.starts_with("could not reach http://127.0.0.1:9/…?…: "),
             "{why}"
         );
     });

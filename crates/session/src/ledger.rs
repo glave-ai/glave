@@ -1,14 +1,14 @@
 //! Each project's task ledger: glave's own stream in the event log, under a reserved thread id,
 //! holding the project's tasks (`task.started`, `task.ended`) and schedules (`schedule.created`,
-//! `schedule.deleted`). It is never a conversation: lists and reads of threads leave it out.
+//! `.skipped`, `.deleted`). It is never a conversation: lists and reads of threads leave it out.
 //! Any glave process of the deployment may append to it; an append that meets another's
 //! `(thread, seq)` conflict reads what was written and tries again after it.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use glave_event::{
-    At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, TaskEnded,
-    TaskStarted, ThreadId, encode,
+    At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, Skipped,
+    TaskEnded, TaskStarted, ThreadId, encode,
 };
 use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope};
@@ -26,8 +26,24 @@ const LEDGERS: usize = 1_024;
 pub(crate) struct Scheduled {
     pub(crate) created: ScheduleCreated,
     pub(crate) at: At,
-    /// When the latest run started by it was due.
+    /// When the latest run started by it, or skipped, was due.
     pub(crate) last: Option<At>,
+    /// Why that latest run did not start, when it was skipped.
+    pub(crate) skipped: Option<Skipped>,
+    /// When the latest run this server held back was due: one skipped again while the run
+    /// before still goes, which is recorded once, or one whose skip could not be recorded. In
+    /// memory only, so a server started later tries it once more.
+    pub(crate) held: Option<At>,
+}
+
+impl Scheduled {
+    /// Takes in a run that was due at `due`: started, or skipped for `skipped`.
+    fn ran(&mut self, due: At, skipped: Option<Skipped>) {
+        if self.last.is_none_or(|last| due >= last) {
+            self.last = Some(due);
+            self.skipped = skipped;
+        }
+    }
 }
 
 /// A task as the ledger has it: when it started, and how it ended once it has.
@@ -66,17 +82,24 @@ impl Ledger {
                     created,
                     at,
                     last: None,
+                    skipped: None,
+                    held: None,
                 };
                 self.schedules.insert(scheduled.created.schedule, scheduled);
             }
             Body::ScheduleDeleted(deleted) => {
                 self.schedules.remove(&deleted.schedule);
             }
+            Body::ScheduleSkipped(skipped) => {
+                if let Some(scheduled) = self.schedules.get_mut(&skipped.schedule) {
+                    scheduled.ran(skipped.due, Some(skipped.why));
+                }
+            }
             Body::TaskStarted(started) => {
                 if let Some(fired) = started.schedule
                     && let Some(scheduled) = self.schedules.get_mut(&fired.schedule)
                 {
-                    scheduled.last = scheduled.last.max(Some(fired.due));
+                    scheduled.ran(fired.due, None);
                 }
                 let recorded = Recorded {
                     started,

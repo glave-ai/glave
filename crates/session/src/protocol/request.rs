@@ -44,6 +44,9 @@ methods! {
         #[serde(default)]
         language: Option<String>,
     } -> [Language],
+    /// Gives the caller's time zone, by its IANA name (`Europe/Lisbon`), as their browser says
+    /// it: their schedules repeat on its clocks. Refused for a zone glave doesn't know.
+    "zone/set" => ZoneSet { zone: String } -> [Done],
     /// How the caller's clients group their threads: by project until they choose.
     "grouping/get" => GroupingGet {} -> [Grouping],
     /// Chooses how the caller's clients group their threads: by project or by status. The
@@ -521,13 +524,19 @@ methods! {
     "terminal/resize" => TerminalResize { thread: ThreadId, terminal: TerminalId, size: TerminalSize } -> [Done],
     /// Closes one of a thread's terminals, ending its shell.
     "terminal/close" => TerminalClose { thread: ThreadId, terminal: TerminalId } -> [Done],
-    /// Runs a prompt as a task at set times, each run in a new thread
-    /// working on a copy of its own.
+    /// Runs a prompt at set times, each run a new turn in the schedule's own chat, made now.
     "schedule/create" => ScheduleCreate {
-        /// The project its runs are in, by default as `thread/start` picks one.
+        /// The project its chat is in, by default as `thread/start` picks one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         project: Option<ProjectId>,
+        /// What it is called, and so its chat; by default, its prompt's first line.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
         when: When,
+        /// The time zone a cron expression is read in, by its IANA name (`Europe/Lisbon`); by
+        /// default the caller's (`zone/set`), else UTC.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zone: Option<String>,
         prompt: String,
         /// Tokens each run may use. Required: no schedule runs unbounded.
         budget: u64,

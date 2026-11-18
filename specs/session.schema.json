@@ -163,15 +163,19 @@
       "description": "Whether this server keeps its computer from sleeping on its own while a turn, task or\nschedule runs (`specs/one-server.md`, owner decision 10).",
       "oneOf": [
         {
-          "description": "Never: a server, which does not sleep. There is nothing to choose.",
+          "description": "Not the caller's to choose, and `reason`, why: a server, which does not sleep, or only\nthe person on this computer chooses.",
           "properties": {
             "kind": {
               "const": "never",
               "type": "string"
+            },
+            "reason": {
+              "type": "string"
             }
           },
           "required": [
-            "kind"
+            "kind",
+            "reason"
           ],
           "type": "object"
         },
@@ -1775,6 +1779,38 @@
         }
       ]
     },
+    "LastRun": {
+      "description": "A schedule's latest run: when it was due, what came of it, and that in the server's words.",
+      "properties": {
+        "due": {
+          "$ref": "#/$defs/At"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Outcome"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How it ended, once it has."
+        },
+        "said": {
+          "description": "What came of it, in a few words: \"Done\", \"Skipped: the run before was still going\".",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus"
+        }
+      },
+      "required": [
+        "due",
+        "status",
+        "said"
+      ],
+      "type": "object"
+    },
     "LibraryChat": {
       "description": "The chat a Library item was made in.",
       "properties": {
@@ -3156,6 +3192,36 @@
       ],
       "type": "object"
     },
+    "RunStatus": {
+      "description": "What came of a schedule's run.",
+      "oneOf": [
+        {
+          "const": "running",
+          "description": "Running now, or waiting for the person.",
+          "type": "string"
+        },
+        {
+          "const": "ended",
+          "description": "Ended, as `outcome` says.",
+          "type": "string"
+        },
+        {
+          "const": "skipped",
+          "description": "Not started: the run before was still going in its chat, or someone's turn was.",
+          "type": "string"
+        },
+        {
+          "const": "refused",
+          "description": "Not started: it was refused, as `said` says.",
+          "type": "string"
+        },
+        {
+          "const": "started",
+          "description": "Started; how it ended is no longer kept here.",
+          "type": "string"
+        }
+      ]
+    },
     "ScheduleId": {
       "description": "Identifies one schedule: a prompt that runs as a task at set times.",
       "format": "uuid",
@@ -3172,16 +3238,31 @@
         "created_at": {
           "$ref": "#/$defs/At"
         },
-        "last": {
+        "from": {
           "anyOf": [
             {
-              "$ref": "#/$defs/At"
+              "$ref": "#/$defs/ThreadId"
             },
             {
               "type": "null"
             }
           ],
-          "description": "When it last ran: the time that run was due."
+          "description": "The chat it was set up from, if it was."
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LastRun"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its latest run, once one was due."
+        },
+        "name": {
+          "description": "What it is called, as its chat is.",
+          "type": "string"
         },
         "next": {
           "anyOf": [
@@ -3192,21 +3273,55 @@
               "type": "null"
             }
           ],
-          "description": "When it runs next; absent once a one-off has run."
+          "description": "When it runs next; absent once a one-off has run, and when it runs no more."
+        },
+        "note": {
+          "description": "What the person should know of it beyond that, in the server's words, such as that it\nruns no more.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "$ref": "#/$defs/ProjectId",
+          "description": "The project its chat is in."
         },
         "prompt": {
+          "type": "string"
+        },
+        "repeats": {
+          "description": "When it repeats, in the server's words: \"Every weekday at 8:00 am\".",
           "type": "string"
         },
         "schedule": {
           "$ref": "#/$defs/ScheduleId"
         },
+        "thread": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ThreadId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its own chat, which each run adds a turn to; absent for one made before schedules had\nchats, which runs no more (`note` says so)."
+        },
         "when": {
           "$ref": "#/$defs/When"
+        },
+        "zone": {
+          "description": "The time zone `when` is read in, by its IANA name.",
+          "type": "string"
         }
       },
       "required": [
         "schedule",
+        "name",
+        "project",
         "when",
+        "zone",
+        "repeats",
         "prompt",
         "budget",
         "created_at"
@@ -4811,7 +4926,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Whenever this five-field cron expression matches, in UTC.",
+          "description": "Whenever this five-field cron expression matches, on the clocks of the schedule's time\nzone.",
           "properties": {
             "cron": {
               "type": "string"
@@ -7862,6 +7977,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "name": {
+            "description": "What it is called, and so its chat; by default, its prompt's first line.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "project": {
             "anyOf": [
               {
@@ -7871,13 +7993,20 @@
                 "type": "null"
               }
             ],
-            "description": "The project its runs are in, by default as `thread/start` picks one."
+            "description": "The project its chat is in, by default as `thread/start` picks one."
           },
           "prompt": {
             "type": "string"
           },
           "when": {
             "$ref": "#/$defs/When"
+          },
+          "zone": {
+            "description": "The time zone a cron expression is read in, by its IANA name (`Europe/Lisbon`); by\ndefault the caller's (`zone/set`), else UTC.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -9326,6 +9455,23 @@
         ]
       },
       "streams": true
+    },
+    "zone/set": {
+      "params": {
+        "properties": {
+          "zone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "zone"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
     }
   },
   "notifications": {

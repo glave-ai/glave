@@ -52,7 +52,7 @@ impl Data {
                 sqlite::Store::open(database, keys, bucket).await?,
             )),
             Some(url) => {
-                let shown = glave_config::policy::redacted(url);
+                let shown = glave_ports::host::shown(url);
                 let store = postgres::Store::connect(url, keys, bucket)
                     .await
                     .with_context(|| format!("could not open the data store at {shown}"))?;
@@ -203,7 +203,7 @@ impl Data {
 /// the environment (`specs/storage.md`, "Which stores"). Only the file is named, never the URL.
 fn password_in_file(store: &Chosen<String>) -> Option<&Path> {
     match &store.from {
-        Source::File(file) if glave_config::policy::has_password(&store.value) => Some(file),
+        Source::File(file) if glave_ports::host::has_password(&store.value) => Some(file),
         _ => None,
     }
 }
