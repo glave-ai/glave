@@ -1,4 +1,5 @@
-//! `task.started`, `task.ended`, `schedule.created`, `.skipped` and `.deleted`: a project's tasks
+//! `task.started`, `task.ended`, `schedule.created`, `.paused`, `.skipped` and `.deleted`: a
+//! project's tasks
 //! (threads that run with no one attached) and the schedules that start them. They are kept in
 //! the project's task ledger, glave's own stream under a reserved id (`specs/events.md`), never
 //! in a conversation.
@@ -19,6 +20,7 @@ pub(crate) const ENDED: &str = "task.ended";
 pub(crate) const CREATED: &str = "schedule.created";
 pub(crate) const DELETED: &str = "schedule.deleted";
 pub(crate) const SKIPPED: &str = "schedule.skipped";
+pub(crate) const PAUSED: &str = "schedule.paused";
 
 /// A thread began running as a task, with no one attached.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +145,19 @@ impl From<ScheduleCreatedBefore> for ScheduleCreated {
     }
 }
 
+/// A schedule was paused, so it starts no runs, or resumed, its runs counting again from then,
+/// none for the time it was paused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SchedulePaused {
+    pub schedule: ScheduleId,
+    /// Paused, or resumed.
+    pub paused: bool,
+    /// Who did. Absent: the project's person.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<Principal>,
+}
+
 /// A schedule's run that was due did not start: its run before was still going in its chat, or
 /// someone's turn was, or the run was refused. The next starts at its own time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -229,6 +244,11 @@ impl Payload for ScheduleCreated {
     const VERSION: u32 = 3;
 }
 
+impl Payload for SchedulePaused {
+    const TYPE: &'static str = PAUSED;
+    const VERSION: u32 = 1;
+}
+
 impl Payload for ScheduleSkipped {
     const TYPE: &'static str = SKIPPED;
     const VERSION: u32 = 2;
@@ -260,6 +280,13 @@ pub(crate) fn decode_created(
         3 => Some(parse(data)),
         _ => None,
     }
+}
+
+pub(crate) fn decode_paused(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<SchedulePaused>> {
+    (version == 1).then(|| parse(data))
 }
 
 pub(crate) fn decode_skipped(

@@ -60,7 +60,7 @@ pub(crate) async fn schedule<L: EventLog + 'static>(
     }
 }
 
-async fn listed<L: EventLog + 'static>(server: &Tested<L>) -> Vec<ScheduleInfo> {
+pub(crate) async fn listed<L: EventLog + 'static>(server: &Tested<L>) -> Vec<ScheduleInfo> {
     match server.request(Request::ScheduleList {}).await.unwrap() {
         Reply::Schedules { schedules } => schedules,
         other => panic!("schedules, not {other:?}"),
@@ -202,18 +202,19 @@ fn now_of(now: &ManualClock) -> Timestamp {
 #[test]
 fn a_run_refused_for_another_reason_is_recorded_with_why() {
     block_on!(async {
-        let (server, now, _, _dir) = asking("runs-refused", Vec::new(), Shared::default()).await;
-        let made = schedule(&server, "Daily check", "0 11 * * *", 10_000).await;
-        let chat = made.thread.unwrap();
-        server
-            .request(Request::ThreadArchive { thread: chat })
-            .await
-            .unwrap();
+        let (server, now, repo, dir) = asking("runs-refused", Vec::new(), Shared::default()).await;
+        schedule(&server, "Daily check", "0 11 * * *", 10_000).await;
+        // The project's folder, and the chat's copy of it, are gone.
+        std::fs::remove_dir_all(&repo).unwrap();
+        std::fs::remove_dir_all(dir.join("worktrees")).unwrap();
         set(&now, "2026-10-10T11:00:00Z");
         assert_eq!(server.tick().await.unwrap(), Vec::new());
         let last = listed(&server).await[0].last.clone().unwrap();
         assert_eq!(last.status, RunStatus::Refused);
-        assert_eq!(last.said, "Couldn't start: its chat is archived");
+        assert_eq!(
+            last.said,
+            "Couldn't start: its project's folder isn't there anymore"
+        );
         assert_eq!(
             server.tick().await.unwrap(),
             Vec::new(),
@@ -225,7 +226,7 @@ fn a_run_refused_for_another_reason_is_recorded_with_why() {
 #[test]
 fn a_skip_for_another_reason_than_the_last_is_recorded_and_one_for_the_same_is_not() {
     block_on!(async {
-        let (server, now, _, _dir) =
+        let (server, now, repo, dir) =
             asking("runs-reasons", writes_after_asking(), Shared::default()).await;
         let made = schedule(&server, "Hourly check", "0 * * * *", 10_000).await;
         let chat = made.thread.unwrap();
@@ -236,11 +237,12 @@ fn a_skip_for_another_reason_than_the_last_is_recorded_and_one_for_the_same_is_n
         server.tick().await.unwrap();
         let going = listed(&server).await[0].last.clone().unwrap();
         assert_eq!(going.status, RunStatus::Skipped);
-        // Archived, its waiting run stops; the next is refused for that, another reason.
-        server
-            .request(Request::ThreadArchive { thread: chat })
-            .await
-            .unwrap();
+        // Stopped, and its project's folder gone, the next is refused for that, another reason.
+        let stopped = server.request(Request::TasksStop { thread: chat }).await;
+        assert!(stopped.is_ok(), "{stopped:?}");
+        settle(&server).await;
+        std::fs::remove_dir_all(&repo).unwrap();
+        std::fs::remove_dir_all(dir.join("worktrees")).unwrap();
         set(&now, "2026-10-10T13:00:00Z");
         server.tick().await.unwrap();
         let refused = listed(&server).await[0].last.clone().unwrap();

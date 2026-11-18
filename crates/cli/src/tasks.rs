@@ -44,6 +44,8 @@ Usage:
   glave schedule add --at <time> <prompt> [...]
                               once, at an RFC 3339 time such as 2026-10-11T09:00:00Z
   glave schedule list         the schedules, with when each runs next
+  glave schedule pause <id>   start no runs until it is resumed
+  glave schedule resume <id>  start its runs again, from now
   glave schedule rm <id>      remove a schedule; no more runs start, its chat stays
 
 Every run has a token budget: --budget, or 1000000. A schedule has a chat of its own in
@@ -76,12 +78,15 @@ pub(crate) fn schedule_main(words: &[String]) -> ExitCode {
             Some((add, rest)) if add == "add" => Asked::Add(schedule_request(rest, None)?),
             Some((list, [])) if list == "list" => Asked::List,
             Some((rm, [id])) if rm == "rm" => Asked::Remove(schedule_id(id)?),
+            Some((pause, [id])) if pause == "pause" => Asked::Pause(schedule_id(id)?, true),
+            Some((resume, [id])) if resume == "resume" => Asked::Pause(schedule_id(id)?, false),
             Some((first, _)) => bail!("unexpected {first:?}"),
             None => Asked::List,
         };
         Box::pin(reach::with(async |server| match asked {
             Asked::Add(request) => add_schedule(server, request).await,
             Asked::List => list_schedules(server).await,
+            Asked::Pause(schedule, paused) => pause_schedule(server, schedule, paused).await,
             Asked::Remove(schedule) => remove_schedule(server, schedule).await,
         }))
         .await
@@ -92,6 +97,8 @@ pub(crate) fn schedule_main(words: &[String]) -> ExitCode {
 enum Asked {
     Add(Request),
     List,
+    /// Pause it (`true`) or resume it.
+    Pause(ScheduleId, bool),
     Remove(ScheduleId),
 }
 
@@ -239,6 +246,19 @@ async fn list_schedules(server: &mut Reached) -> anyhow::Result<()> {
     for schedule in &schedules {
         println!("{}", show::schedule_line(schedule));
     }
+    Ok(())
+}
+
+async fn pause_schedule(
+    server: &mut Reached,
+    schedule: ScheduleId,
+    paused: bool,
+) -> anyhow::Result<()> {
+    let request = Request::SchedulePause { schedule, paused };
+    let Reply::Schedule { schedule } = server.request(request).await? else {
+        bail!("glave answered schedule/pause with something else");
+    };
+    println!("{}", show::schedule_line(&schedule));
     Ok(())
 }
 

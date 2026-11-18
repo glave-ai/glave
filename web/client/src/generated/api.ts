@@ -1224,7 +1224,7 @@ export type ReplySources = {
 };
 
 /** What came of a schedule's run. */
-export type RunStatus = "running" | "ended" | "skipped" | "refused" | "started";
+export type RunStatus = "running" | "ended" | "skipped" | "refused" | "started" | "missed";
 
 /** Identifies one schedule: a prompt that runs as a task at set times. */
 export type ScheduleId = string;
@@ -1239,13 +1239,18 @@ export type ScheduleInfo = {
   readonly last?: LastRun | null;
   /** What it is called, as its chat is. */
   readonly name: string;
-  /** When it runs next; absent once a one-off has run, and when it runs no more. */
+  /**
+   * When it runs next; absent while it is paused, once a one-off has run, and when it runs
+   * no more.
+   */
   readonly next?: At | null;
   /**
    * What the person should know of it beyond that, in the server's words, such as that it
    * runs no more.
    */
   readonly note?: string | null;
+  /** Whether it is paused: no runs start until it is resumed. */
+  readonly paused: boolean;
   /** The project its chat is in. */
   readonly project: ProjectId;
   readonly prompt: string;
@@ -2917,6 +2922,15 @@ export type ScheduleListResult = {
   readonly schedules: readonly (ScheduleInfo)[];
 };
 
+export type SchedulePauseParams = {
+  readonly paused: boolean;
+  readonly schedule: ScheduleId;
+};
+
+export type SchedulePauseResult = {
+  readonly schedule: ScheduleInfo;
+};
+
 export type SearchGetParams = {
   /**
    * Also how much it searched this month, which reads the month's threads: for
@@ -3504,6 +3518,7 @@ export interface Methods {
   readonly "schedule/create": { readonly params: ScheduleCreateParams; readonly result: ScheduleCreateResult };
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };
   readonly "schedule/list": { readonly params: ScheduleListParams; readonly result: ScheduleListResult };
+  readonly "schedule/pause": { readonly params: SchedulePauseParams; readonly result: SchedulePauseResult };
   readonly "search/get": { readonly params: SearchGetParams; readonly result: SearchGetResult };
   readonly "search/set": { readonly params: SearchSetParams; readonly result: SearchSetResult };
   readonly "secret/add": { readonly params: SecretAddParams; readonly result: SecretAddResult };
