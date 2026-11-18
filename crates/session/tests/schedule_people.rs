@@ -268,6 +268,51 @@ fn a_project_whose_one_off_ran_is_unplaced_a_day_after() {
 }
 
 #[test]
+fn a_one_off_s_run_still_waiting_for_the_person_a_day_on_keeps_its_project_listed() {
+    block_on!(async {
+        let log = Shared::default();
+        let (server, now, _repo, _dir) = crate::schedule_runs::asking(
+            "people-one-off-waits",
+            crate::schedule_runs::writes_after_asking(),
+            log.clone(),
+        )
+        .await;
+        let once = Request::ScheduleCreate {
+            project: Some(scope().project()),
+            name: Some("Once".into()),
+            when: When::At(
+                glave_event::At::try_from("2026-10-10T11:00:00.000Z".to_owned()).unwrap(),
+            ),
+            zone: None,
+            prompt: "check the build".into(),
+            budget: 10_000,
+        };
+        let Ok(Reply::Schedule { schedule: made }) = server.request(once).await else {
+            panic!("a schedule");
+        };
+        let chat = made.thread.unwrap();
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        asked_in(&server, chat).await;
+        // A day on, its run still waits for the person: its project stays listed, so whichever
+        // server fires schedules next finds the run to follow.
+        set(&now, "2026-10-11T12:00:00Z");
+        server.tick().await.unwrap();
+        let stream = Scope::of_organization(scope().org());
+        let listed = log
+            .read(&stream, Reserved::Scheduled.id(), None, usize::MAX)
+            .await
+            .unwrap();
+        let kinds: Vec<&str> = listed.iter().map(|raw| raw.kind.as_str()).collect();
+        assert_eq!(
+            kinds,
+            ["schedule.placed"],
+            "never unplaced while its run waits"
+        );
+    });
+}
+
+#[test]
 fn the_server_s_own_person_removed_from_another_organization_has_their_run_there_refused() {
     block_on!(async {
         let log = Shared::default();
