@@ -319,6 +319,45 @@ fn a_list_watch_sends_nothing_begun_after_its_token_expires() {
     });
 }
 
+/// A list watch sending a page of what changed stops when its browser signs out between one
+/// thread's summary and the next, not once the page is sent.
+#[test]
+fn a_list_watch_sends_nothing_begun_after_its_browser_signs_out() {
+    block_on!(async {
+        let dir = folder("ended-signout-page");
+        let (server, browser) = signed_in(&dir, Vec::new()).await;
+        for _ in 0..4 {
+            start(&server, false).await;
+        }
+        // From the start: a page of every thread to send, one held for the client at a time.
+        let since = At::from(Timestamp::UNIX_EPOCH);
+        let mut list = server
+            .watch_list(&browser, None, Some(since), false)
+            .await
+            .unwrap();
+        for _ in 0..1_000 {
+            tokio::task::yield_now().await;
+        }
+        server
+            .request_as(&browser, Request::SigninEnd {})
+            .await
+            .unwrap();
+        let mut sent = 0;
+        let ended = loop {
+            match list.next().await {
+                Some(Watched::Note(_)) => sent += 1,
+                Some(Watched::Ended(ended)) => break ended,
+                None => panic!("the list watch ended without saying why"),
+            }
+        };
+        no_sign_in(&ended);
+        assert!(
+            sent <= 2,
+            "{sent} sent: one held, and one begun before the sign-out"
+        );
+    });
+}
+
 /// Follows `stream` until its turn waits for an approval.
 async fn waiting(stream: &mut TurnStream) {
     while let Some(item) = stream.next().await {

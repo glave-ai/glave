@@ -245,11 +245,12 @@ where
     }
 
     /// Sends `note`: whether the client is still there to take it. Refused once the caller's
-    /// token has expired, looked at before each, so nothing is sent after even while a page of
+    /// access has ended (their token expired, their browser signed out, they were taken out of
+    /// the organization), looked at before each, so nothing is sent after even while a page of
     /// changes is being sent.
     async fn send(&mut self, note: Arc<Notification>) -> Result<bool, ApiError> {
-        if let Some(expired) = self.access.as_ref().and_then(Access::expired) {
-            return Err(expired);
+        if let Some(ended) = self.access.as_mut().and_then(Access::ended) {
+            return Err(ended);
         }
         Ok(self.out.send(Watched::Note(note)).await.is_ok())
     }
