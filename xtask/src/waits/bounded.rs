@@ -4,6 +4,15 @@
 /// that file say it, and what bounds the wait.
 pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     (
+        "crates/session/src/held.rs",
+        "let _ = finished.wait_for(|ended| *ended).await;",
+        1,
+        "work that only manages the thread, held to its own limits: a change to whether it is \
+         shown, or the look over what a turn or a command made, which waits at most a minute for \
+         its place among the server's look-overs, then looks for about 2 s, keeps a few files \
+         and reads them within 30 s: about 90 s in all",
+    ),
+    (
         "crates/harness/src/shares.rs",
         "let place = self.places.acquire().await.ok()?;",
         1,
@@ -106,8 +115,9 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "crates/session/src/answers.rs",
         "let _ = running.wait_for(|done| *done).await;",
         1,
-        "the turn already running on the thread, whose model, tools and waits for the person \
-         bound it; cancelling it ends it",
+        "the work holding the thread: a turn already running there, whose model, tools and \
+         waits for the person bound it and cancelling ends, or one stopped just before, which \
+         lets go of it at once",
     ),
     // A turn just cancelled, which stops at once: its commands within their grace.
     (
@@ -117,10 +127,10 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "the turn cancelled just before, which stops at once",
     ),
     (
-        "crates/session/src/tasks.rs",
-        "let _ = finished.wait_for(|done| *done).await;",
+        "crates/session/src/schedule/fire.rs",
+        "() = self.inner.tasks_ended.notified() => {}",
         1,
-        "the task's turn, cancelled just before, which stops at once",
+        "a task ending, raced against the scheduler's sleep until its next look, a minute at most",
     ),
     (
         "crates/session/src/stopping.rs",

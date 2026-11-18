@@ -277,7 +277,12 @@ function unanswered(method: Method, params: unknown): Answer {
     return { credentials: [], github: 'https://github.com' };
   }
   if (method === 'awake/get') {
-    return { awake: { kind: 'never' } };
+    return {
+      awake: {
+        kind: 'never',
+        reason: "this glave is a server, which doesn't sleep: there is nothing to keep awake",
+      },
+    };
   }
   if (method === 'search/get') {
     return {

@@ -1,12 +1,15 @@
 //! glave accounts for invited people (`specs/model.md`, "Identity"): on a server reached at a
 //! public origin with no company login, the local person invites someone, whose link makes a
 //! passkey of their own; they sign in with any of their passkeys, never as anyone else, and
-//! their organization is shown to them, with their role, once it holds two people. Without an
-//! address elsewhere, no one can be invited.
+//! their organization is shown to them, with their role, once it holds two people; signing in
+//! says nothing of whether an id has an account. Without an address elsewhere, no one can be
+//! invited.
 
 use std::path::Path;
 use std::sync::Arc;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use glave_event::{OrgRole, PrincipalId, Secret};
 use glave_identity::testing::Authenticator;
 use glave_ports::host::PublicOrigin;
@@ -297,6 +300,41 @@ fn someone_removed_is_signed_in_to_nothing_here() {
         let mut anyone = elsewhere(&served, None);
         let options = asked(&mut anyone, &Request::PasskeyGetOptions {}).await;
         assert!(!options.is_object(), "{options}");
+        served.close().await;
+    });
+}
+
+#[test]
+fn a_passkey_naming_any_id_is_refused_alike_whether_or_not_it_has_an_account() {
+    block_on!(async {
+        let dir = folder("accounts-forged");
+        let token = LocalToken::new([24; 32]);
+        let served = serve(&dir, true, &token).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let code = invite(&served, &token, OrgRole::Member).await;
+        join(&served, code, &mut phone).await;
+        let grace = phone.handle().unwrap().to_owned();
+        let never = Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0bad);
+        let never = URL_SAFE_NO_PAD.encode(never.as_bytes());
+
+        // No device of hers: a passkey that says it is any account's, as anyone can make one
+        // say, its signature checked by no one first.
+        let mut forged = Authenticator::new(ORIGIN).unwrap();
+        let mut refusals = Vec::new();
+        for handle in [grace, never] {
+            let said = json!({"publicKey": {"user": {"id": handle}, "rp": {"id": "glave.test"}}});
+            forged.create(&said).unwrap();
+            let mut anyone = elsewhere(&served, None);
+            let options = asked(&mut anyone, &Request::PasskeyGetOptions {}).await;
+            let get = Request::PasskeyGet {
+                ceremony: options["ceremony"].as_str().unwrap().to_owned(),
+                credential: forged.get(&options["options"]).unwrap(),
+            };
+            refusals.push(anyone.call(&get).await["error"].clone());
+        }
+        let unknown = json!({"party": "glave.test", "credential": forged.credential()});
+        assert_eq!(refusals[0]["data"]["unknown_passkey"], unknown);
+        assert_eq!(refusals[0], refusals[1], "the same answer either way");
         served.close().await;
     });
 }

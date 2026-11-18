@@ -32,3 +32,37 @@ pub struct Caller {
     /// computer.
     pub from: Option<IpAddr>,
 }
+
+impl Caller {
+    /// No one: whoever reaches, from `from`, what is open without a sign-in (`server/discover`,
+    /// an invite's link, signing in). Never the local person, and no one any lookup by person
+    /// finds, so what reads the caller's own finds nothing of anyone's.
+    pub fn no_one(from: IpAddr) -> Self {
+        Self {
+            person: Some(PrincipalId::no_one()),
+            from: Some(from),
+            ..Self::default()
+        }
+    }
+
+    /// Whether this is [`Caller::no_one`].
+    pub fn is_no_one(&self) -> bool {
+        self.person == Some(PrincipalId::no_one())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_one_is_neither_the_local_person_nor_anyone_signed_in() {
+        let no_one = Caller::no_one(IpAddr::from([203, 0, 113, 9]));
+        assert!(no_one.is_no_one());
+        assert_eq!(no_one.auth, None, "never signed in");
+        assert!(
+            !Caller::default().is_no_one(),
+            "the local person is someone"
+        );
+    }
+}

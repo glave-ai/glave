@@ -17,7 +17,7 @@ pub(crate) use self::sentence::Sentence;
 use self::events::{asks, event_in};
 use crate::protocol::{
     ApiError, AwakeInfo, ConnectorCategory, ConnectorInfo, ConnectorTag, ListedCommand, PushInfo,
-    Reply, SearchInfo, ThreadSummary, Told, Usage,
+    Reply, ScheduleInfo, SearchInfo, ThreadSummary, Told, Usage,
 };
 
 /// Whether `answered` holds a sentence of the server's own, which a transport writes in the
@@ -34,7 +34,8 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
             Reply::Connectors { .. }
             | Reply::Connector { .. }
             | Reply::Files { .. }
-            | Reply::FilePreview { .. },
+            | Reply::FilePreview { .. }
+            | Reply::Schedule { .. },
         ) => true,
         Ok(Reply::Search {
             search: SearchInfo::Chosen { detail, .. },
@@ -65,6 +66,7 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
         }
         Ok(Reply::Steps { steps }) => steps.runs.iter().any(|run| run.sentence.translatable()),
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translatable(),
+        Ok(Reply::Schedules { schedules }) => !schedules.is_empty(),
         Ok(Reply::Events { events, .. }) => events.iter().any(asks),
         Ok(Reply::Thread { thread }) => in_its_own_words(thread),
         Ok(Reply::Threads { threads, .. }) => threads.iter().any(in_its_own_words),
@@ -143,6 +145,8 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translate(language),
+        Ok(Reply::Schedule { schedule }) => schedule_in(schedule, language),
+        Ok(Reply::Schedules { schedules }) => schedules_in(schedules, language),
         Ok(Reply::Events { events, .. }) => events_in(events, language),
         Ok(Reply::Thread { thread }) => summary_in(thread, language),
         Ok(Reply::Threads { threads, .. }) => {
@@ -178,6 +182,25 @@ fn made_in(reply: &mut Reply, language: Language) {
             }
         }
         _ => {}
+    }
+}
+
+/// Writes when each of `schedules` repeats in `language`.
+fn schedules_in(schedules: &mut [ScheduleInfo], language: Language) {
+    for schedule in schedules {
+        schedule_in(schedule, language);
+    }
+}
+
+/// Writes `schedule`'s own words in `language`: when it repeats, how its last run went, and
+/// its note.
+fn schedule_in(schedule: &mut ScheduleInfo, language: Language) {
+    schedule.repeats.translate(language);
+    if let Some(last) = &mut schedule.last {
+        last.said.translate(language);
+    }
+    if let Some(note) = &mut schedule.note {
+        note.translate(language);
     }
 }
 
