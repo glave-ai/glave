@@ -45,11 +45,7 @@ pub fn serialize_exposed_values<S: Serializer>(
 
 /// [`serialize_exposed`] for a field that may hold none, skipped when it does
 /// (`skip_serializing_if = "Option::is_none"`).
-#[expect(
-    clippy::ref_option,
-    reason = "serde's serialize_with hands the field over by reference"
-)]
-pub(crate) fn serialize_exposed_some<S: Serializer>(
+pub fn serialize_exposed_some<S: Serializer>(
     secret: &Option<Secret>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {

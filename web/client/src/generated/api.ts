@@ -2225,16 +2225,20 @@ export type InviteAcceptResult = {
 
 export type InviteCreateParams = {
   /**
-   * Whom to email its link to, where the server sends email; else it is the caller's to
-   * share. The address is not kept.
+   * Whom to email its link to, where the server sends email: sent there alone, and its
+   * code not answered. Without it, the link is the caller's to share.
    */
   readonly email?: string | null;
   readonly role: OrgRole;
 };
 
-/** An invite just made, and its code, sent this once. */
+/** An invite just made, and its code, sent this once when it is the caller's to share. */
 export type InviteCreateResult = {
-  readonly code: Secret;
+  /**
+   * None when its link was emailed to its address alone (`invite.email`): sent there,
+   * never back to whoever made it, so whoever opens it holds that mailbox.
+   */
+  readonly code?: Secret | null;
   readonly invite: InviteInfo;
 };
 

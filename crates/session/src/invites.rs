@@ -129,7 +129,8 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Answers `invite/create`: an invite giving `role`, and its code, this once.
+    /// Answers `invite/create`: an invite giving `role`, and its code, this once; or, emailed to
+    /// `email`, no code: its link went there alone, so whoever opens it holds that mailbox.
     pub(crate) async fn create_invite(
         &self,
         caller: &Caller,
@@ -172,6 +173,7 @@ where
             by: Principal::person(self.person_of(caller)?),
             expires: At::from(expires),
             email: sending.as_ref().map(|(_, _, to)| to.clone()),
+            mailed_only: sending.is_some(),
         };
         self.record_person(org, |people| {
             let waiting = people.invites.waiting.values();
@@ -214,7 +216,8 @@ where
         }
         Ok(Reply::Invited {
             invite: invite.ok_or_else(gone)?,
-            code,
+            // An emailed invite's link went there alone, never back to the caller.
+            code: (!created.mailed_only).then_some(code),
         })
     }
 

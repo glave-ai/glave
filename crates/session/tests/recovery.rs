@@ -1,5 +1,6 @@
 //! Getting back into a glave account by email (`specs/model.md`, "Identity"): someone who lost
-//! their passkeys asks with their address; the link sent there makes a new passkey for the
+//! their passkeys asks with their address, the one they signed up with or the one an emailed
+//! invite went to alone; the link sent there makes a new passkey for the
 //! account it has, once, which the address and the person's other browsers are told of. An
 //! address with none is answered alike and sent a note, and the last passkey may go once the
 //! account can get back in.
@@ -160,33 +161,24 @@ fn the_last_passkey_may_go_once_the_account_can_get_back_in_by_email() {
     });
 }
 
-/// An invite's code is answered to whoever made it, so opening its link proves nothing of the
-/// address it names: the account made with it never has that address as its way back in. Else
-/// the invite's maker opens it herself and holds the account the address's own person is then
-/// led into (#1465).
+/// An invite naming an address is emailed there alone: whoever made it is never answered its
+/// code, so she cannot open it herself and hold the account the address's own person would
+/// then be led into (#1465, #1551).
 #[test]
-fn an_invite_naming_an_address_never_makes_it_the_way_back_into_an_account() {
+fn an_invite_naming_an_address_is_never_answered_to_whoever_made_it() {
     block_on!(async {
         let dir = folder("recovery-invited");
         let outbox = Arc::new(Outbox::default());
         let (served, clock) = serve_timed(&dir, true, &outbox).await;
         let theirs = "victim@example.com";
-        // Mallory invites an address that is not hers, and opens the invite herself.
+        // Mallory invites an address that is not hers: told it was sent there, never its code.
         let mut mallory = organized(&served, &outbox, "mallory@example.com", "Mallory's").await;
-        let invite = Request::InviteCreate {
-            role: OrgRole::Member,
-            email: Some(theirs.into()),
-        };
-        let code = Secret::new(asked(&mut mallory, &invite).await["code"].as_str().unwrap());
-        let made = make_passkey(&served, code, LinkKind::Invite, &mut device()).await;
-        let mut hers = elsewhere(&served, made["session"].as_str().map(str::to_owned));
-        let passkeys = listed(&mut hers).await;
-        assert!(
-            passkeys.get("email").is_none(),
-            "the address gets her back in: {passkeys}"
-        );
+        let made = asked(&mut mallory, &invite_to(theirs)).await;
+        assert_eq!(made["invite"]["email"], json!(theirs));
+        assert!(made.get("code").is_none(), "her answer opens it: {made}");
+        assert_eq!(outbox.sent().last().unwrap().to, theirs);
 
-        // Asked to get its person back in, the address is sent no link into her account.
+        // Asked to get its person back in, the address is sent no link: no account has it.
         clock.advance_seconds(61);
         let mut anyone = elsewhere(&served, None);
         let before = outbox.sent().len();
@@ -199,9 +191,72 @@ fn an_invite_naming_an_address_never_makes_it_the_way_back_into_an_account() {
         clock.advance_seconds(61);
         let mut victim = signed_up(&served, &outbox, theirs).await;
         assert_eq!(listed(&mut victim).await["email"], json!(theirs));
-        assert_eq!(listed(&mut hers).await.get("email"), None);
         served.close().await;
     });
+}
+
+/// Whoever opens an emailed invite's link holds its mailbox, since its code went there alone:
+/// the account it makes gets back in with the address, unless another account has it already,
+/// which nothing then says (#1551).
+#[test]
+fn an_emailed_invite_s_person_gets_back_in_with_its_address() {
+    block_on!(async {
+        let dir = folder("recovery-invited-back");
+        let outbox = Arc::new(Outbox::default());
+        let (served, clock) = serve_timed(&dir, true, &outbox).await;
+        let theirs = "grace@example.com";
+        let mut bob = organized(&served, &outbox, "bob@example.com", "Bob's").await;
+        asked(&mut bob, &invite_to(theirs)).await;
+        // Grace opens the link in her mail, and her account has the address.
+        let code = linked(&outbox, outbox.sent().len(), "invite")
+            .await
+            .unwrap();
+        let made = make_passkey(&served, code, LinkKind::Invite, &mut device()).await;
+        let mut grace = elsewhere(&served, made["session"].as_str().map(str::to_owned));
+        assert_eq!(listed(&mut grace).await["email"], json!(theirs));
+
+        // Asking to get back in mails her a link into her own account.
+        clock.advance_seconds(61);
+        let mut anyone = elsewhere(&served, None);
+        let before = outbox.sent().len();
+        let start = Request::RecoveryStart {
+            email: theirs.into(),
+        };
+        assert_eq!(asked(&mut anyone, &start).await, json!({}));
+        let code = linked(&outbox, before + 1, "recover").await.unwrap();
+        let made = make_passkey(&served, code, LinkKind::Recovery, &mut device()).await;
+        let mut back = elsewhere(&served, made["session"].as_str().map(str::to_owned));
+        let passkeys = listed(&mut back).await;
+        assert_eq!(passkeys["email"], json!(theirs));
+        let made_by_email: Vec<_> = passkeys["passkeys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p.get("emailed").is_some())
+            .collect();
+        assert_eq!(made_by_email, [false, true], "hers: {passkeys}");
+
+        // An address another account has stays its own: the account an invite to it makes has
+        // none, and is answered as any.
+        let mut ada = signed_up(&served, &outbox, "ada@example.com").await;
+        asked(&mut bob, &invite_to("ada@example.com")).await;
+        let code = linked(&outbox, outbox.sent().len(), "invite")
+            .await
+            .unwrap();
+        let made = make_passkey(&served, code, LinkKind::Invite, &mut device()).await;
+        let mut other = elsewhere(&served, made["session"].as_str().map(str::to_owned));
+        assert!(listed(&mut other).await.get("email").is_none());
+        assert_eq!(listed(&mut ada).await["email"], json!("ada@example.com"));
+        served.close().await;
+    });
+}
+
+/// An invite to be a Member, emailed to `email`.
+fn invite_to(email: &str) -> Request {
+    Request::InviteCreate {
+        role: OrgRole::Member,
+        email: Some(email.into()),
+    }
 }
 
 /// A device elsewhere that makes passkeys for [`ORIGIN`].

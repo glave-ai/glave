@@ -123,6 +123,38 @@ pub struct InviteCreated {
     /// a glave account it makes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
+    /// Whether its code went to `email` alone, never back to whoever made it (v2): so whoever
+    /// opens it holds that mailbox, and the account it makes gets back in with the address.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mailed_only: bool,
+}
+
+/// `invite.created` at version 1, when every invite's code was answered to whoever made it,
+/// emailed or not.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InviteCreatedV1 {
+    invite: InviteId,
+    hash: String,
+    role: OrgRole,
+    by: Principal,
+    expires: At,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    email: Option<String>,
+}
+
+impl From<InviteCreatedV1> for InviteCreated {
+    fn from(old: InviteCreatedV1) -> Self {
+        Self {
+            invite: old.invite,
+            hash: old.hash,
+            role: old.role,
+            by: old.by,
+            expires: old.expires,
+            email: old.email,
+            mailed_only: false,
+        }
+    }
 }
 
 /// An invite opened by `person`, and spent: their role is raised to `role`, the invite's,
@@ -169,7 +201,7 @@ impl Payload for PersonRemoved {
 
 impl Payload for InviteCreated {
     const TYPE: &'static str = INVITE_CREATED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for InviteAccepted {
@@ -193,17 +225,35 @@ pub(crate) fn decode(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<Body>> {
-    if version != 1 {
-        return None;
-    }
-    Some(match kind {
-        JOINED => parse(data).map(Body::PersonJoined),
-        ROLE_SET => parse(data).map(Body::RoleSet),
-        REMOVED => parse(data).map(Body::PersonRemoved),
-        INVITE_CREATED => parse(data).map(Body::InviteCreated),
-        INVITE_ACCEPTED => parse(data).map(Body::InviteAccepted),
-        INVITE_REVOKED => parse(data).map(Body::InviteRevoked),
-        MADE => parse(data).map(Body::OrganizationMade),
+    Some(match (kind, version) {
+        (JOINED, 1) => parse(data).map(Body::PersonJoined),
+        (ROLE_SET, 1) => parse(data).map(Body::RoleSet),
+        (REMOVED, 1) => parse(data).map(Body::PersonRemoved),
+        (INVITE_CREATED, 1) => {
+            parse::<InviteCreatedV1>(data).map(|old| Body::InviteCreated(old.into()))
+        }
+        (INVITE_CREATED, 2) => parse(data).map(Body::InviteCreated),
+        (INVITE_ACCEPTED, 1) => parse(data).map(Body::InviteAccepted),
+        (INVITE_REVOKED, 1) => parse(data).map(Body::InviteRevoked),
+        (MADE, 1) => parse(data).map(Body::OrganizationMade),
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Body, RawEvent, decode};
+
+    /// An invite made before v2 had its code answered to whoever made it, emailed or not: it
+    /// reads as shown to them, so joining by it proves nothing of the address.
+    #[test]
+    fn an_emailed_invite_from_before_v2_reads_as_shown_to_its_maker() {
+        let v1 = r#"{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000093","thread":"00000000-0000-7000-8000-000000000009","seq":3,"at":"2026-10-29T09:10:00.000Z","type":"invite.created","v":1,"data":{"invite":"0192f5c7-0000-7000-8000-000000000001","hash":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","role":"admin","by":{"kind":"person","id":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c11"},"expires":"2026-11-05T09:10:00.000Z","email":"ada@example.com"}}"#;
+        let Body::InviteCreated(created) = decode(RawEvent::from_json(v1).unwrap()).unwrap().body
+        else {
+            panic!("an invite");
+        };
+        assert_eq!(created.email.as_deref(), Some("ada@example.com"));
+        assert!(!created.mailed_only);
+    }
 }
