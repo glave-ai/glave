@@ -45,6 +45,7 @@ mod leased;
 mod ledger;
 mod library;
 mod lists;
+mod made;
 mod mailing;
 mod memory;
 mod models;

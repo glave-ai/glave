@@ -467,6 +467,10 @@ mod tests {
             estimated: false,
             via: Vec::new(),
             changed: Vec::new(),
+            made: Vec::new(),
+            made_left: None,
+            made_until_ns: None,
+            made_waits: false,
         };
         let protections = "permissions: auto · sandbox: project + network";
         assert_eq!(

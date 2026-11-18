@@ -65,6 +65,8 @@ where
         let on = workspace.as_deref().unwrap_or(&self.workspace);
         let commands =
             crate::background::Commands::rebuilt(&events, on.computers(), on.info().computer);
+        let at_home = crate::homes::at_home(bound.as_ref()).is_some();
+        let (turn_open, made_mark) = crate::made::from_log(&events, at_home);
         let mut thread = Thread {
             scope,
             id,
@@ -95,6 +97,8 @@ where
             inbox: crate::inbox::Inbox::default(),
             commands: std::sync::Arc::new(commands),
             opened: self.opened(&scope, id, &events).await?,
+            turn_open,
+            made_mark,
             home: crate::homes::at_home(bound.as_ref()),
             rebound: bound.filter(|_| moved),
             reminder: None,

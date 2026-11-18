@@ -108,6 +108,9 @@ pub struct Harness<P, L, B, A> {
     /// Where the commands on each person's own computer ask for credentials: theirs. None by
     /// default, so only the harness's person's computer gets the workspace's.
     pub(crate) credentials_of: Option<CredentialsOf>,
+    /// The look-overs of what turns made running now, at most a few at once, and fewer for one
+    /// organization (`made.rs`).
+    pub(crate) looking: crate::shares::Shares,
     /// What threads remember from one to the next; none by default, so the model is sent
     /// exactly what it is sent without memory.
     pub(crate) memory: Option<Arc<dyn Memory>>,
@@ -197,6 +200,11 @@ pub struct Thread {
     /// How its log, as it was read, left its turn: waiting, or left open by a glave that
     /// stopped (`waits.rs`); `None` when no turn was open.
     pub(crate) opened: Option<Opened>,
+    /// The turn open on it, as what the turn made is told (`made.rs`): as its log has it.
+    pub(crate) turn_open: Option<crate::made::TurnOpen>,
+    /// Where its last look-over stopped, and whether what changed after is still owed a look
+    /// (`made.rs`): as its log has it.
+    pub(crate) made_mark: Option<crate::made::Mark>,
     /// Where it works now that its project's folder moved, which its next turn records.
     pub(crate) rebound: Option<WorkspaceBound>,
     /// What its next turn's opening note tells the model besides what changed (`copy.rs`).
@@ -336,6 +344,7 @@ where
             learned_windows: LearnedWindows::default(),
             homes: None,
             credentials_of: None,
+            looking: crate::made::looking(),
             memory: None,
             project_folders: None,
             schedules: None,
@@ -631,6 +640,8 @@ where
             inbox: Inbox::default(),
             commands: Arc::default(),
             opened: None,
+            turn_open: None,
+            made_mark: None,
             rebound: None,
             reminder: None,
             home: crate::homes::at_home(bound.as_ref()),

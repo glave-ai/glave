@@ -382,10 +382,7 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
                 subject: Some("ada".into()),
                 session: None,
             }),
-            trace: None,
-            profile: None,
-            org: None,
-            from: None,
+            ..Caller::default()
         };
         let started = server
             .request_as(&elsewhere, thread_start(scope().project()))
