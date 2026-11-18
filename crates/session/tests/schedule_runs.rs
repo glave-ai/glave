@@ -519,3 +519,78 @@ fn a_run_waiting_for_the_person_across_a_restart_keeps_its_budget() {
         assert_eq!(run.outcome, Some(Outcome::LimitReached), "{run:?}");
     });
 }
+
+#[test]
+fn a_clean_copy_catches_up_with_the_project_before_a_run_and_one_with_changes_is_left_and_said() {
+    block_on!(async {
+        let answers = (0..3).map(|_| answer(Some("Done."), None)).collect();
+        let mut setup = Setup::asking(answers, Answering::Clients);
+        setup.clock =
+            ManualClock::at_millis(at("2026-10-10T10:03:00Z").timestamp().as_millisecond());
+        let now = setup.clock.clone();
+        let (server, seen, repo, _dir) = setup
+            .build_in_repository("runs-copy", InMemoryLog::new())
+            .await;
+        let chat = schedule(&server, "Build check", "0 11 * * *", 10_000)
+            .await
+            .thread
+            .unwrap();
+        let commit = |file: &str| {
+            let script = format!(
+                "echo new > {file} && git add . && \
+                 git -c user.name=t -c user.email=t@example.com commit -q -m {file}"
+            );
+            sh(&repo, &script);
+        };
+        // The project moves on after the chat's copy was made.
+        commit("news.md");
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        settle(&server).await;
+        let (_, root) = opened(&server, chat).await;
+        let root = std::path::PathBuf::from(root);
+        assert!(root.join("news.md").exists(), "brought up to date");
+        // A copy with changes of its own is left as it is, and the run is told why, in a note
+        // before the person's words, which stay as they were.
+        std::fs::write(root.join("mine.md"), "mine").unwrap();
+        commit("more.md");
+        set(&now, "2026-10-11T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        settle(&server).await;
+        assert!(!root.join("more.md").exists(), "left as it was");
+        let [note, words] = last_said(&seen);
+        assert!(note.starts_with("<system-reminder>\n"), "{note}");
+        assert!(
+            note.contains("changes of its own not yet committed"),
+            "{note}"
+        );
+        assert_eq!(words, "check the build");
+        // Committed in the copy, while the project moved on too: it is told they diverged.
+        sh(
+            &root,
+            "git add . && git -c user.name=t -c user.email=t@example.com commit -q -m mine",
+        );
+        set(&now, "2026-10-12T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        settle(&server).await;
+        let [note, _] = last_said(&seen);
+        assert!(note.contains("has commits of its own"), "{note}");
+    });
+}
+
+/// The texts of the last message sent to the model: the note before the person's words, and
+/// their words.
+fn last_said(seen: &Seen) -> [String; 2] {
+    let requests = seen.lock().unwrap().clone();
+    let last = requests.last().unwrap().messages.last().unwrap().clone();
+    let glave_ports::Message::User { parts } = last else {
+        panic!("the person's message, not {last:?}");
+    };
+    let texts: Vec<String> = (parts.into_iter())
+        .filter_map(|part| match part {
+            glave_event::Part::Text { text } => Some(text),
+            _ => None,
+        })
+        .collect();
+    texts.try_into().unwrap()
+}
