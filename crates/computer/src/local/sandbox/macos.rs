@@ -9,7 +9,7 @@ use glave_ports::computer::{ComputerError, Sandbox};
 use super::profile::{Places, TEMP_PARAM, profile};
 use super::run_temp::RunTemp;
 use super::secrets::home_secrets;
-use super::{Launch, Reached, Temps, failed, kept_read_only, own_git_folder, resolved};
+use super::{Launch, Reached, Refuses, Temps, failed, kept_read_only, own_git_folder, resolved};
 
 /// The only `sandbox-exec` trusted: an earlier one in `PATH` could be planted.
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
@@ -111,6 +111,10 @@ impl Enforcer {
             own_session: false,
             temp,
             _held: (),
+            refuses: Refuses {
+                saying: "sandbox-exec: ",
+                passing: false,
+            },
         }))
     }
 }

@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use glave_process::Program;
 
+use super::super::Refuses;
 use super::mounts::{Layout, Mount};
 
 /// Runs bubblewrap with the seccomp filter on descriptor 3, read from standard input, and
@@ -14,6 +15,13 @@ const SHELL: &str = r#"exec "$0" "$@" 3<&0 </dev/null"#;
 
 /// Where the wrapper is: `/bin/sh` is on every Linux.
 pub(super) const SH: &str = "/bin/sh";
+
+/// How bubblewrap says it could not make the sandbox: its errors start with its name, and one
+/// may mean only that a place it was to hide went away as it mounted over it (#1533).
+pub(super) const REFUSES: Refuses = Refuses {
+    saying: "bwrap: ",
+    passing: true,
+};
 
 /// A new session (so a command cannot push keystrokes into the person's terminal), killed
 /// with its parent, in namespaces of its own; with no new privileges, which bubblewrap sets,

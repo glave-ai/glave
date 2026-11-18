@@ -28,6 +28,9 @@ pub(crate) struct Joining {
     org: OrgId,
     /// The invite code's hash.
     code: String,
+    /// The address the invite's code went to alone, never back to whoever made it: whoever
+    /// holds the code holds its mailbox.
+    mailbox: Option<String>,
 }
 
 /// The accounts being made on this server.
@@ -57,14 +60,13 @@ where
         let now = self.inner.harness.clock().now();
         let local = self.inner.harness.person();
         // Read apart: a code names any organization, real or not, until it opens an invite.
-        if self
+        let opened = self
             .people_apart(org)
             .await?
             .opens(&presented, now, local)
-            .is_none()
-        {
-            return Err(gone());
-        }
+            .cloned()
+            .ok_or_else(gone)?;
+        let mailbox = opened.given.mailbox().map(str::to_owned);
         let (person, browsers) = accounts.made().await?;
         let ceremony = browsers.create_options(Proof::SignedIn)?;
         let mut joining = self.joinings();
@@ -76,6 +78,7 @@ where
             person,
             org,
             code: presented,
+            mailbox,
         });
         Ok(crate::browsers::options(ceremony))
     }
@@ -102,10 +105,13 @@ where
         // code spent meanwhile leaves nothing behind.
         let checked = browsers.checked(&joining.ceremony, credential, name)?;
         self.spend_joining(&joining, person_name).await?;
+        // The address the invite's code went to alone, which they opened, is theirs for getting
+        // back in, unless another account has it. One whose code its maker was shown too proves
+        // nothing of the mailbox: it stays what the organization knows them by.
+        if let Some(email) = &joining.mailbox {
+            accounts.claim_email(email, joining.person).await?;
+        }
         let session = browsers.keep(checked).await?;
-        // The address an invite names is never claimed for the account, as its way back in:
-        // the invite's code went to whoever made it too, so opening it proves nothing of the
-        // mailbox. It stays what the organization knows them by.
         accounts.join(joining.person, joining.org).await?;
         Ok(self.signed_in(session, &browsers))
     }
@@ -124,7 +130,7 @@ where
                 subject: None,
                 profile: Profile {
                     name: name.clone(),
-                    email: opened.email.clone(),
+                    email: opened.given.email().map(str::to_owned),
                     ..Profile::default()
                 },
             };

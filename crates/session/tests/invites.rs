@@ -60,8 +60,11 @@ async fn invite(
         .request_as(caller, Request::InviteCreate { role, email: None })
         .await?
     {
-        Reply::Invited { invite, code } => Ok((invite, code)),
-        other => panic!("an invite, not {other:?}"),
+        Reply::Invited {
+            invite,
+            code: Some(code),
+        } => Ok((invite, code)),
+        other => panic!("an invite and its code, not {other:?}"),
     }
 }
 
@@ -327,10 +330,11 @@ fn where_no_one_else_reaches_the_server_there_is_no_one_to_invite_or_accept() {
 }
 
 /// An invite named for an address is sent there, its link at the server's public origin, and
-/// the address is kept with it, as whom it waits for. Without a mail server, or with no
-/// address, nothing is sent.
+/// never answered to whoever made it, so whoever opens it holds that mailbox; the address is
+/// kept with it, as whom it waits for. With no address, nothing is sent and the link is the
+/// caller's to share; without a mail server, an address is refused.
 #[test]
-fn an_invite_is_emailed_where_the_server_sends_email() {
+fn an_invite_is_emailed_where_the_server_sends_email_and_its_code_goes_there_alone() {
     let dir = folder("invites-emailed");
     block_on!(async {
         let outbox = Arc::new(glave_ports::testing::Outbox::default());
@@ -343,16 +347,24 @@ fn an_invite_is_emailed_where_the_server_sends_email() {
             role: OrgRole::Member,
             email: email.map(str::to_owned),
         };
-        let Ok(Reply::Invited { code, .. }) = server.request(create(Some("ada@example.com"))).await
+        let Ok(Reply::Invited { invite, code }) =
+            server.request(create(Some("ada@example.com"))).await
         else {
             panic!("an invite");
         };
+        assert!(code.is_none(), "its code goes to the address alone");
+        assert_eq!(invite.email.as_deref(), Some("ada@example.com"));
         let sent = outbox.sent();
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].to, "ada@example.com");
-        let link = format!("https://glave.test/#invite={}", code.expose());
-        assert!(sent[0].text.contains(&link), "{}", sent[0].text);
-        server.request(create(None)).await.unwrap();
+        assert!(
+            sent[0].text.contains("https://glave.test/#invite="),
+            "{}",
+            sent[0].text
+        );
+        let Ok(Reply::Invited { code: Some(_), .. }) = server.request(create(None)).await else {
+            panic!("an invite with no address answers its code");
+        };
         assert_eq!(outbox.sent().len(), 1, "no address, no email");
         let Ok(Reply::Invites { invites }) = server.request(Request::InviteList {}).await else {
             panic!("invites");

@@ -1,19 +1,23 @@
 //! Getting back into a glave account by email (`specs/model.md`, "Identity"): someone who lost
-//! their passkeys asks with their address; the link sent there makes a new passkey for the
+//! their passkeys asks with their address, the one they signed up with or the one an emailed
+//! invite went to alone; the link sent there makes a new passkey for the
 //! account it has, once, which the address and the person's other browsers are told of. An
 //! address with none is answered alike and sent a note, and the last passkey may go once the
 //! account can get back in.
 
 use std::sync::Arc;
 
-use glave_event::{OrgRole, Secret};
+use glave_event::{OrgRole, PrincipalId, RawEvent, Secret};
+use glave_identity::signin::kept;
 use glave_identity::testing::Authenticator;
+use glave_ports::stream::Reserved;
 use glave_ports::testing::Outbox;
+use glave_ports::{EventLog, OrgId, Scope};
 use glave_session::protocol::{LinkKind, Request, code};
 use serde_json::{Value, json};
 
-use crate::signups::{linked, organized, serve_timed, signed_up};
-use crate::support::web::{ORIGIN, Web, asked, elsewhere, make_passkey};
+use crate::signups::{linked, organized, serve_sharing, serve_timed, signed_up};
+use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, make_passkey};
 use crate::support::*;
 
 /// What `web`'s person's passkeys are listed as.
@@ -160,24 +164,80 @@ fn the_last_passkey_may_go_once_the_account_can_get_back_in_by_email() {
     });
 }
 
-/// An invite's code is answered to whoever made it, so opening its link proves nothing of the
-/// address it names: the account made with it never has that address as its way back in. Else
-/// the invite's maker opens it herself and holds the account the address's own person is then
-/// led into (#1465).
+/// An invite naming an address is emailed there alone: whoever made it is never answered its
+/// code, so she cannot open it herself and hold the account the address's own person would
+/// then be led into (#1465, #1551).
 #[test]
-fn an_invite_naming_an_address_never_makes_it_the_way_back_into_an_account() {
+fn an_invite_naming_an_address_is_never_answered_to_whoever_made_it() {
     block_on!(async {
         let dir = folder("recovery-invited");
         let outbox = Arc::new(Outbox::default());
         let (served, clock) = serve_timed(&dir, true, &outbox).await;
         let theirs = "victim@example.com";
-        // Mallory invites an address that is not hers, and opens the invite herself.
+        // Mallory invites an address that is not hers: told it was sent there, never its code.
         let mut mallory = organized(&served, &outbox, "mallory@example.com", "Mallory's").await;
-        let invite = Request::InviteCreate {
-            role: OrgRole::Member,
-            email: Some(theirs.into()),
-        };
-        let code = Secret::new(asked(&mut mallory, &invite).await["code"].as_str().unwrap());
+        let made = asked(&mut mallory, &invite_to(theirs)).await;
+        assert_eq!(made["invite"]["email"], json!(theirs));
+        assert!(made.get("code").is_none(), "her answer opens it: {made}");
+        assert_eq!(outbox.sent().last().unwrap().to, theirs);
+
+        // Asked to get its person back in, the address is sent no link: no account has it.
+        clock.advance_seconds(61);
+        assert!(back_in(&served, &outbox, theirs).await.is_none());
+        // And its own person still signs up with it, to an account of their own.
+        clock.advance_seconds(61);
+        let mut victim = signed_up(&served, &outbox, theirs).await;
+        assert_eq!(listed(&mut victim).await["email"], json!(theirs));
+        served.close().await;
+    });
+}
+
+/// Whoever opens an emailed invite's link holds its mailbox, since its code went there alone:
+/// the account it makes gets back in with the address, unless another account has it already,
+/// which nothing then says (#1551).
+#[test]
+fn an_emailed_invite_s_person_gets_back_in_with_its_address() {
+    block_on!(async {
+        let dir = folder("recovery-invited-back");
+        let outbox = Arc::new(Outbox::default());
+        let (served, clock) = serve_timed(&dir, true, &outbox).await;
+        let theirs = "grace@example.com";
+        let mut bob = organized(&served, &outbox, "bob@example.com", "Bob's").await;
+        // Grace opens the link in her mail, and her account has the address.
+        let mut grace = joined_by_mail(&served, &outbox, &mut bob, theirs).await;
+        assert_eq!(listed(&mut grace).await["email"], json!(theirs));
+
+        // Asking to get back in mails her a link into her own account.
+        clock.advance_seconds(61);
+        let mut back = back_in(&served, &outbox, theirs).await.unwrap();
+        let passkeys = listed(&mut back).await;
+        assert_eq!(passkeys["email"], json!(theirs));
+        assert_eq!(made_by_email(&passkeys), [false, true], "hers: {passkeys}");
+
+        // An address another account has stays its own: the account an invite to it makes has
+        // none, and is answered as any.
+        let mut ada = signed_up(&served, &outbox, "ada@example.com").await;
+        let mut other = joined_by_mail(&served, &outbox, &mut bob, "ada@example.com").await;
+        assert!(listed(&mut other).await.get("email").is_none());
+        assert_eq!(listed(&mut ada).await["email"], json!("ada@example.com"));
+        served.close().await;
+    });
+}
+
+/// An invite from before its code could go to its address alone (`invite.created` v1) was
+/// answered to whoever made it, emailed or not: one still waiting as glave is updated never
+/// makes its address the way back into the account it makes (#1465).
+#[test]
+fn an_invite_its_maker_was_shown_never_makes_its_address_a_way_back_in() {
+    block_on!(async {
+        let dir = folder("recovery-shown");
+        let outbox = Arc::new(Outbox::default());
+        let log = Shared::default();
+        let (served, _) = serve_sharing(&dir, true, &outbox, log.clone()).await;
+        let theirs = "victim@example.com";
+        let mut mallory = organized(&served, &outbox, "mallory@example.com", "Mallory's").await;
+        let code = shown_invite(&log, &mut mallory, theirs).await;
+        // Mallory opens it herself.
         let made = make_passkey(&served, code, LinkKind::Invite, &mut device()).await;
         let mut hers = elsewhere(&served, made["session"].as_str().map(str::to_owned));
         let passkeys = listed(&mut hers).await;
@@ -185,23 +245,142 @@ fn an_invite_naming_an_address_never_makes_it_the_way_back_into_an_account() {
             passkeys.get("email").is_none(),
             "the address gets her back in: {passkeys}"
         );
-
-        // Asked to get its person back in, the address is sent no link into her account.
-        clock.advance_seconds(61);
-        let mut anyone = elsewhere(&served, None);
-        let before = outbox.sent().len();
-        let back = Request::RecoveryStart {
-            email: theirs.into(),
-        };
-        assert_eq!(asked(&mut anyone, &back).await, json!({}));
-        assert!(linked(&outbox, before + 1, "recover").await.is_none());
-        // And its own person still signs up with it, to an account of their own.
-        clock.advance_seconds(61);
-        let mut victim = signed_up(&served, &outbox, theirs).await;
-        assert_eq!(listed(&mut victim).await["email"], json!(theirs));
-        assert_eq!(listed(&mut hers).await.get("email"), None);
+        assert!(back_in(&served, &outbox, theirs).await.is_none());
         served.close().await;
     });
+}
+
+/// Taken out of the last organization they were in, someone's account never signs in again, so
+/// its address goes with it, though that organization knew them by another: the account a new
+/// invite to the address makes gets it, and gets back in with it.
+#[test]
+fn a_removed_person_s_address_goes_to_the_account_a_new_invite_makes() {
+    block_on!(async {
+        let dir = folder("recovery-removed");
+        let outbox = Arc::new(Outbox::default());
+        let (served, clock) = serve_timed(&dir, true, &outbox).await;
+        let theirs = "grace@example.com";
+        let mut bob = organized(&served, &outbox, "bob@example.com", "Bob's").await;
+        let mut carol = organized(&served, &outbox, "carol@example.com", "Carol's").await;
+        // Grace joins Bob's by the address, then, signed in, Carol's by an invite to another.
+        let mut first = joined_by_mail(&served, &outbox, &mut bob, theirs).await;
+        assert_eq!(listed(&mut first).await["email"], json!(theirs));
+        let other = "grace@work.example.com";
+        asked(&mut carol, &invite_to(other)).await;
+        let code = linked(&outbox, outbox.sent().len(), "invite")
+            .await
+            .unwrap();
+        let accepted = asked(&mut first, &Request::InviteAccept { code }).await;
+        assert_eq!(accepted["person"]["email"], json!(other), "{accepted}");
+        // Taken out of Bob's, then Carol's, which knew her by the other address.
+        let grace = picked(&mut bob, |it| it["email"] == json!(theirs)).await;
+        let known = picked(&mut carol, |it| it["email"] == json!(other)).await;
+        assert_eq!(known, grace);
+        let out = Request::PersonRemove { person: grace };
+        assert_eq!(asked(&mut bob, &out).await, json!({}));
+        assert_eq!(asked(&mut carol, &out).await, json!({}));
+
+        // Invited again, she makes a new account, which has the address.
+        clock.advance_seconds(61);
+        let mut second = joined_by_mail(&served, &outbox, &mut bob, theirs).await;
+        let again = picked(&mut bob, |it| it["email"] == json!(theirs)).await;
+        assert_ne!(again, grace, "a new account");
+        assert_eq!(listed(&mut second).await["email"], json!(theirs));
+        // And it is the one the address gets her back into.
+        clock.advance_seconds(61);
+        let mut back = back_in(&served, &outbox, theirs).await.unwrap();
+        let passkeys = listed(&mut back).await;
+        assert_eq!(passkeys["email"], json!(theirs));
+        assert_eq!(
+            made_by_email(&passkeys),
+            [false, true],
+            "the new one: {passkeys}"
+        );
+        served.close().await;
+    });
+}
+
+/// An invite to be a Member, emailed to `email`.
+fn invite_to(email: &str) -> Request {
+    Request::InviteCreate {
+        role: OrgRole::Member,
+        email: Some(email.into()),
+    }
+}
+
+/// Whoever holds `email`'s mailbox, joining by the invite `maker` emails there: their browser.
+async fn joined_by_mail(served: &Served, outbox: &Outbox, maker: &mut Web, email: &str) -> Web {
+    asked(maker, &invite_to(email)).await;
+    let code = linked(outbox, outbox.sent().len(), "invite").await.unwrap();
+    let made = make_passkey(served, code, LinkKind::Invite, &mut device()).await;
+    elsewhere(served, made["session"].as_str().map(str::to_owned))
+}
+
+/// A browser signed in by the link to get back in that `email` is sent, if it is sent one.
+async fn back_in(served: &Served, outbox: &Outbox, email: &str) -> Option<Web> {
+    let mut anyone = elsewhere(served, None);
+    let before = outbox.sent().len();
+    let start = Request::RecoveryStart {
+        email: email.into(),
+    };
+    assert_eq!(asked(&mut anyone, &start).await, json!({}));
+    let code = linked(outbox, before + 1, "recover").await?;
+    let made = make_passkey(served, code, LinkKind::Recovery, &mut device()).await;
+    Some(elsewhere(
+        served,
+        made["session"].as_str().map(str::to_owned),
+    ))
+}
+
+/// Whether each of the passkeys `passkey/list` answered was made by email.
+fn made_by_email(passkeys: &Value) -> Vec<bool> {
+    let listed = passkeys["passkeys"].as_array().unwrap();
+    listed.iter().map(|p| p.get("emailed").is_some()).collect()
+}
+
+/// The first of the people `admin` lists whom `which` picks.
+async fn picked(admin: &mut Web, which: impl Fn(&Value) -> bool) -> PrincipalId {
+    let listed = Request::PeopleList {
+        after: None,
+        limit: None,
+    };
+    let people = asked(admin, &listed).await;
+    let found = people["people"].as_array().unwrap().iter();
+    let theirs = found.into_iter().find(|it| which(it)).unwrap();
+    serde_json::from_value(theirs["id"].clone()).unwrap()
+}
+
+/// An invite to `email` in the organization `maker` works in, written as glave wrote one
+/// before v2 (`invite.created` v1), straight into its people ledger: its code, which its maker
+/// was shown.
+async fn shown_invite(log: &Shared, maker: &mut Web, email: &str) -> Secret {
+    let listed = asked(maker, &Request::OrganizationList {}).await;
+    let orgs = listed["organizations"].as_array().unwrap().iter();
+    let current = orgs.into_iter().find(|it| it.get("current").is_some());
+    let org: OrgId = serde_json::from_value(current.unwrap()["id"].clone()).unwrap();
+    let by = picked(maker, |it| it.get("you").is_some()).await;
+    let code = Secret::new(format!("{}.{}", org.as_uuid().simple(), "c0de".repeat(11)));
+    let scope = Scope::of_organization(org);
+    let ledger = Reserved::People.id();
+    let seq = EventLog::read(log, &scope, ledger, None, usize::MAX)
+        .await
+        .unwrap()
+        .len()
+        + 1;
+    let data = json!({
+        "invite": "0192f5c7-0000-7000-8000-0000000001a2",
+        "hash": kept(code.expose()),
+        "role": "member",
+        "by": {"kind": "person", "id": by},
+        "expires": "2099-01-01T00:00:00.000Z",
+        "email": email,
+    });
+    let line = format!(
+        r#"{{"glave":1,"id":"0192f5c2-7000-7000-8000-0000000001a1","thread":"{ledger}","seq":{seq},"at":"2026-10-29T09:10:00.000Z","type":"invite.created","v":1,"data":{data}}}"#
+    );
+    let raw = RawEvent::from_json(&line).unwrap();
+    EventLog::append(log, &scope, &[raw]).await.unwrap();
+    code
 }
 
 /// A device elsewhere that makes passkeys for [`ORIGIN`].

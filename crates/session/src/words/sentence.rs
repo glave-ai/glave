@@ -660,6 +660,8 @@ sentences! {
 
     // Notifications on the person's devices.
     NoPush = "no-push" "This server sends no notifications.",
+    PushNotReady = "push-not-ready"
+        "This server isn't ready to send notifications yet: try again in a moment.",
     PushServiceRefused = "push-service-refused"
         "this browser's notifications can't be turned on: glave pushes only to the browsers' own push services",
     PushKeysRefused = "push-keys-refused"

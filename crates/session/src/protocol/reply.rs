@@ -588,12 +588,18 @@ pub enum Reply {
     /// A person, as they are now.
     #[schemars(title = "Person")]
     Person { person: PersonInfo },
-    /// An invite just made, and its code, sent this once.
+    /// An invite just made, and its code, sent this once when it is the caller's to share.
     #[schemars(title = "Invited")]
     Invited {
         invite: InviteInfo,
-        #[serde(serialize_with = "glave_event::serialize_exposed")]
-        code: Secret,
+        /// None when its link was emailed to its address alone (`invite.email`): sent there,
+        /// never back to whoever made it, so whoever opens it holds that mailbox.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            serialize_with = "glave_event::serialize_exposed_some"
+        )]
+        code: Option<Secret>,
     },
     /// A sign-up link whoever runs the server made, sent this once, and when it stops working.
     #[schemars(title = "SignupLinked")]

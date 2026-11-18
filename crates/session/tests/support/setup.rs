@@ -158,6 +158,10 @@ pub(crate) fn scope() -> Scope {
 }
 
 /// What a test server is built from.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each switch is one a test sets on its own, as the server's wiring takes it"
+)]
 pub(crate) struct Setup {
     /// The server's blobs, which a test may keep a clone of.
     pub blobs: SharedBlobs,
@@ -202,6 +206,8 @@ pub(crate) struct Setup {
     pub mail: Option<Arc<dyn glave_ports::Mailer>>,
     /// What pushes its notifications; with none, it pushes none.
     pub push: Option<Arc<glave_session::Pushing>>,
+    /// Whether it readies push as a server starts: false for one asked before it has.
+    pub ready_to_push: bool,
     /// Where people reach it from elsewhere; with none, only on its own computer.
     pub origin: Option<glave_ports::host::PublicOrigin>,
     /// Whether it takes sign-ups.
@@ -294,6 +300,7 @@ impl Setup {
             accounts: None,
             mail: None,
             push: None,
+            ready_to_push: true,
             origin: None,
             signup: false,
             forwarded: None,
@@ -462,6 +469,10 @@ impl Setup {
             server.answer_filters(filters);
         }
         keep_own_project(&server, home).await;
+        // As a server that pushes starts: the key every push is signed with, made now.
+        if self.ready_to_push {
+            server.ready_to_push().await.unwrap();
+        }
         (server, seen)
     }
 }

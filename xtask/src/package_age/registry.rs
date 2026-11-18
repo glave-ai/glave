@@ -2,7 +2,8 @@
 //! `created_at`, asked as its crawler policy asks (a User-Agent that says who is asking, at
 //! most one request a second); and the npm registry's document for a package, its `time` for
 //! each version. Asked with curl, as xtask asks git and cargo. A registry's bad moment is
-//! tried again a few times ([`WAITS`]), not with curl's own `--retry`, which leaves the failed
+//! tried again a few times ([`WAITS`], lengthened by a rate limit's `Retry-After` up to the
+//! longest of them), not with curl's own `--retry`, which leaves the failed
 //! try's body in the output ahead of the answer.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,8 +21,9 @@ const USER_AGENT: &str = "glave-xtask-package-age (https://github.com/glave-ai/g
 /// The least time between two requests to crates.io: its crawler policy's one a second.
 const CRATES_IO_EVERY: Duration = Duration::from_secs(1);
 
-/// What curl writes after the body: the HTTP status, three digits (`000` when none came).
-const STATUS: &str = "%{http_code}";
+/// What curl writes after the body: a line break, the answer's `Retry-After` (empty when it
+/// has none), another, and the HTTP status, three digits (`000` when none came).
+const STATUS: &str = "\n%header{retry-after}\n%{http_code}";
 
 /// How long to wait before each try after the first: seconds for a registry's bad moment,
 /// and then a plain failure. Each is longer than [`CRATES_IO_EVERY`], so crates.io's crawler
@@ -47,6 +49,8 @@ enum Failed {
     /// Trouble that may pass: nothing came back, or a status that says the registry is having
     /// a bad moment.
     Passing(String),
+    /// A rate limit, with how long its `Retry-After` asks to wait before the next try.
+    Limited(String, Duration),
     /// An answer another try wouldn't change.
     Settled(String),
 }
@@ -122,15 +126,18 @@ fn get(registry: Registry, url: &str, about: &str) -> Result<Option<String>, Unk
 }
 
 /// What `ask` answers: asked again, after `pause`ing for each of `waits` in turn, while it
-/// fails in a way that may pass, and once more after the last wait, whatever that says.
+/// fails in a way that may pass, and once more after the last wait, whatever that says. A
+/// rate limit's `Retry-After` lengthens a wait, never past the longest of `waits`.
 fn retried<T>(
     waits: &[Duration],
     mut ask: impl FnMut() -> Result<T, Failed>,
     mut pause: impl FnMut(Duration),
 ) -> Result<T, Failed> {
+    let longest = waits.iter().max().copied().unwrap_or_default();
     for wait in waits {
         match ask() {
             Err(Failed::Passing(_)) => pause(*wait),
+            Err(Failed::Limited(_, after)) => pause(after.min(longest).max(*wait)),
             answer => return answer,
         }
     }
@@ -142,7 +149,7 @@ fn retried<T>(
 fn gave_up(failed: Failed, took: Duration) -> Unknown {
     Unknown::Unanswered(match failed {
         Failed::Settled(why) => why,
-        Failed::Passing(why) => format!(
+        Failed::Passing(why) | Failed::Limited(why, _) => format!(
             "{why} (the last of {} tries, over {})",
             WAITS.len() + 1,
             spoken(took)
@@ -175,36 +182,43 @@ fn get_once(registry: Registry, url: &str, about: &str) -> Result<Option<String>
             registry.name()
         ))
     })?;
-    answered(&said).map_err(|status| refused(registry, &status, about))
+    answered(&said).map_err(|(status, after)| refused(registry, &status, after, about))
 }
 
-/// Why a try failed that `registry` answered with `status`, when asked when `about` was
-/// published: one that may pass for a request timed out, a rate limited or a server's own
-/// trouble.
-fn refused(registry: Registry, status: &str, about: &str) -> Failed {
+/// Why a try failed that `registry` answered with `status`, and a `Retry-After` of `after`
+/// when it gave one, when asked when `about` was published: one that may pass for a request
+/// timed out, a rate limit or a server's own trouble.
+fn refused(registry: Registry, status: &str, after: Option<Duration>, about: &str) -> Failed {
     let why = format!(
         "{} answered HTTP {status} when asked when {about} was published",
         registry.name()
     );
-    if matches!(status, "408" | "429") || status.starts_with('5') {
-        Failed::Passing(why)
-    } else {
-        Failed::Settled(why)
+    match after {
+        Some(after) if status == "429" => Failed::Limited(why, after),
+        _ if matches!(status, "408" | "429") || status.starts_with('5') => Failed::Passing(why),
+        _ => Failed::Settled(why),
     }
 }
 
 /// curl's output, a body and then [`STATUS`]: the body when the status is 200, `None` for a
-/// 404, else the status.
-fn answered(said: &str) -> Result<Option<String>, String> {
-    let (body, status) = said
+/// 404, else the status and the wait its `Retry-After` asks for, when it says one in seconds.
+fn answered(said: &str) -> Result<Option<String>, (String, Option<Duration>)> {
+    let (rest, status) = said
         .len()
         .checked_sub(3)
         .and_then(|at| said.split_at_checked(at))
         .unwrap_or(("", said));
+    let (body, retry_after) = rest
+        .strip_suffix('\n')
+        .and_then(|rest| rest.rsplit_once('\n'))
+        .unwrap_or((rest, ""));
     match status {
         "200" => Ok(Some(body.to_owned())),
         "404" => Ok(None),
-        other => Err(other.to_owned()),
+        other => Err((
+            other.to_owned(),
+            retry_after.trim().parse().ok().map(Duration::from_secs),
+        )),
     }
 }
 
@@ -277,16 +291,28 @@ mod tests {
     }
 
     #[test]
-    fn curl_s_answer_is_its_body_then_its_status() {
-        assert_eq!(answered("{\"a\":1}200"), Ok(Some("{\"a\":1}".to_owned())));
+    fn curl_s_answer_is_its_body_then_its_retry_after_then_its_status() {
         assert_eq!(
-            answered("line one\nline two\n200"),
+            answered("{\"a\":1}\n\n200"),
+            Ok(Some("{\"a\":1}".to_owned()))
+        );
+        assert_eq!(
+            answered("line one\nline two\n\n\n200"),
             Ok(Some("line one\nline two\n".to_owned()))
         );
-        assert_eq!(answered("{\"errors\":[]}404"), Ok(None));
-        assert_eq!(answered("busy503"), Err("503".to_owned()));
-        assert_eq!(answered("000"), Err("000".to_owned()));
-        assert_eq!(answered(""), Err(String::new()));
+        assert_eq!(answered("{\"errors\":[]}\n\n404"), Ok(None));
+        assert_eq!(answered("busy\n\n503"), Err(("503".to_owned(), None)));
+        assert_eq!(
+            answered("slow down\n5\n429"),
+            Err(("429".to_owned(), Some(Duration::from_secs(5))))
+        );
+        assert_eq!(
+            answered("slow down\nWed, 21 Oct 2026 07:28:00 GMT\n429"),
+            Err(("429".to_owned(), None)),
+            "a date is not read"
+        );
+        assert_eq!(answered("\n\n000"), Err(("000".to_owned(), None)));
+        assert_eq!(answered(""), Err((String::new(), None)));
     }
 
     /// Runs `retried` over `tries`, answers in order, with waits recorded rather than slept:
@@ -330,6 +356,19 @@ mod tests {
     }
 
     #[test]
+    fn a_rate_limit_s_retry_after_lengthens_a_wait_never_past_the_longest() {
+        let limited = |secs| Err(Failed::Limited("429".to_owned(), Duration::from_secs(secs)));
+        let (came_to, asked, waited) =
+            retrying(vec![limited(1), limited(5), limited(60), Ok("the answer")]);
+        assert_eq!((came_to, asked), (Ok("the answer"), 4));
+        assert_eq!(
+            waited,
+            [2, 5, 8].map(Duration::from_secs),
+            "never shorter than its own wait, never longer than the longest"
+        );
+    }
+
+    #[test]
     fn a_first_answer_is_asked_for_once() {
         assert_eq!(retrying(vec![Ok("at once")]), (Ok("at once"), 1, vec![]));
     }
@@ -367,13 +406,23 @@ mod tests {
 
     #[test]
     fn a_timeout_a_rate_limit_or_a_server_s_trouble_may_pass_and_nothing_else() {
-        let said = |status| refused(Registry::Crates, status, "tokio 1.48.0");
+        let said = |status| refused(Registry::Crates, status, None, "tokio 1.48.0");
         let why = |status| {
             format!("crates.io answered HTTP {status} when asked when tokio 1.48.0 was published")
         };
         for status in ["408", "429", "500", "502", "503", "504"] {
             assert_eq!(said(status), Failed::Passing(why(status)), "{status}");
         }
+        let after = Some(Duration::from_secs(5));
+        assert_eq!(
+            refused(Registry::Crates, "429", after, "tokio 1.48.0"),
+            Failed::Limited(why("429"), Duration::from_secs(5))
+        );
+        assert_eq!(
+            refused(Registry::Crates, "503", after, "tokio 1.48.0"),
+            Failed::Passing(why("503")),
+            "only a rate limit's Retry-After is followed"
+        );
         for status in ["301", "400", "401", "403", "410", "000", ""] {
             assert_eq!(said(status), Failed::Settled(why(status)), "{status}");
         }
