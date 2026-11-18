@@ -482,7 +482,10 @@ where
     pub async fn recover_tasks(&self) -> Result<Repaired, ApiError> {
         let mut recovered = Repaired::default();
         // The person's own projects with schedules made before where schedules are was kept
-        // are listed, so the server firing schedules finds them wherever it runs.
+        // are listed, so the server firing schedules finds them wherever it runs; and any a
+        // scheduler that stopped mid-unplace may have left out.
+        self.placed().await;
+        self.look_again_at_unplaced().await;
         for project in self.task_projects_here().await? {
             self.catch_up(project).await?;
             let any = (self.ledgers().get(&project)).is_some_and(|l| !l.schedules.is_empty());

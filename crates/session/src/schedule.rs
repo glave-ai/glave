@@ -143,7 +143,7 @@ where
                 by: self.someone_else(caller.person),
             };
             self.record_in_ledger(project, &deleted).await?;
-            return Err(ApiError::new(code::LIMIT, Sentence::WrittenElsewhere));
+            return Err(self.too_many_schedules(self.most_schedules()));
         }
         Ok(())
     }
