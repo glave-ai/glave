@@ -157,6 +157,23 @@ where
         Ok((kept, scope))
     }
 
+    /// The scope of `person`'s Chats in `org`, when they have them: found, never made.
+    pub(crate) async fn chats_found(
+        &self,
+        org: OrgId,
+        person: PrincipalId,
+    ) -> Result<Option<Scope>, ApiError> {
+        let theirs = self
+            .inner
+            .projects
+            .list(org, &Principal::person(person), MOST_PROJECTS)
+            .await?;
+        Ok(theirs
+            .iter()
+            .find(|project| project.kind == ProjectKind::Personal)
+            .and_then(|chats| Scope::of_owner(org, chats, person)))
+    }
+
     /// The project a request acts in, and the caller's scope in it: `asked`, when the caller
     /// owns it; with none, their personal project, their Chats, whatever folder the server
     /// started in.
