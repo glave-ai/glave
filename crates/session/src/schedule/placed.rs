@@ -2,8 +2,9 @@
 //! everyone's, though no one asked it for anything since it started. Each organization's own
 //! stream lists its projects with schedules now (`schedule.placed`, `schedule.unplaced` as a
 //! project's last one goes), so no organization's are listed under another's; the store says
-//! which organizations it holds (`Projects::organizations`). Each organization's index holds at
-//! most [`MOST_PROJECTS`] projects, each listed once.
+//! which organizations it holds (`Projects::organizations`), a page at a time. Each
+//! organization's index holds at most [`MOST_PROJECTS`] projects, each listed once; this server
+//! keeps what it read of an organization's only while it lists any.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::PoisonError;
@@ -22,6 +23,11 @@ use crate::words::Sentence;
 /// schedule is refused in a project of theirs not listed yet. Each organization's own, so none
 /// crowds out another's.
 pub(crate) const MOST_PROJECTS: usize = 10_000;
+
+/// The store's organizations one tick of the scheduler reads the indexes of, beyond those it
+/// knows have schedules: where the tick before stopped, a page further on each time, so a
+/// schedule made on another server in an organization this one never served is found.
+pub(crate) const ORGANIZATIONS: usize = 1_000;
 
 /// One organization's index, as far as this server has read it: its projects with schedules,
 /// in the order they were listed.
@@ -61,13 +67,15 @@ impl Listed {
     }
 }
 
-/// The index as far as this server has read it; how many ticks of the scheduler read it, and
-/// where in each organization's projects the last tick stopped.
+/// The index as far as this server has read it, of organizations that list projects; how many
+/// ticks of the scheduler read it, where in each organization's projects the last tick stopped,
+/// and after which of the store's organizations the next page of them starts.
 #[derive(Debug, Default)]
 pub(crate) struct Placed {
     projects: HashMap<OrgId, Listed>,
     ticks: usize,
     stopped: HashMap<OrgId, usize>,
+    after: Option<OrgId>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -76,41 +84,87 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Every organization the store holds, and any whose index this server read: what can't be
-    /// listed now is what was read before.
-    pub(crate) async fn scheduling_organizations(&self) -> Vec<OrgId> {
-        let mut organizations = match self.inner.projects.organizations().await {
-            Ok(organizations) => organizations,
+    /// The organizations whose index, as this server last read it, lists projects.
+    pub(crate) fn known_organizations(&self) -> Vec<OrgId> {
+        let mut known: Vec<OrgId> = self.held_placed(|held| {
+            (held.projects.iter())
+                .filter(|(_, listed)| !listed.items.is_empty())
+                .map(|(org, _)| *org)
+                .collect()
+        });
+        known.sort();
+        known
+    }
+
+    /// The next page of the store's organizations, after where the last one this server went
+    /// through stopped; none while they can't be listed, tried again next time.
+    pub(crate) async fn organizations_page(&self) -> Vec<OrgId> {
+        let after = self.held_placed(|held| held.after);
+        match self
+            .inner
+            .projects
+            .organizations(after, ORGANIZATIONS)
+            .await
+        {
+            Ok(page) => page,
             Err(error) => {
                 tracing::warn!(%error, "could not list the store's organizations");
                 Vec::new()
             }
-        };
-        organizations
-            .extend(self.held_placed(|held| held.projects.keys().copied().collect::<Vec<_>>()));
-        organizations.sort();
-        organizations.dedup();
-        organizations
+        }
+    }
+
+    /// Notes that the store's organizations were gone through up to `org`, so the next page
+    /// starts after it; none starts again from the first.
+    pub(crate) fn listed_through(&self, org: Option<OrgId>) {
+        self.held_placed(|held| held.after = org);
     }
 
     /// The projects `org`'s index lists, read up to now; what can't be read now is what was
-    /// read before, read again next time.
+    /// read before, read again next time. One that lists none is kept no more, nor where a tick
+    /// stopped in it, so organizations without schedules cost this server nothing.
     pub(crate) async fn placed_in(&self, org: OrgId) -> Vec<Located> {
         if let Err(error) = self.catch_up_placed(org).await {
             tracing::warn!(%error, %org, "could not read where the organization's schedules are");
         }
-        let projects =
-            self.held_placed(|held| (held.projects.get(&org)).map(|listed| listed.items.clone()));
+        let projects = self.held_placed(|held| {
+            let items = (held.projects.get(&org)).map(|listed| listed.items.clone());
+            if items.as_ref().is_none_or(Vec::is_empty) {
+                held.projects.remove(&org);
+                held.stopped.remove(&org);
+            }
+            items
+        });
         (projects.into_iter().flatten())
             .map(|project| Located { org, project })
             .collect()
     }
 
-    /// Every project the index lists, in every organization the store holds, read up to now.
+    /// Every project the index lists, in every organization the store holds, read up to now,
+    /// a page of organizations at a time: for a server as it starts.
     pub(crate) async fn placed(&self) -> Vec<Located> {
         let mut placed = Vec::new();
-        for org in self.scheduling_organizations().await {
-            placed.extend(self.placed_in(org).await);
+        let mut after = None;
+        loop {
+            let page = match self
+                .inner
+                .projects
+                .organizations(after, ORGANIZATIONS)
+                .await
+            {
+                Ok(page) => page,
+                Err(error) => {
+                    tracing::warn!(%error, "could not list the store's organizations");
+                    break;
+                }
+            };
+            for org in &page {
+                placed.extend(self.placed_in(*org).await);
+            }
+            match page.last() {
+                Some(last) if page.len() == ORGANIZATIONS => after = Some(*last),
+                _ => break,
+            }
         }
         placed
     }
@@ -182,7 +236,8 @@ where
 
     /// Takes the project `at` out of its organization's index once its ledger, read now, holds
     /// no schedule: what the index holds is the projects with schedules now. A schedule made
-    /// there meanwhile lists it again as it is recorded.
+    /// there before the removal landed, which found the project still listed, is found as the
+    /// ledger is read again after it, and lists the project again.
     pub(crate) async fn unplace_if_none(&self, at: Located) -> Result<(), ApiError> {
         if !self.ledger_apart(at).await?.schedules.is_empty() {
             return Ok(());
@@ -194,7 +249,11 @@ where
             let listed = held.projects.get(&at.org)?;
             listed.held.contains(&at.project).then(|| listed.next_seq())
         };
-        self.list_once(at.org, &unplaced, listed).await
+        self.list_once(at.org, &unplaced, listed).await?;
+        if self.ledger_apart(at).await?.schedules.is_empty() {
+            return Ok(());
+        }
+        self.place_schedules(at).await
     }
 
     /// Appends `payload` to `org`'s index, after anything others wrote meanwhile, at the `seq`

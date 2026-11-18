@@ -113,11 +113,6 @@ impl Peoples {
             .is_some_and(|people| people.removed(person))
     }
 
-    /// Who removed `person` from `org`, as far as this server has read, while they are out.
-    pub(crate) fn removed_by(&self, org: OrgId, person: PrincipalId) -> Option<Principal> {
-        self.held.get(&org)?.removed.get(&person).cloned()
-    }
-
     /// One more watch follows someone's place in `org`.
     pub(crate) fn watch(&mut self, org: OrgId) {
         *self.watched.entry(org).or_default() += 1;
@@ -215,6 +210,11 @@ impl People {
     /// Whether `person` was removed, and has not come back by an invite since.
     pub(crate) fn removed(&self, person: PrincipalId) -> bool {
         self.removed.contains_key(&person)
+    }
+
+    /// Who removed `person`, while they are out.
+    pub(crate) fn removed_by(&self, person: PrincipalId) -> Option<Principal> {
+        self.removed.get(&person).cloned()
     }
 
     /// Whether `person` is in the ledger now.
@@ -724,7 +724,7 @@ mod tests {
         for other in 2..=PEOPLES {
             peoples.of(org(other));
         }
-        assert!(peoples.removed_by(org(0), person).is_some());
-        assert!(peoples.removed_by(org(1), person).is_none());
+        assert!(peoples.removed(org(0), person));
+        assert!(!peoples.removed(org(1), person));
     }
 }

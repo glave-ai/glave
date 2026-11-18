@@ -4,9 +4,11 @@
 //! its budget, as whoever made it, that waits for them where it needs them, as a chat does.
 //! One server on the store fires them, the holder of its scheduler lease; each run is claimed
 //! by its own `task.started`, so even two servers that both believe they hold it start it once
-//! (`tasks/run.rs`). Organization by organization, each tick starting one further on, a few
-//! projects' ledgers are read at once and each one's due runs started right after, for at most
-//! a share of the tick each organization, the next tick going on where it stopped. A run due
+//! (`tasks/run.rs`). Every organization known to list projects, then a page of the store's
+//! others: organization by organization, each tick starting one further on, a few projects'
+//! ledgers are read at once and each one's due runs started right after, for at most a share of
+//! the tick each organization, the first read whatever the time, the next tick going on where
+//! it stopped. A run due
 //! while the one before is still going in the chat, or while someone's turn is, is skipped and
 //! recorded so (`schedule.skipped`); a run refused for any other reason is recorded with its
 //! reason. A skip for the reason the latest skip had is recorded once, then only held back. A
@@ -25,6 +27,7 @@ use jiff::{SignedDuration, Timestamp};
 use tokio::task::JoinSet;
 
 use super::info::{due, next_fire};
+use super::placed::ORGANIZATIONS;
 use crate::choice::Choice;
 use crate::cron::{Cron, SHORTEST_GAP};
 use crate::protocol::{ApiError, code};
@@ -78,36 +81,64 @@ where
         }
         let clock = self.inner.harness.clock();
         let until = clock.now().checked_add(TICK).ok();
+        let past = || until.is_some_and(|until| clock.now() >= until);
         let mine = self.task_projects_here().await?;
-        let mut organizations: BTreeSet<OrgId> = mine.iter().map(|at| at.org).collect();
-        organizations.extend(self.scheduling_organizations().await);
-        let count = organizations.len();
+        // Every organization this server knows has schedules, each tick starting one further on.
+        let mut known: BTreeSet<OrgId> = mine.iter().map(|at| at.org).collect();
+        known.extend(self.known_organizations());
+        let count = known.len();
         let (mut started, mut reached) = (Vec::new(), 0usize);
-        for org in in_turn(organizations, self.next_turn()) {
-            if until.is_some_and(|until| clock.now() >= until) {
-                tracing::warn!(
-                    left = count.saturating_sub(reached),
-                    "the tick took its time; the rest go on at the next"
-                );
+        for org in in_turn(known.clone(), self.next_turn()) {
+            if past() {
+                let left = count.saturating_sub(reached);
+                tracing::warn!(left, "the tick took its time; the rest go on at the next");
                 break;
             }
-            let theirs = mine.iter().filter(|at| at.org == org).copied();
-            let mut projects: Vec<Located> = theirs.collect();
-            for placed in self.placed_in(org).await {
-                if !projects.contains(&placed) {
-                    projects.push(placed);
-                }
-            }
-            started.extend(self.fire_in(org, projects, until).await);
+            started.extend(self.fire_org(org, &mine, until).await);
             reached = reached.saturating_add(1);
         }
         self.turned(reached, count);
+        // Then a page of the store's other organizations, from where the last page stopped, so
+        // a schedule made on another server is found.
+        let page = self.organizations_page().await;
+        let goes_round = page.len() < ORGANIZATIONS;
+        for (n, org) in page.iter().enumerate() {
+            if past() {
+                break;
+            }
+            if !known.contains(org) {
+                started.extend(self.fire_org(*org, &mine, until).await);
+            }
+            let last = goes_round && n.saturating_add(1) == page.len();
+            self.listed_through((!last).then_some(*org));
+        }
+        if page.is_empty() {
+            self.listed_through(None);
+        }
         Ok(started)
+    }
+
+    /// Starts the runs due in `org`'s projects: those of `mine` there, and every one its index
+    /// lists, not past `until`.
+    async fn fire_org(
+        &self,
+        org: OrgId,
+        mine: &[Located],
+        until: Option<Timestamp>,
+    ) -> Vec<ThreadId> {
+        let mut projects: Vec<Located> = mine.iter().filter(|at| at.org == org).copied().collect();
+        for placed in self.placed_in(org).await {
+            if !projects.contains(&placed) {
+                projects.push(placed);
+            }
+        }
+        self.fire_in(org, projects, until).await
     }
 
     /// Starts the runs due in `projects`, all `org`'s: from where the tick before stopped, a
     /// few ledgers read at once and each one's runs started right after, for at most
-    /// [`SHARE`] of the tick and not past the tick's own end, `tick`; answers their chats.
+    /// [`SHARE`] of the tick and not past the tick's own end, `tick`, though always the first
+    /// of what was read, so reads slower than the share still go on; answers their chats.
     async fn fire_in(
         &self,
         org: OrgId,
@@ -132,9 +163,10 @@ where
             }
             let read: Vec<(Located, Result<(), ApiError>)> = reads.join_all().await;
             // Each project's runs right after its ledger was read, in the chunk's order, while
-            // there is time.
-            for at in chunk {
-                if past() {
+            // there is time; the first whatever the time, so the next tick never stops where
+            // this one did.
+            for (n, at) in chunk.iter().enumerate() {
+                if n > 0 && past() {
                     break 'chunks;
                 }
                 match read
@@ -333,9 +365,12 @@ where
             Ok(Some(_)) => Ran::Started(chat),
             // Another server's claim landed first.
             Ok(None) => Ran::NotStarted,
-            // A task of its maker's started since it was looked at: held back as the limit
-            // holds a run, unrecorded, so it starts on a later tick.
-            Err(Unstarted { refused, claimed }) if !claimed && refused.code == code::LIMIT => {
+            // A task of its maker's started since it was looked at, or another server holds
+            // its task, as it claims the run: held back, unrecorded, so it starts on a later
+            // tick, and never ends a run that server's claim starts.
+            Err(Unstarted { refused, claimed })
+                if !claimed && [code::LIMIT, code::RUNNING_ELSEWHERE].contains(&refused.code) =>
+            {
                 Ran::NotStarted
             }
             Err(Unstarted { refused, claimed }) => {
