@@ -10,9 +10,7 @@ use std::sync::Arc;
 use glave_event::{At, Body, ThreadId, decode};
 use glave_ports::testing::ManualClock;
 use glave_ports::{Caller, ProjectId, Standing};
-use glave_session::protocol::{
-    Answer, Notification, Reply, Request, Status, ThreadSummary, Update, code,
-};
+use glave_session::protocol::{Answer, Notification, Reply, Request, Status, ThreadSummary, code};
 use glave_session::signin::person;
 use glave_session::{Answering, TurnItem};
 use serde_json::{Value, json};
@@ -470,20 +468,7 @@ async fn ask_and_allow(
 ) {
     let mut stream = stream_turn(server, thread, "touch it", None).await.unwrap();
     gate.notify_one();
-    let approval = loop {
-        match stream.next().await.unwrap() {
-            TurnItem::Note(note) => {
-                if let Notification::Live {
-                    update: Update::ApprovalPending { approval },
-                    ..
-                } = note.as_ref()
-                {
-                    break approval.clone();
-                }
-            }
-            other => panic!("the turn went on without asking: {other:?}"),
-        }
-    };
+    let approval = approval_asked(&mut stream).await;
     hear(watcher, thread, heard, |s| s.status == Status::Waiting).await;
     let decide = Request::ApprovalDecide {
         thread,

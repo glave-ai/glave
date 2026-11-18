@@ -208,6 +208,9 @@ impl Client<'_> {
         let code = match ended {
             Some(Ok(turn)) => {
                 printer.receipt(&turn);
+                if !turn.made.is_empty() || turn.made_left.is_some() {
+                    self.show_made(printer).await;
+                }
                 match turn.outcome {
                     Outcome::Completed => ExitCode::SUCCESS,
                     // As shells report a program stopped by Ctrl-C.
@@ -413,6 +416,28 @@ impl Client<'_> {
             printer.error(&error);
         }
         Ok(())
+    }
+
+    /// Shows the files the turn that just ended made, a line each in the server's words ("Made a
+    /// spreadsheet: Trip budget (2 sheets)"), then where it keeps them and why it can't show one
+    /// it couldn't read, and what they leave out. Nothing when it can't say: the turn's receipt
+    /// stands without them.
+    async fn show_made(&self, printer: &mut Printer) {
+        let listed = self.server.request(Request::ThreadFiles {
+            thread: self.thread,
+        });
+        let Ok(Reply::Files { made }) = listed.await else {
+            return;
+        };
+        let Some(turn) = made.last() else {
+            return;
+        };
+        for file in &turn.files {
+            printer.status(&format!("{} · {}", &*file.sentence, &*file.kept));
+        }
+        if let Some(note) = &turn.note {
+            printer.status(note);
+        }
     }
 
     /// Asks the server to cancel the turn; true once asked, so it is asked only once.
