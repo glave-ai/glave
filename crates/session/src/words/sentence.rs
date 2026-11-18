@@ -553,6 +553,23 @@ sentences! {
     Sources { pages: u64 } = "sources"
         "Sources: { $pages ->\n    [1] 1 page\n   *[other] { $pages } pages\n }",
 
+    // The files a thread made: where each is kept, or why not, and what was made in a line.
+    // `kind` is `document`, `spreadsheet`, `deck`, `pdf` or `other`.
+    KeptWithChat = "kept-with-chat" "Kept with this chat",
+    LeftTooLarge { megabytes: u64 } = "left-too-large"
+        "Not kept: larger than { $megabytes } MB, so it stays on the computer",
+    LeftSecret = "left-secret"
+        "Not kept: it holds one of your secrets, so it stays on the computer",
+    MadeLine { kind: String, name: String } = "made-line"
+        "Made { $kind ->\n    [document] a document\n    [spreadsheet] a spreadsheet\n    [deck] a deck\n    [pdf] a PDF\n   *[other] a file\n }: { $name }",
+    LeftUnchecked = "left-unchecked"
+        "Not kept: it unpacks too large to check for your secrets, so it stays on the computer",
+    // What the files a turn made leave out.
+    MadeMore { files: u64 } = "made-more"
+        "{ $files ->\n    [1] 1 more file was made than a chat keeps: it stays on the computer\n   *[other] { $files } more files were made than a chat keeps: they stay on the computer\n }",
+    MadeTooMany = "made-too-many"
+        "This folder has too many files to look over, so what was made isn't shown",
+
     // What a thread changed in files.
     ChangesLeftOut = "changes-left-out"
         "Changes made by commands or other tools are not listed.",

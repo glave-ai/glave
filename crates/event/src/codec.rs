@@ -23,11 +23,11 @@ use crate::payload::{
     ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted, TaskEnded, TaskStarted,
     ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked, ThreadRenamed, ThreadStarted,
     ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted, TrustDecided,
-    TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance, approval,
-    awake, browser, catalog, certificate, chosen, command, connection, connector, credential,
-    credits, filters, fork, grouping, hook, instructions, language, library, memory, message,
-    model, passkey, people, plan, project, provider, push, remembering, search, secrets, service,
-    signup, standing, task, thread, tool, trust, turn, workspace, zone,
+    TurnMade, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance,
+    approval, awake, browser, catalog, certificate, chosen, command, connection, connector,
+    credential, credits, filters, fork, grouping, hook, instructions, language, library, made,
+    memory, message, model, passkey, people, plan, project, provider, push, remembering, search,
+    secrets, service, signup, standing, task, thread, tool, trust, turn, workspace, zone,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -60,6 +60,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (chosen::PERMISSIONS, 1),
     (chosen::EFFORT, 1),
     (turn::ENDED, 1),
+    (turn::ENDED, 2),
     (approval::REQUESTED, 1),
     (approval::REQUESTED, 2),
     (approval::DECIDED, 1),
@@ -146,6 +147,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (push::CLAIMED, 1),
     (library::KEPT, 1),
     (library::REMOVED, 1),
+    (made::TURN_MADE, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -237,6 +239,7 @@ pub enum Body {
     PushClaimed(PushClaimed),
     LibraryKept(LibraryKept),
     LibraryRemoved(LibraryRemoved),
+    TurnMade(TurnMade),
     PersonJoined(PersonJoined),
     RoleSet(RoleSet),
     OrganizationMade(OrganizationMade),
@@ -461,6 +464,7 @@ impl Event {
             Body::PushClaimed(payload) => encode(header, payload),
             Body::LibraryKept(payload) => encode(header, payload),
             Body::LibraryRemoved(payload) => encode(header, payload),
+            Body::TurnMade(payload) => encode(header, payload),
             Body::PersonJoined(payload) => encode(header, payload),
             Body::RoleSet(payload) => encode(header, payload),
             Body::OrganizationMade(payload) => encode(header, payload),
@@ -622,7 +626,7 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
 type Decoder = fn(&str, u32, &RawValue) -> Option<serde_json::Result<Body>>;
 
 /// The decoders of the ledgers whose events are not named one by one above.
-const LEDGERS: [Decoder; 7] = [
+const LEDGERS: [Decoder; 8] = [
     people::decode,
     signup::decode,
     credits::decode,
@@ -630,6 +634,7 @@ const LEDGERS: [Decoder; 7] = [
     secrets::decode,
     push::decode,
     library::decode,
+    made::decode,
 ];
 
 /// Parses a payload's bytes as one specific version of one type.
@@ -656,7 +661,11 @@ mod tests {
 
     fn line(kind: &str, v: u32, data: &str) -> String {
         let raw = encode(header(), &TurnResult::begun()).unwrap();
-        let ended = format!(r#""type":"turn.ended","v":1,"data":{}"#, raw.data.get());
+        let ended = format!(
+            r#""type":"turn.ended","v":{},"data":{}"#,
+            TurnResult::VERSION,
+            raw.data.get()
+        );
         raw.to_json()
             .unwrap()
             .replace(&ended, &format!(r#""type":"{kind}","v":{v},"data":{data}"#))
@@ -697,7 +706,7 @@ mod tests {
     #[test]
     fn newer_versions_of_known_types_pass_through() {
         let raw =
-            RawEvent::from_json(&line("turn.ended", 2, r#"{"outcome":"done","why":"x"}"#)).unwrap();
+            RawEvent::from_json(&line("turn.ended", 3, r#"{"outcome":"done","why":"x"}"#)).unwrap();
         assert!(matches!(decode(raw).unwrap().body, Body::Unknown(_)));
     }
 

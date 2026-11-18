@@ -16,7 +16,7 @@ use super::{
     Grouping, InviteInfo, LibraryItem, Logo, ModelInfo, OrganizationInfo, OrganizationLook,
     PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, PushInfo,
     ReplySources, ScheduleInfo, SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay,
-    SpaceCredits, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
+    SpaceCredits, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, TurnFiles, WatchEnd,
 };
 
 mod listening;
@@ -581,6 +581,9 @@ pub enum Reply {
     /// What a thread changed in files.
     #[schemars(title = "Changes")]
     Changes { changes: ThreadChanges },
+    /// The files a thread's turns made for the person.
+    #[schemars(title = "Files")]
+    Files { made: Vec<TurnFiles> },
     /// A thread's turns in steps.
     #[schemars(title = "Steps")]
     Steps { steps: ThreadSteps },

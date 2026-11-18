@@ -144,6 +144,31 @@ fn rs256_and_es256_tokens_both_sign_in() {
 }
 
 #[test]
+fn a_company_login_is_signed_in_until_its_token_is_refused() {
+    block_on!(async {
+        let issuer = Issuer::start().await;
+        let signer = Signer::es256("ec");
+        issuer.publish(&signer);
+        let clock = ManualClock::at_second(NOW);
+        let trust = Trust {
+            issuers: vec![issuer.url.clone()],
+            audience: AUDIENCE.into(),
+        };
+        let signin = SignIn::new(trust, Box::new(clock.clone())).unwrap();
+        let token = signer.sign(&issuer.claims("ada"));
+        // Its ten minutes, and the minute of clock skew forgiven.
+        let until = signin.verify(&token).await.unwrap().until;
+        let refused_from = jiff::Timestamp::from_second(NOW + 660).unwrap();
+        assert_eq!(until, Some(refused_from));
+        clock.set_millis(refused_from.as_millisecond() - 1);
+        assert!(signin.verify(&token).await.is_ok());
+        clock.advance_millis(1);
+        let late = signin.verify(&token).await;
+        assert!(matches!(late, Err(SignInError::Expired)), "{late:?}");
+    });
+}
+
+#[test]
 fn a_tokens_name_email_and_groups_are_read_and_odd_ones_left_out() {
     block_on!(async {
         let issuer = Issuer::start().await;

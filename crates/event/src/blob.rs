@@ -58,9 +58,10 @@ impl From<Sha256> for String {
 }
 
 /// Points to content held in the blob store instead of inside an event.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BlobRef {
+    #[schemars(with = "String")]
     pub sha256: Sha256,
     pub bytes: u64,
     pub media_type: String,

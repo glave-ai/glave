@@ -327,6 +327,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
             profile: None,
             org: None,
             from: None,
+            until: None,
         };
         let chat = server
             .request_as(
