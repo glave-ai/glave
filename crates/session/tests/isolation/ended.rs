@@ -1,22 +1,25 @@
 //! What a caller follows ends the moment their access does (#546): a thread's watch, a turn's
-//! stream and a list's watch, followed by a browser whose sign-in ends while they wait, end at
-//! once with "no sign-in", and nothing more is sent after. A project has one owner, who keeps
-//! it, so a browser's sign-in is the access that can end while they follow.
+//! stream and a list's watch, followed by a browser whose sign-in ends while they wait, or by
+//! someone whose company login's token expires (#1504), end at once with "no sign-in", and
+//! nothing more is sent after. A project has one owner, who keeps it, so a sign-in is the
+//! access that can end while they follow.
 
 use std::sync::Arc;
 
 use glave_event::{Auth, AuthMethod, ThreadId};
+use glave_ports::testing::ManualClock;
 use glave_ports::{Caller, Completion, InMemoryLog};
 use glave_session::protocol::{ApiError, Notification, Reply, Request, Update, code};
 use glave_session::signin::Browsers;
 use glave_session::{Answering, Sent, TurnItem, TurnStream, Watched};
+use jiff::Timestamp;
 use serde_json::json;
 
 use crate::support::*;
 
 /// A server signing browsers in, a browser signed in to it, and that browser as a caller.
 async fn signed_in(dir: &std::path::Path, answers: Vec<Completion>) -> (Tested, Caller) {
-    let clock = glave_ports::testing::ManualClock::at_second(1_791_001_000);
+    let clock = ManualClock::at_second(1_791_001_000);
     let opened = Browsers::open(
         InMemoryLog::new(),
         scope(),
@@ -45,6 +48,7 @@ async fn signed_in(dir: &std::path::Path, answers: Vec<Completion>) -> (Tested, 
         profile: None,
         org: None,
         from: None,
+        until: None,
     };
     (server, browser)
 }
@@ -143,6 +147,92 @@ fn a_list_watch_ends_when_its_browser_signs_out() {
         };
         no_sign_in(&ended);
         start(&server, false).await;
+        assert!(list.next().await.is_none(), "nothing more after");
+    });
+}
+
+/// How long the server takes a company login's token in these tests, in milliseconds: less than
+/// a thread's lease, so the turn it starts keeps its own.
+const TAKEN: i64 = 20_000;
+
+/// A server people sign in to with a company login, its clock the test's.
+async fn company(dir: &std::path::Path, answers: Vec<Completion>) -> (Tested, ManualClock) {
+    let mut setup = Setup::asking(answers, Answering::Clients);
+    setup.identity_provider = true;
+    let clock = setup.clock.clone();
+    let (server, _) = setup.build(dir).await;
+    (server, clock)
+}
+
+/// Someone signed in with a company login's token that the server takes for [`TAKEN`] more.
+fn with_token(clock: &ManualClock) -> Caller {
+    let until = Timestamp::from_millisecond(clock.millis() + TAKEN).unwrap();
+    Caller {
+        until: Some(until),
+        ..elsewhere()
+    }
+}
+
+/// A thread `caller` starts in their Chats.
+async fn started_by(server: &Tested, caller: &Caller) -> ThreadId {
+    let started = json!({"method": "thread/start", "params": {}});
+    let started = serde_json::from_value(started).unwrap();
+    match server.request_as(caller, started).await.unwrap() {
+        Reply::Thread { thread } => thread.id,
+        other => panic!("a thread, not {other:?}"),
+    }
+}
+
+#[test]
+fn a_turn_stream_and_a_thread_watch_end_when_their_token_expires() {
+    block_on!(async {
+        let dir = folder("ended-token");
+        let (server, clock) = company(&dir, vec![answer(Some("Hello."), None)]).await;
+        let grace = with_token(&clock);
+        let thread = started_by(&server, &grace).await;
+        let mut watch = server.watch(&grace, thread, None).await.unwrap();
+        let request = turn_start(thread, "hi", None);
+        let Ok(Sent::Started(mut stream)) = server.start_streaming(&grace, request).await else {
+            panic!("a turn");
+        };
+        // Both send while the token is taken, and nothing once it has expired, though the turn
+        // goes on.
+        assert!(matches!(watch.next().await, Some(Watched::Note(_))));
+        assert!(matches!(stream.next().await, Some(TurnItem::Note(_))));
+        clock.advance_millis(TAKEN);
+        let came = stream.next().await;
+        let Some(TurnItem::Ended(ended)) = came else {
+            panic!("the stream ended, not {came:?}");
+        };
+        no_sign_in(&ended);
+        assert!(stream.next().await.is_none(), "nothing more after");
+        let came = watch.next().await;
+        let Some(Watched::Ended(ended)) = came else {
+            panic!("the watch ended, not {came:?}");
+        };
+        no_sign_in(&ended);
+        assert!(watch.next().await.is_none(), "nothing more after");
+        // A watch begun after is refused, as a request with the token is.
+        let again = server.watch(&grace, thread, None).await.err();
+        assert_eq!(again.map(|refused| refused.code), Some(code::NO_SIGN_IN));
+    });
+}
+
+#[test]
+fn a_list_watch_ends_when_its_token_expires() {
+    block_on!(async {
+        let dir = folder("ended-token-list");
+        let (server, clock) = company(&dir, Vec::new()).await;
+        let grace = with_token(&clock);
+        let mut list = server.watch_list(&grace, None, None, false).await.unwrap();
+        clock.advance_millis(TAKEN);
+        // Something to tell them of, after.
+        started_by(&server, &elsewhere()).await;
+        let came = list.next().await;
+        let Some(Watched::Ended(ended)) = came else {
+            panic!("the watch ended, not {came:?}");
+        };
+        no_sign_in(&ended);
         assert!(list.next().await.is_none(), "nothing more after");
     });
 }

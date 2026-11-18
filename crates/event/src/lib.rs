@@ -47,7 +47,7 @@ pub use payload::{
     ToolCallRequested, ToolCallStarted, ToolError, ToolKind, TraceId, TurnResult, TurnStarted,
     Usage, Verdict, WebPage,
 };
-pub use payload::{AssetKind, LibraryKept, LibraryRemoved, Parts};
+pub use payload::{AssetKind, LibraryKept, LibraryRemoved};
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{
     Catalog, CatalogEndpoint, CatalogModel, CatalogProvider, CatalogRefreshed, Precision,
@@ -66,6 +66,7 @@ pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProjectFolderSet, ProjectRemoved,
     ProviderConnected, ProviderKind, ProviderRemoved, Renewal, sealed_under_account,
 };
+pub use payload::{FileMade, Kept, MadeLeft, Parts, TurnMade};
 pub use payload::{
     InviteAccepted, InviteCreated, InviteRevoked, OrgRole, OrganizationKind, OrganizationMade,
     PersonJoined, PersonRemoved, Profile, RoleSet,

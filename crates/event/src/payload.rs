@@ -70,7 +70,7 @@ pub use hook::{HookPoint, HookRan, HookResult};
 pub use instructions::{InstructionsFile, InstructionsRead, SkillFound};
 pub use language::LanguageSet;
 pub use library::{AssetKind, LibraryKept, LibraryRemoved};
-pub use made::Parts;
+pub use made::{FileMade, Kept, MadeLeft, Parts, TurnMade};
 pub use memory::{
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
     MemoryTidied, sealed_under_memory,

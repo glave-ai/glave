@@ -32,6 +32,15 @@ pub(crate) const REMOVED: &str = "library.removed";
 pub enum AssetKind {
     /// An image glave made (`image_generate`, `image_edit`).
     Picture,
+    /// A file a turn made (`made.rs`): a Word or OpenDocument text, or RTF.
+    Document,
+    /// A workbook or a CSV file.
+    Spreadsheet,
+    /// A slide deck.
+    Deck,
+    Pdf,
+    /// Any other file glave keeps, such as an e-book.
+    Other,
 }
 
 /// Something glave made for the person, kept in their Library.
