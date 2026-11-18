@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use glave_event::{
     At, Body, EventId, Fired, Forge, Header, Outcome, Payload, Principal, ScheduleCreated,
-    ScheduleId, SchedulePlaced, Seq, Skipped, TaskStarted, ThreadId, When, decode, encode,
+    ScheduleId, SchedulePlaced, Seq, TaskStarted, ThreadId, When, decode, encode,
 };
 use glave_ports::computer::{CredentialHost, GitCredential};
 use glave_ports::stream::Reserved;
@@ -134,7 +134,7 @@ pub(crate) async fn append<T: Payload>(
 
 /// Two servers on one store: its log, which the first reaches through `faulty`, its projects
 /// and its folder, and, where `shared`, its leases, on the test's clock; else each its own.
-async fn two_on_a_store(
+pub(crate) async fn two_on_a_store(
     name: &str,
     log: &Shared,
     faulty: &FaultyLog,
@@ -362,7 +362,7 @@ fn past_the_ledgers_a_server_keeps_every_project_s_runs_are_still_looked_at() {
         let (server, _, _, _dir) = first.build_in_repository("firing-many", log.clone()).await;
         // More projects with schedules than a server keeps ledgers of, written straight into
         // the store, each schedule's chat missing so each run is refused and recorded.
-        let org = scope().org();
+        let (org, own) = (scope().org(), server.person().map(Principal::person));
         let (index, ledger) = (Reserved::Scheduled.id(), Reserved::Tasks.id());
         let projects: Vec<ProjectId> = (0..1_030).map(|n| ProjectId::from_uuid(v7(3, n))).collect();
         for (n, project) in (0u64..).zip(&projects) {
@@ -371,7 +371,7 @@ fn past_the_ledgers_a_server_keeps_every_project_s_runs_are_still_looked_at() {
                 project: project.as_uuid(),
             };
             append(&log, &Scope::of_organization(org), index, n + 1, &placed).await;
-            let created = made_by(n.into(), missing_chat(n.into()), None);
+            let created = made_by(n.into(), missing_chat(n.into()), own.clone());
             append(&log, &Scope::glaves_own(org, *project), ledger, 1, &created).await;
         }
         set(&now, "2026-10-10T11:00:00Z");
@@ -423,7 +423,7 @@ fn a_schedule_made_to_run_more_often_than_one_may_is_refused_at_its_time() {
         let now = first.clock.clone();
         let (server, _, _, _dir) = first.build_in_repository("firing-often", log.clone()).await;
         let chat = start(&server, false).await;
-        let mut often = made_by(2, chat, None);
+        let mut often = made_by(2, chat, server.person().map(Principal::person));
         often.when = When::Cron("* * * * *".into());
         append(&log, &scope(), Reserved::Tasks.id(), 1, &often).await;
         set(&now, "2026-10-10T11:00:00Z");
@@ -448,6 +448,67 @@ fn a_schedule_made_on_one_server_is_fired_by_the_other_at_its_next_tick() {
 }
 
 #[test]
+fn delete_then_create_on_two_servers_never_loses_a_schedule() {
+    block_on!(async {
+        let log = Shared::default();
+        let faulty = FaultyLog::over(Arc::clone(&log.0));
+        let (_dir, one, two, now) = two_on_a_store("firing-delete-make", &log, &faulty, true).await;
+        let grace = elsewhere();
+        let gone = daily(&two, &grace).await.unwrap();
+        // The second deletes her last schedule there while the first makes another.
+        let deleted = Request::ScheduleDelete {
+            schedule: gone.schedule,
+        };
+        two.request_as(&grace, deleted).await.unwrap();
+        let made = daily(&one, &grace).await.unwrap();
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(one.tick().await.unwrap(), vec![made.thread.unwrap()]);
+        settle_for(&one, &grace).await;
+    });
+}
+
+#[test]
+fn a_schedule_recorded_before_its_maker_was_named_runs_as_the_server_s_own_person() {
+    block_on!(async {
+        let log = Shared::default();
+        let first = setup();
+        let now = first.clock.clone();
+        let (server, _, _, _dir) = first.build_in_repository("firing-v3", log.clone()).await;
+        let chat = start(&server, false).await;
+        // A schedule.created of version 3, its maker left implied.
+        let line = format!(
+            concat!(
+                r#"{{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000060","thread":"{}","#,
+                r#""seq":1,"at":"2026-10-10T10:00:00.000Z","type":"schedule.created","v":3,"#,
+                r#""data":{{"schedule":"0192f5c1-0000-7000-8000-000000000061","name":"Daily","#,
+                r#""when":{{"cron":"0 11 * * *"}},"zone":"UTC","prompt":"check the build","#,
+                r#""budget":5000,"thread":"{}"}}}}"#
+            ),
+            Reserved::Tasks.id(),
+            chat
+        );
+        let raw = glave_event::RawEvent::from_json(&line).unwrap();
+        log.append(&scope(), &[raw]).await.unwrap();
+        // Listed as the server starts, so every server finds it, and run as its own person.
+        server.recover_tasks().await.unwrap();
+        let stream = Scope::of_organization(scope().org());
+        let listed = log
+            .read(&stream, Reserved::Scheduled.id(), None, usize::MAX)
+            .await;
+        let listed: Vec<Body> = (listed.unwrap().into_iter())
+            .map(|raw| decode(raw).unwrap().body)
+            .collect();
+        assert!(
+            matches!(listed.as_slice(), [Body::SchedulePlaced(placed)] if placed.project == scope().project().as_uuid()),
+            "{listed:?}"
+        );
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        settle(&server).await;
+    });
+}
+
+#[test]
 fn a_schedule_made_by_no_one_glave_can_act_for_is_refused_and_recorded() {
     block_on!(async {
         let log = Shared::default();
@@ -457,23 +518,13 @@ fn a_schedule_made_by_no_one_glave_can_act_for_is_refused_and_recorded() {
             .build_in_repository("firing-no-one", log.clone())
             .await;
         let project = scope().project();
-        // Made by glave itself, and by no one named, which no server reads as its own person.
+        // Made by glave itself, whom no server acts as.
         let created = made_by(1, missing_chat(1), Some(Principal::glave()));
         append(&log, &scope(), Reserved::Tasks.id(), 1, &created).await;
-        let unnamed = made_by(2, missing_chat(2), None);
-        append(&log, &scope(), Reserved::Tasks.id(), 2, &unnamed).await;
         set(&now, "2026-10-10T11:00:00Z");
         assert_eq!(server.tick().await.unwrap(), Vec::new());
-        let refused = (ledger_of(&log, project).await.into_iter())
-            .filter(|body| {
-                matches!(body, Body::ScheduleSkipped(skipped)
-                    if skipped.why == Skipped::Refused { reason: "MAKER_UNKNOWN".into() })
-            })
-            .count();
-        assert_eq!(
-            refused, 2,
-            "both refused, as made by no one glave can act for"
-        );
+        let refused = refusal_in(&log, project).await;
+        assert_eq!(refused, "MAKER_UNKNOWN");
     });
 }
 
