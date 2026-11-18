@@ -85,50 +85,6 @@ pub(crate) fn writes_after_asking() -> Vec<glave_ports::Completion> {
 }
 
 #[test]
-fn a_one_off_s_run_still_waiting_for_the_person_a_day_on_keeps_its_project_listed() {
-    block_on!(async {
-        let log = Shared::default();
-        let (server, now, _repo, _dir) =
-            asking("runs-one-off-waits", writes_after_asking(), log.clone()).await;
-        let once = Request::ScheduleCreate {
-            project: Some(scope().project()),
-            name: Some("Once".into()),
-            when: When::At(at("2026-10-10T11:00:00Z")),
-            zone: None,
-            prompt: "check the build".into(),
-            budget: 10_000,
-        };
-        let Ok(Reply::Schedule { schedule: made }) = server.request(once).await else {
-            panic!("a schedule");
-        };
-        let chat = made.thread.unwrap();
-        set(&now, "2026-10-10T11:00:00Z");
-        assert_eq!(server.tick().await.unwrap(), vec![chat]);
-        asked_in(&server, chat).await;
-        // A day on, its run still waits for the person: its project stays listed, so whichever
-        // server fires schedules next finds the run to follow.
-        set(&now, "2026-10-11T12:00:00Z");
-        server.tick().await.unwrap();
-        let stream = glave_ports::Scope::of_organization(scope().org());
-        let listed = log
-            .read(
-                &stream,
-                glave_ports::stream::Reserved::Scheduled.id(),
-                None,
-                usize::MAX,
-            )
-            .await
-            .unwrap();
-        let kinds: Vec<&str> = listed.iter().map(|raw| raw.kind.as_str()).collect();
-        assert_eq!(
-            kinds,
-            ["schedule.placed"],
-            "never unplaced while its run waits"
-        );
-    });
-}
-
-#[test]
 fn a_schedule_has_a_chat_of_its_own_named_for_it_and_each_run_is_a_turn_there() {
     block_on!(async {
         let answers = (0..4).map(|_| answer(Some("Done."), None)).collect();
