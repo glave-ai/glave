@@ -195,7 +195,7 @@ where
             // The caller's settings first: a few words each, and nothing to read.
             while let Some(setting) = self.settings.pop_first() {
                 let note = Arc::new(Notification::SettingsChanged { setting });
-                if self.out.send(Watched::Note(note)).await.is_err() {
+                if !self.send(note).await? {
                     return Ok(());
                 }
             }
@@ -213,7 +213,7 @@ where
                 }
                 let summary = Box::new(summary);
                 let note = Arc::new(Notification::Changed { thread, summary });
-                if self.out.send(Watched::Note(note)).await.is_err() {
+                if !self.send(note).await? {
                     return Ok(());
                 }
             }
@@ -242,6 +242,17 @@ where
                 self.catch_up(self.seen.min(self.tail)).await?;
             }
         }
+    }
+
+    /// Sends `note`: whether the client is still there to take it. Refused once the caller's
+    /// access has ended (their token expired, their browser signed out, they were taken out of
+    /// the organization), looked at before each, so nothing is sent after even while a page of
+    /// changes is being sent.
+    async fn send(&mut self, note: Arc<Notification>) -> Result<bool, ApiError> {
+        if let Some(ended) = self.access.as_mut().and_then(Access::ended) {
+            return Err(ended);
+        }
+        Ok(self.out.send(Watched::Note(note)).await.is_ok())
     }
 
     /// Takes every change already waiting, so that each thread is summarised once: whether the

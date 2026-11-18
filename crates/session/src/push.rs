@@ -221,13 +221,22 @@ where
     /// What `push/get` says where the server pushes: the key to subscribe with and the caller's
     /// browsers, the latest first, `endpoint`'s current, and whether it should subscribe again.
     async fn offered(&self, caller: &Caller, endpoint: Option<&str>) -> Result<Reply, ApiError> {
-        let key = self.push_key().await?;
+        // Read alone: the key made as the server started, and the caller's Chats found, never
+        // made, since with none they have no browsers (`specs/invariants.md`, 5).
+        let Some(key) = self.kept_push_key().await? else {
+            return Ok(Reply::Push {
+                push: PushInfo::Never {
+                    reason: Sentence::PushNotReady.into(),
+                },
+            });
+        };
         let person = self.person_of(caller)?;
-        let (_, personal) = self.personal_project(caller).await?;
         let now = self.inner.harness.clock().now();
-        let mut devices: Vec<PushDevice> = self
-            .devices_read(&personal, person)
-            .await?
+        let listed = match self.chats_found(self.org_of(caller), person).await? {
+            Some(personal) => self.devices_read(&personal, person).await?,
+            None => Vec::new(),
+        };
+        let mut devices: Vec<PushDevice> = listed
             .into_iter()
             .map(|device| {
                 let current = endpoint == Some(device.subscribed.endpoint.as_str());
@@ -276,12 +285,37 @@ where
         if let Some((_, key)) = made {
             return Ok(key);
         }
-        let first = log.read(scope, ledger, None, 1).await?.into_iter().next();
-        match first.map(decode).transpose()?.map(|event| event.body) {
-            Some(Body::PushKeyMade(made)) => {
-                VapidKey::read(&made.key).map_err(|error| ApiError::internal(&error))
-            }
-            _ => Err(ApiError::internal(&"the push ledger begins with no key")),
+        self.kept_push_key()
+            .await?
+            .ok_or_else(|| ApiError::internal(&"the push ledger begins with no key"))
+    }
+
+    /// The key every push on the store is signed with, as its push ledger holds it: read, never
+    /// made, so `push/get` writes nothing; none before the first server that pushes made one.
+    async fn kept_push_key(&self) -> Result<Option<VapidKey>, ApiError> {
+        let scope = &Scope::of_organization(self.inner.own);
+        let log = self.inner.harness.log();
+        let first = log.read(scope, Reserved::Push.id(), None, 1).await?;
+        match first
+            .into_iter()
+            .next()
+            .map(decode)
+            .transpose()?
+            .map(|event| event.body)
+        {
+            Some(Body::PushKeyMade(made)) => VapidKey::read(&made.key)
+                .map(Some)
+                .map_err(|error| ApiError::internal(&error)),
+            _ => Ok(None),
         }
+    }
+
+    /// Makes the key every push on the store is signed with, where the server pushes and the
+    /// store has none yet, so a read of it never has to: as the server starts.
+    pub async fn ready_to_push(&self) -> Result<(), ApiError> {
+        if self.inner.push.is_some() {
+            self.push_key().await?;
+        }
+        Ok(())
     }
 }

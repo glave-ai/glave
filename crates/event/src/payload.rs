@@ -80,8 +80,8 @@ pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};
 pub use passkey::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use people::{
-    InviteAccepted, InviteCreated, InviteRevoked, OrgRole, OrganizationKind, OrganizationMade,
-    PersonJoined, PersonRemoved, Profile, RoleSet,
+    InviteAccepted, InviteCreated, InviteGiven, InviteRevoked, OrgRole, OrganizationKind,
+    OrganizationMade, PersonJoined, PersonRemoved, Profile, RoleSet,
 };
 pub use plan::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use principal::{Principal, PrincipalKind};
