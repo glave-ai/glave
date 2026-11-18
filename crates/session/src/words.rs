@@ -138,7 +138,7 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Plan { plan: Some(plan) }) => plan.sentence.translate(language),
-        Ok(Reply::Schedule { schedule }) => schedule.repeats.translate(language),
+        Ok(Reply::Schedule { schedule }) => schedule_in(schedule, language),
         Ok(Reply::Schedules { schedules }) => schedules_in(schedules, language),
         Ok(Reply::Events { events, .. }) => events_in(events, language),
         Ok(Reply::Thread { thread }) => summary_in(thread, language),
@@ -154,7 +154,19 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
 /// Writes when each of `schedules` repeats in `language`.
 fn schedules_in(schedules: &mut [ScheduleInfo], language: Language) {
     for schedule in schedules {
-        schedule.repeats.translate(language);
+        schedule_in(schedule, language);
+    }
+}
+
+/// Writes `schedule`'s own words in `language`: when it repeats, how its last run went, and
+/// its note.
+fn schedule_in(schedule: &mut ScheduleInfo, language: Language) {
+    schedule.repeats.translate(language);
+    if let Some(last) = &mut schedule.last {
+        last.said.translate(language);
+    }
+    if let Some(note) = &mut schedule.note {
+        note.translate(language);
     }
 }
 

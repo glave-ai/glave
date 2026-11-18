@@ -31,7 +31,8 @@ pub(super) fn task_line(task: &TaskInfo) -> String {
     )
 }
 
-/// One schedule: when it runs, what it runs, and when it runs next.
+/// One schedule: its id and name, when it repeats and runs next, how its last run went in the
+/// server's words, and its budget.
 pub(super) fn schedule_line(schedule: &ScheduleInfo) -> String {
     let when = match &schedule.when {
         When::Cron(cron) => format!("{} (cron {cron:?}, {})", schedule.repeats, schedule.zone),
@@ -39,12 +40,18 @@ pub(super) fn schedule_line(schedule: &ScheduleInfo) -> String {
     };
     let next = schedule
         .next
-        .map_or_else(|| "has run".to_owned(), |next| format!("next {next}"));
+        .map_or_else(|| "no more runs".to_owned(), |next| format!("next {next}"));
+    let last = (schedule.last.as_ref())
+        .map(|last| format!("  last {}: {}", last.due, last.said))
+        .unwrap_or_default();
+    let note = (schedule.note.as_ref())
+        .map(|note| format!("  ({note})"))
+        .unwrap_or_default();
     format!(
-        "{}  {when}  {next}  budget {}  {}",
+        "{}  {}  {when}  {next}{last}  budget {}{note}",
         schedule.schedule,
+        schedule.name,
         short(schedule.budget),
-        schedule.prompt
     )
 }
 

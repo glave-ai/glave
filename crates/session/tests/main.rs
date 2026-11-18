@@ -62,6 +62,7 @@ mod recovery;
 mod remembering;
 mod remote;
 mod removing;
+mod schedule_runs;
 mod schedules;
 mod search;
 mod secrets;

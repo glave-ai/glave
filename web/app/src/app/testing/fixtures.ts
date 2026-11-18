@@ -149,6 +149,9 @@ export function command(
 export function schedule(id: string, next: string | null): ScheduleInfo {
   return {
     schedule: id,
+    name: 'Audit the dependencies',
+    project: '0192f5c0-0000-7000-8000-0000000000a1',
+    thread: '0192f5c0-0000-7000-8000-0000000000b1',
     prompt: 'Audit the dependencies',
     when: { cron: '0 2 * * *' },
     zone: 'Europe/Lisbon',

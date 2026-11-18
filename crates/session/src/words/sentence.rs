@@ -20,9 +20,12 @@ macro_rules! sentences {
             /// Each sentence's message id, the names of the values it is written with, and its
             /// English.
             #[cfg(test)]
-            pub(crate) const ALL: &[(&str, &[&str], &str)] = &[
-                $(($id, &[$($(stringify!($arg)),+)?], $english),)*
-            ];
+            pub(crate) fn all() -> &'static [(&'static str, &'static [&'static str], &'static str)] {
+                static ALL: &[(&str, &[&str], &str)] = &[
+                    $(($id, &[$($(stringify!($arg)),+)?], $english),)*
+                ];
+                ALL
+            }
 
             /// Its message's id in the catalog.
             pub(crate) fn id(&self) -> &'static str {
@@ -452,6 +455,19 @@ sentences! {
         "{ $kept } schedules are kept, the most policy allows ([tasks] max_schedules = { $most }); delete one first",
     ScheduleNotKept = "schedule-not-kept" "the schedule was not kept",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
+    ScheduleNoChat = "schedule-no-chat"
+        "Made before schedules had chats of their own, so it runs no more: set it up again to run it",
+    RunRunning = "run-running" "Running",
+    RunDone = "run-done" "Done",
+    // How a run that did not finish ended: `outcome` as a turn's.
+    RunUnfinished { outcome: String } = "run-unfinished"
+        "{ $outcome ->\n    [cancelled] Stopped\n    [interrupted] Interrupted, as glave stopped\n    [limit_reached] Stopped at its budget\n   *[failed] Didn't finish\n }",
+    RunSkipped = "run-skipped" "Skipped: the run before was still going",
+    // Why a run couldn't start: `reason` names a refusal as the session API's error codes do,
+    // empty for one recorded before refusals had reasons.
+    RunRefused { reason: String } = "run-refused"
+        "Couldn't start: { $reason ->\n    [ARCHIVED] its chat is archived\n    [NO_THREAD] its chat is gone\n    [NOT_ALLOWED] it may not run here\n    [LIMIT] a limit was reached\n    [WORKSPACE] its chat's folder couldn't be opened\n    [NO_FOLDER] its project's folder isn't there anymore\n    [PROMPT_BLOCKED] a check set to run before each prompt stopped it\n    [NO_MODEL] its model isn't available here\n    [NO_PROVIDER] the model account it uses is gone\n    [PROVIDER] the model's provider failed\n    [NOT_AVAILABLE] the computer it works on can't run it now\n   *[other] something went wrong\n }",
+    RunStarted = "run-started" "Started",
     NoZone { zone: String } = "no-zone"
         "glave doesn't know the time zone \"{ $zone }\": name one as the world's time zone list does, such as Europe/Lisbon",
 
