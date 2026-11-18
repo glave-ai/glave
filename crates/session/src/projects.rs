@@ -85,8 +85,13 @@ where
         caller.org.unwrap_or(self.inner.own)
     }
 
-    /// The person `caller` acts as: the one the transport verified, or the local person.
+    /// The person `caller` acts as: the one the transport verified, or the local person. No one,
+    /// not signed in, acts as no person, so every scope lookup refuses them here, as a request
+    /// with no sign-in is refused (`specs/invariants.md`, 17).
     pub(crate) fn person_of(&self, caller: &Caller) -> Result<PrincipalId, ApiError> {
+        if caller.is_no_one() {
+            return Err(ApiError::new(code::NO_SIGN_IN, Sentence::NoSignIn));
+        }
         caller
             .person
             .or_else(|| self.inner.harness.person())

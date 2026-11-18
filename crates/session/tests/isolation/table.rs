@@ -240,6 +240,8 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             "language/set",
             vec![json!({"language": "en-XA"}), json!({})],
         ),
+        // The caller's own time zone: no one else's to name.
+        ("zone/set", vec![json!({"zone": "Europe/Lisbon"})]),
         // How the caller's own threads are grouped: no one else's to name.
         ("grouping/get", vec![json!({})]),
         ("grouping/set", vec![json!({"grouping": "status"})]),

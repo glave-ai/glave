@@ -205,13 +205,10 @@ fn a_request_that_names_no_project_acts_in_the_caller_s_chats_never_the_folder_s
     });
 }
 
-/// Someone other than the person the server works for.
+/// Someone other than the person the server works for, signed in through the company login: a
+/// caller with no sign-in at all reads as the person on this computer.
 fn someone() -> Caller {
-    let other = uuid::Uuid::from_u128(0x0192_f5c0_0000_7000_8000_0000_0000_0099);
-    Caller {
-        person: Some(PrincipalId::try_from(other).unwrap()),
-        ..Caller::default()
-    }
+    signed_in("someone")
 }
 
 #[test]
