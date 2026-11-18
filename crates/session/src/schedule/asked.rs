@@ -22,13 +22,9 @@ use crate::zone::time_zone;
 /// for them, which no one is asked for.
 pub(crate) const RUN_BUDGET: u64 = 200_000;
 
-/// Whether the card shows what each run starts with, in the model's words, so a prompt under an
-/// innocent name is never confirmed unseen. Awaits the owner's decision (#1510): on until then.
-const SHOWS_PROMPT: bool = true;
-
-/// The fewest minutes between two runs of a schedule the agent sets up: an hour, so a model
-/// never proposes one that runs all day; the person can still set one up down to the server's
-/// own floor (`Cron::for_a_schedule`) themselves. Awaits the owner's decision (#1510).
+/// The fewest minutes between two runs of a schedule the agent sets up: an hour, the owner's
+/// decision (#1510), so a model never proposes one that runs all day; the person can still set
+/// one up down to the server's own floor (`Cron::for_a_schedule`) themselves.
 const PROPOSED_GAP: u16 = 60;
 
 /// The server's schedules, as its chats' tool reaches them: held weakly, since the harness that
@@ -180,7 +176,9 @@ where
             zone,
             name: title_from(&repeat.name).unwrap_or(first),
             first: At::from(first_run),
-            prompt: SHOWS_PROMPT.then(|| repeat.prompt.clone()),
+            // What each run starts with, in the model's words, always shown, the owner's
+            // decision (#1510), so a prompt under an innocent name is never confirmed unseen.
+            prompt: Some(repeat.prompt.clone()),
         };
         let english = Language::English;
         let ask = asked_in(english, &repeating);

@@ -80,7 +80,7 @@ pub struct ApprovalRequested {
 }
 
 /// A schedule's card's lines, in the server's words: when it runs on whose clock, the chat its
-/// runs go to, and what each run starts with, when the card shows it.
+/// runs go to, and what each run starts with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CardLines {
@@ -88,7 +88,7 @@ pub struct CardLines {
     pub when: String,
     /// "Each run is added to its own chat, “Morning check”."
     pub chat: String,
-    /// "Each run starts with: “Check the build.”", when the card shows it.
+    /// "Each run starts with: “Check the build.”": glave always writes it (#1510).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
 }
@@ -103,7 +103,7 @@ impl CardLines {
 }
 
 /// What a schedule's card was written from: when it repeats, on whose clocks, its chat's name,
-/// its first run, and what each run starts with, when the card shows it.
+/// its first run, and what each run starts with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Repeating {
@@ -114,7 +114,7 @@ pub struct Repeating {
     /// The schedule's name, and its chat's.
     pub name: String,
     pub first: At,
-    /// What each run starts with, in the model's words, when the card shows it.
+    /// What each run starts with, in the model's words: glave always writes it (#1510).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
 }
