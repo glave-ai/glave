@@ -59,4 +59,9 @@ pub struct PushDevice {
     /// It is the browser that asked: `push/get`'s `endpoint` is its subscription's.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub current: bool,
+    /// The browser that asked should subscribe again now (`push/subscribe`), which keeps it 30
+    /// days more: less than half of that is left. A browser not subscribed again in time is
+    /// forgotten.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub renew: bool,
 }

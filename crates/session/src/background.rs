@@ -142,8 +142,15 @@ where
     }
 
     /// Records what the thread's commands are waiting to have recorded, when no turn holds it;
-    /// a turn that does records it with its next event.
+    /// a turn that does records it with its next event. Never waits for a look-over of what was
+    /// made: only a command's end the watcher saw has one (`record_ended`).
     pub(crate) async fn record_commands(&self, thread: ThreadId) {
+        self.record_idle(thread, false).await;
+    }
+
+    /// Records what the thread's commands are waiting to have recorded, when no turn holds it,
+    /// with what was made since a turn's mark when the last of them has ended (`looks`).
+    async fn record_idle(&self, thread: ThreadId, looks: bool) {
         if !matches!(self.lock().get(&thread), Some(Slot::Idle { .. })) {
             return;
         }
@@ -153,8 +160,12 @@ where
                 thread,
                 finish,
                 Use::Manage,
-                |inner, mut held, _| async move {
-                    let recorded = inner.harness.record_commands(&mut held).await;
+                move |inner, mut held, _| async move {
+                    let recorded = if looks {
+                        inner.harness.record_ended(&mut held).await
+                    } else {
+                        inner.harness.record_commands(&mut held).await
+                    };
                     (held, recorded)
                 },
             )
@@ -217,7 +228,7 @@ where
         if let Some(mut working) = working {
             let _ = working.wait_for(|done| *done).await;
         }
-        self.record_commands(thread).await;
+        self.record_idle(thread, true).await;
     }
 }
 
