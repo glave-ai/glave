@@ -24,6 +24,9 @@ use crate::tools::BoxFuture;
 pub enum Leased {
     /// A thread's turn: the one server that runs or continues it.
     Thread(ThreadId),
+    /// A task in a thread: the one server that follows it to its end and records it, which a
+    /// schedule's run waiting for the person keeps while its turn holds nothing.
+    Task(ThreadId),
     /// The organization's schedules: the one server that fires them.
     Scheduler,
     /// A person's own computer: the one server that wakes it, drives it and puts it to sleep.
@@ -33,11 +36,12 @@ pub enum Leased {
 }
 
 impl Leased {
-    /// The name stores keep it under: `thread:<id>`, `scheduler`, `computer:<person>`, or
-    /// `blob-sweep`.
+    /// The name stores keep it under: `thread:<id>`, `task:<thread>`, `scheduler`,
+    /// `computer:<person>`, or `blob-sweep`.
     pub fn key(&self) -> String {
         match self {
             Self::Thread(thread) => format!("thread:{thread}"),
+            Self::Task(thread) => format!("task:{thread}"),
             Self::Scheduler => "scheduler".to_owned(),
             Self::Computer(person) => format!("computer:{person}"),
             Self::BlobSweep => "blob-sweep".to_owned(),
@@ -137,6 +141,7 @@ mod tests {
     fn keys_name_what_is_leased() {
         let thread = ThreadId::new(Timestamp::UNIX_EPOCH, [7; 10]).unwrap();
         assert_eq!(Leased::Thread(thread).key(), format!("thread:{thread}"));
+        assert_eq!(Leased::Task(thread).key(), format!("task:{thread}"));
         assert_eq!(Leased::Scheduler.key(), "scheduler");
         assert_eq!(Leased::BlobSweep.key(), "blob-sweep");
         let person = PrincipalId::new(Timestamp::UNIX_EPOCH, [9; 10]).unwrap();
