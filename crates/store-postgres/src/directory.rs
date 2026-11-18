@@ -51,6 +51,20 @@ impl Directory for PostgresDirectory {
         })
     }
 
+    fn unlink(&self, person: PrincipalId) -> BoxFuture<'_, Result<(), DirectoryError>> {
+        Box::pin(async move {
+            let client = unscoped(&self.pool).await.map_err(storage)?;
+            client
+                .execute(
+                    "DELETE FROM identities WHERE person = $1",
+                    &[&person.as_uuid()],
+                )
+                .await
+                .map(drop)
+                .map_err(database(DirectoryError::Storage))
+        })
+    }
+
     fn find<'a>(
         &'a self,
         identity: &'a IdentityKey,

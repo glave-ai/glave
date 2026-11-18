@@ -66,7 +66,7 @@ where
             .opens(&presented, now, local)
             .cloned()
             .ok_or_else(gone)?;
-        let mailbox = opened.email.filter(|_| opened.mailed_only);
+        let mailbox = opened.given.mailbox().map(str::to_owned);
         let (person, browsers) = accounts.made().await?;
         let ceremony = browsers.create_options(Proof::SignedIn)?;
         let mut joining = self.joinings();
@@ -105,14 +105,14 @@ where
         // code spent meanwhile leaves nothing behind.
         let checked = browsers.checked(&joining.ceremony, credential, name)?;
         self.spend_joining(&joining, person_name).await?;
-        let session = browsers.keep(checked).await?;
-        accounts.join(joining.person, joining.org).await?;
         // The address the invite's code went to alone, which they opened, is theirs for getting
         // back in, unless another account has it. One whose code its maker was shown too proves
         // nothing of the mailbox: it stays what the organization knows them by.
         if let Some(email) = &joining.mailbox {
             accounts.claim_email(email, joining.person).await?;
         }
+        let session = browsers.keep(checked).await?;
+        accounts.join(joining.person, joining.org).await?;
         Ok(self.signed_in(session, &browsers))
     }
 
@@ -130,7 +130,7 @@ where
                 subject: None,
                 profile: Profile {
                     name: name.clone(),
-                    email: opened.email.clone(),
+                    email: opened.given.email().map(str::to_owned),
                     ..Profile::default()
                 },
             };

@@ -50,6 +50,10 @@ pub trait Directory: Send + Sync {
         person: PrincipalId,
     ) -> BoxFuture<'a, Result<PrincipalId, DirectoryError>>;
 
+    /// Unlinks every identity that leads to `person`, so each leads to no one and may be linked
+    /// to someone else: for an account that can never be signed in again.
+    fn unlink(&self, person: PrincipalId) -> BoxFuture<'_, Result<(), DirectoryError>>;
+
     /// Whom `identity` leads to, if anyone.
     fn find<'a>(
         &'a self,

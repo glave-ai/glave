@@ -57,6 +57,20 @@ impl Directory for SqliteDirectory {
         })
     }
 
+    fn unlink(&self, person: PrincipalId) -> BoxFuture<'_, Result<(), DirectoryError>> {
+        let connection = Arc::clone(&self.connection);
+        Box::pin(async move {
+            run(&connection, move |connection| {
+                connection
+                    .prepare_cached("DELETE FROM identities WHERE person = ?1")?
+                    .execute(params![person.to_string()])
+            })
+            .await
+            .map(drop)
+            .map_err(storage)
+        })
+    }
+
     fn find<'a>(
         &'a self,
         identity: &'a IdentityKey,

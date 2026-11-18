@@ -67,8 +67,8 @@ pub use payload::{
     ProviderConnected, ProviderKind, ProviderRemoved, Renewal, sealed_under_account,
 };
 pub use payload::{
-    InviteAccepted, InviteCreated, InviteRevoked, OrgRole, OrganizationKind, OrganizationMade,
-    PersonJoined, PersonRemoved, Profile, RoleSet,
+    InviteAccepted, InviteCreated, InviteGiven, InviteRevoked, OrgRole, OrganizationKind,
+    OrganizationMade, PersonJoined, PersonRemoved, Profile, RoleSet,
 };
 pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};

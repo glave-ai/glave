@@ -148,12 +148,21 @@ impl Accounts {
             .map_err(|e| BrowserError::Keep(e.to_string()))
     }
 
-    /// Takes `person` out of `org`: their sessions sign them in there no more.
+    /// Takes `person` out of `org`: their sessions sign them in there no more. Left in no
+    /// organization, the account never signs in again, so its address leads to it no more:
+    /// a new invite or a sign-up may make it another account's way back in.
     pub async fn leave(&self, person: PrincipalId, org: OrgId) -> Result<(), BrowserError> {
         self.directory
             .leave(person, org)
             .await
-            .map_err(|e| BrowserError::Keep(e.to_string()))
+            .map_err(|e| BrowserError::Keep(e.to_string()))?;
+        if self.organizations(person).await?.is_empty() {
+            self.directory
+                .unlink(person)
+                .await
+                .map_err(|e| BrowserError::Keep(e.to_string()))?;
+        }
+        Ok(())
     }
 
     /// Begins signing a browser in with any passkey made at the public origin.

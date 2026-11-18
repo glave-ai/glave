@@ -7,8 +7,8 @@
 use std::collections::BTreeMap;
 
 use glave_event::{
-    At, InviteAccepted, InviteCreated, InviteId, InviteRevoked, OrgRole, PersonJoined, Principal,
-    PrincipalId, Profile, Secret,
+    At, InviteAccepted, InviteCreated, InviteGiven, InviteId, InviteRevoked, OrgRole, PersonJoined,
+    Principal, PrincipalId, Profile, Secret,
 };
 use glave_identity::signin::{kept, one_time_code, same_kept};
 use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, OrgId};
@@ -76,7 +76,7 @@ impl Waiting {
             by: self.created.by.clone(),
             made: self.made,
             expires: self.created.expires,
-            email: self.created.email.clone(),
+            email: self.created.given.email().map(str::to_owned),
         }
     }
 }
@@ -149,10 +149,7 @@ where
                 Sentence::InvitesNeedOrganization,
             ));
         }
-        let sending = match email {
-            Some(to) => Some(self.sender(to)?),
-            None => None,
-        };
+        let sending = email.map(|to| self.sender(to)).transpose()?;
         if sending.is_some() {
             self.count_asked(caller).await?;
         }
@@ -172,8 +169,10 @@ where
             role,
             by: Principal::person(self.person_of(caller)?),
             expires: At::from(expires),
-            email: sending.as_ref().map(|(_, _, to)| to.clone()),
-            mailed_only: sending.is_some(),
+            given: match &sending {
+                Some((_, _, to)) => InviteGiven::Mailed { to: to.clone() },
+                None => InviteGiven::Shown { to: None },
+            },
         };
         self.record_person(org, |people| {
             let waiting = people.invites.waiting.values();
@@ -182,8 +181,8 @@ where
             }
             // One email a minute to an address, from any server on the store.
             let mailed = waiting.into_iter().any(|it| {
-                it.created.email.is_some()
-                    && it.created.email == created.email
+                it.created.given.email().is_some()
+                    && it.created.given.email() == created.given.email()
                     && just_now(it.made.timestamp(), now)
             });
             if mailed {
@@ -217,7 +216,7 @@ where
         Ok(Reply::Invited {
             invite: invite.ok_or_else(gone)?,
             // An emailed invite's link went there alone, never back to the caller.
-            code: (!created.mailed_only).then_some(code),
+            code: created.given.mailbox().is_none().then_some(code),
         })
     }
 
@@ -384,7 +383,7 @@ where
             }
             let mut joined = joined.clone();
             if joined.issuer.is_none() {
-                joined.profile.email.clone_from(&opened.email);
+                joined.profile.email = opened.given.email().map(str::to_owned);
             }
             let after = next.saturating_add(1);
             Ok(Some(vec![

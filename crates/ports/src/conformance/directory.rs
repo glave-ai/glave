@@ -1,6 +1,6 @@
-//! What every store of the directory must do: link an identity to one person for good, find
-//! it again, keep identities apart, and keep each person's organizations in the order they
-//! joined, once each, apart from anyone else's.
+//! What every store of the directory must do: link an identity to one person until that person
+//! is unlinked, find it again, keep identities apart, and keep each person's organizations in
+//! the order they joined, once each, apart from anyone else's.
 
 use glave_event::PrincipalId;
 
@@ -25,8 +25,48 @@ fn org(n: u64) -> OrgId {
 /// Every [`Directory`] must link identities once and keep memberships in order.
 pub async fn directory<D: Directory + ?Sized>(directory: &D) -> Verdict {
     linking(directory).await?;
+    unlinking(directory).await?;
     joining(directory).await?;
     racing(directory).await
+}
+
+/// Unlinking a person frees every identity that led to them, and no one else's.
+async fn unlinking<D: Directory + ?Sized>(directory: &D) -> Verdict {
+    let (grace, linus) = (person(5)?, person(6)?);
+    let (hers, also, his) = (key(5)?, key(6)?, key(7)?);
+    for (identity, whose) in [(&hers, grace), (&also, grace), (&his, linus)] {
+        directory
+            .link(identity, whose)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    directory.unlink(grace).await.map_err(|e| e.to_string())?;
+    for identity in [&hers, &also] {
+        let found = directory.find(identity).await.map_err(|e| e.to_string())?;
+        ensure(
+            found.is_none(),
+            "an unlinked person's identities lead to no one",
+        )?;
+    }
+    let kept = directory.find(&his).await.map_err(|e| e.to_string())?;
+    ensure(
+        kept == Some(linus),
+        "another person's identity still leads to them",
+    )?;
+    let relinked = directory
+        .link(&hers, linus)
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        relinked == linus,
+        "a freed identity may be linked to someone else",
+    )?;
+    directory.unlink(grace).await.map_err(|e| e.to_string())?;
+    let still = directory.find(&hers).await.map_err(|e| e.to_string())?;
+    ensure(
+        still == Some(linus),
+        "unlinking someone no identity leads to changes nothing",
+    )
 }
 
 async fn linking<D: Directory + ?Sized>(directory: &D) -> Verdict {

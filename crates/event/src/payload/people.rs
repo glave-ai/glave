@@ -119,14 +119,43 @@ pub struct InviteCreated {
     pub by: Principal,
     /// When it stops working, opened or not.
     pub expires: At,
-    /// The address its link was emailed to, when it was: whom it waits for, and the email of
-    /// a glave account it makes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
-    /// Whether its code went to `email` alone, never back to whoever made it (v2): so whoever
-    /// opens it holds that mailbox, and the account it makes gets back in with the address.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub mailed_only: bool,
+    /// How it was given (v2): its link emailed to an address alone, or its code shown to whoever
+    /// made it.
+    pub given: InviteGiven,
+}
+
+/// How an invite was given.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum InviteGiven {
+    /// Its link was emailed to `to` alone, never back to whoever made it: whoever opens it
+    /// holds that mailbox, and the account it makes gets back in with the address.
+    Mailed { to: String },
+    /// Its code was answered to whoever made it, to share; before v2, also emailed to `to`.
+    /// Opening it proves nothing of any mailbox.
+    Shown {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to: Option<String>,
+    },
+}
+
+impl InviteGiven {
+    /// The address its link was emailed to, when it was: whom it waits for, and the email of a
+    /// glave account it makes.
+    pub fn email(&self) -> Option<&str> {
+        match self {
+            Self::Mailed { to } => Some(to),
+            Self::Shown { to } => to.as_deref(),
+        }
+    }
+
+    /// The address whose mailbox whoever opens it holds, since its code went there alone.
+    pub fn mailbox(&self) -> Option<&str> {
+        match self {
+            Self::Mailed { to } => Some(to),
+            Self::Shown { .. } => None,
+        }
+    }
 }
 
 /// `invite.created` at version 1, when every invite's code was answered to whoever made it,
@@ -151,8 +180,7 @@ impl From<InviteCreatedV1> for InviteCreated {
             role: old.role,
             by: old.by,
             expires: old.expires,
-            email: old.email,
-            mailed_only: false,
+            given: InviteGiven::Shown { to: old.email },
         }
     }
 }
@@ -242,7 +270,7 @@ pub(crate) fn decode(
 
 #[cfg(test)]
 mod tests {
-    use crate::{Body, RawEvent, decode};
+    use crate::{Body, InviteGiven, RawEvent, decode};
 
     /// An invite made before v2 had its code answered to whoever made it, emailed or not: it
     /// reads as shown to them, so joining by it proves nothing of the address.
@@ -253,7 +281,10 @@ mod tests {
         else {
             panic!("an invite");
         };
-        assert_eq!(created.email.as_deref(), Some("ada@example.com"));
-        assert!(!created.mailed_only);
+        let shown = InviteGiven::Shown {
+            to: Some("ada@example.com".into()),
+        };
+        assert_eq!(created.given, shown);
+        assert_eq!(created.given.mailbox(), None);
     }
 }
