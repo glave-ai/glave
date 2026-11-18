@@ -5,9 +5,12 @@ import { unreached } from '../lib/text';
 import { ServerService } from './server.service';
 import { SessionService } from './session.service';
 
-/** An invite just made: the link that opens it, this once, and the invite itself. */
+/**
+ * An invite just made: the link that opens it, this once, and the invite itself. No link when
+ * glave emailed it to the invite's address alone.
+ */
 export interface Made {
-  readonly link: string;
+  readonly link: string | null;
   readonly invite: InviteInfo;
 }
 
@@ -71,13 +74,14 @@ export class PeopleService {
 
   /**
    * Makes an invite giving `role`, emailed to `email` when there is one: its link at `origin`,
-   * or why it was not made.
+   * where the server answered its code, or why it was not made.
    */
   async invite(role: OrgRole, email: string | null, origin: string): Promise<Made | string> {
     try {
       const params = email === null ? { role } : { role, email };
       const { code, invite } = await this.session.call('invite/create', params);
-      return { link: `${origin}/#invite=${code}`, invite };
+      const shared = code ?? null;
+      return { link: shared === null ? null : `${origin}/#invite=${shared}`, invite };
     } catch (error: unknown) {
       return error instanceof ApiError ? error.message : unreached();
     } finally {

@@ -52,6 +52,15 @@ describe('PeopleService', () => {
     ]);
   });
 
+  it('makes no link for an invite the server emailed to its address alone', async () => {
+    const fake = new FakeSession()
+      .answer('people/list', { people: [] })
+      .answer('invite/list', { invites: [] })
+      .answer('invite/create', { invite: INVITE });
+    const made = await service(fake).invite('member', 'alex@example.com', 'https://glave.example');
+    expect(made).toEqual({ link: null, invite: INVITE });
+  });
+
   it('asks the server about itself again after an invite is made, cancelled or refused', async () => {
     const fake = new FakeSession()
       .answer('people/list', { people: [] })
