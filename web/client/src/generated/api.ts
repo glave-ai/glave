@@ -1118,6 +1118,12 @@ export type PushDevice = {
   readonly id: DeviceId;
   /** What the person knows it as: "Safari on iPhone". */
   readonly name: string;
+  /**
+   * The browser that asked should subscribe again now (`push/subscribe`), which keeps it 30
+   * days more: less than half of that is left. A browser not subscribed again in time is
+   * forgotten.
+   */
+  readonly renew?: boolean;
 };
 
 /** Whether the server tells the person's browsers when glave needs them. */
