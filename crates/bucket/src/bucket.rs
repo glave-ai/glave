@@ -84,8 +84,8 @@ impl Bucket {
             .with_url(url.trim())
             .build()
             .map_err(|error| BucketError::Bucket {
-                url: url.to_owned(),
-                error: error.to_string(),
+                url: glave_ports::host::shown(url),
+                error: glave_ports::host::urls_shown(&error.to_string()),
             })?;
         Ok(Self {
             store: Arc::new(store),

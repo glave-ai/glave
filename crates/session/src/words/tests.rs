@@ -10,7 +10,7 @@ use super::*;
 #[test]
 fn every_sentence_has_an_entry_that_writes_exactly_its_values() {
     let mut ids = BTreeSet::new();
-    for (id, values, english) in Sentence::ALL {
+    for (id, values, english) in Sentence::all() {
         assert!(ids.insert(*id), "{id} is in the table twice");
         let resource = FluentResource::try_new(format!("{id} = {english}\n"))
             .unwrap_or_else(|(_, errors)| panic!("{id} is not one Fluent message: {errors:?}"));
@@ -313,7 +313,7 @@ fn why_a_folder_is_no_project_s_is_written_again_in_its_listing() {
 
 #[test]
 fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_what_it_makes() {
-    let mut ids: BTreeSet<&str> = Sentence::ALL.iter().map(|(id, _, _)| *id).collect();
+    let mut ids: BTreeSet<&str> = Sentence::all().iter().map(|(id, _, _)| *id).collect();
     let worded = Risk::every()
         .into_iter()
         .map(|risk| Box::new(risk) as Box<dyn Worded>);
@@ -350,7 +350,7 @@ fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_wha
     }
     assert_eq!(
         ids.len(),
-        Sentence::ALL.len()
+        Sentence::all().len()
             + Risk::ALL.len()
             + Phrase::ALL.len()
             + Refusal::ALL.len()
@@ -751,7 +751,7 @@ fn untranslated(mut told: Told, english: &str) -> Option<String> {
 
 #[test]
 fn every_entry_of_the_catalog_of_connectors_has_a_message_translated_with_no_values() {
-    let mut ids: BTreeSet<String> = Sentence::ALL
+    let mut ids: BTreeSet<String> = Sentence::all()
         .iter()
         .map(|(id, _, _)| (*id).to_owned())
         .collect();

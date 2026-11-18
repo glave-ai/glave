@@ -137,7 +137,10 @@ fn schedules_are_added_listed_and_removed_in_the_person_s_server() {
     );
     let shown = text(&added);
     assert!(added.status.success(), "{shown}");
-    assert!(shown.contains("cron \"0 9 * * 1-5\" (UTC)"), "{shown}");
+    assert!(
+        shown.contains("Every weekday at 9:00 am (cron \"0 9 * * 1-5\", "),
+        "{shown}"
+    );
     assert!(shown.contains("budget 5.0k"), "{shown}");
     let listed = text(&glave(&place, &model, &["schedule", "list"], ""));
     assert!(listed.contains("check the build"), "{listed}");

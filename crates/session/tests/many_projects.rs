@@ -166,7 +166,9 @@ fn one_person_can_neither_read_nor_answer_anothers_threads() {
         let schedule = ada
             .call(&Request::ScheduleCreate {
                 project: None,
+                name: None,
                 when: glave_event::When::Cron("0 9 * * *".into()),
+                zone: None,
                 prompt: "triage".into(),
                 budget: 1_000,
             })
