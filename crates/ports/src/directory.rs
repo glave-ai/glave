@@ -15,29 +15,15 @@ use crate::tools::BoxFuture;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IdentityKey(String);
 
-/// What an identity is of: an email is let go of by an account that never signs in again,
-/// any other kind never.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IdentityKind {
-    Email,
-    /// A company login's issuer and subject.
-    CompanyLogin,
-}
-
 impl IdentityKey {
-    /// `hex`, the key of an identity of `kind`: refused unless it is 64 lowercase hex digits.
-    /// An email's is kept as its digest alone, as every key was before kinds were told apart;
-    /// another kind's after its name and a colon (`login:`), so a store tells an email's by
-    /// its having none.
-    pub fn new(kind: IdentityKind, hex: &str) -> Result<Self, DirectoryError> {
+    /// `hex` as a key: refused unless it is 64 lowercase hex digits.
+    pub fn new(hex: &str) -> Result<Self, DirectoryError> {
         let digest = hex.len() == 64 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
-        if !digest {
-            return Err(DirectoryError::Key);
+        if digest {
+            Ok(Self(hex.to_owned()))
+        } else {
+            Err(DirectoryError::Key)
         }
-        Ok(Self(match kind {
-            IdentityKind::Email => hex.to_owned(),
-            IdentityKind::CompanyLogin => format!("login:{hex}"),
-        }))
     }
 
     pub fn as_str(&self) -> &str {
@@ -64,10 +50,11 @@ pub trait Directory: Send + Sync {
         person: PrincipalId,
     ) -> BoxFuture<'a, Result<PrincipalId, DirectoryError>>;
 
-    /// Unlinks every email that leads to `person` when they belong to no organization, all as
+    /// Unlinks every identity that leads to `person` when they belong to no organization, all as
     /// one statement, so a join landing meanwhile keeps them: an account in no organization
-    /// never signs in again, and lets its addresses go. An identity of another kind, such as a
-    /// company login's, stays whatever becomes of the person's organizations.
+    /// never signs in again, and lets its email addresses go. Every identity linked here today
+    /// is an email address. Whoever first links another kind, such as a company login's issuer
+    /// and subject, must limit this to emails' keys, so a removal never drops a company login.
     fn unlink_email_if_alone(
         &self,
         person: PrincipalId,

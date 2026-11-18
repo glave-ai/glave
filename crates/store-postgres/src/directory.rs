@@ -57,10 +57,9 @@ impl Directory for PostgresDirectory {
     ) -> BoxFuture<'_, Result<(), DirectoryError>> {
         Box::pin(async move {
             let client = unscoped(&self.pool).await.map_err(storage)?;
-            // An email's key is its digest alone; another kind's has a colon (`IdentityKey`).
             client
                 .execute(
-                    "DELETE FROM identities WHERE person = $1 AND identity NOT LIKE '%:%'
+                    "DELETE FROM identities WHERE person = $1
                      AND NOT EXISTS (SELECT 1 FROM memberships WHERE person = $1)",
                     &[&person.as_uuid()],
                 )

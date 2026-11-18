@@ -64,10 +64,9 @@ impl Directory for SqliteDirectory {
         let connection = Arc::clone(&self.connection);
         Box::pin(async move {
             run(&connection, move |connection| {
-                // An email's key is its digest alone; another kind's has a colon (`IdentityKey`).
                 connection
                     .prepare_cached(
-                        "DELETE FROM identities WHERE person = ?1 AND identity NOT LIKE '%:%'
+                        "DELETE FROM identities WHERE person = ?1
                          AND NOT EXISTS (SELECT 1 FROM memberships WHERE person = ?1)",
                     )?
                     .execute(params![person.to_string()])

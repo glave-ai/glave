@@ -1,29 +1,18 @@
 //! What every store of the directory must do: link an identity to one person, letting a
-//! person's emails go only while they belong to no organization, find it again, keep
-//! identities apart, kinds too, and keep each person's organizations in the order they joined,
-//! once each, apart from anyone else's.
+//! person's identities go only while they belong to no organization, find it again, keep
+//! identities apart, and keep each person's organizations in the order they joined, once each,
+//! apart from anyone else's.
 
 use glave_event::PrincipalId;
 
 use super::racing::{WRITERS, together};
 use super::{Verdict, ensure, uuid_v7};
-use crate::directory::{Directory, IdentityKey, IdentityKind};
+use crate::directory::{Directory, IdentityKey};
 use crate::scope::OrgId;
 
-/// The key of an identity of `kind`, `n` telling it apart from others of its kind.
-fn kind_of(kind: IdentityKind, n: u8) -> Result<IdentityKey, String> {
-    let hex: String = std::iter::repeat_n(format!("{n:02x}"), 32).collect();
-    IdentityKey::new(kind, &hex).map_err(|e| e.to_string())
-}
-
-/// An email's key.
 fn key(n: u8) -> Result<IdentityKey, String> {
-    kind_of(IdentityKind::Email, n)
-}
-
-/// A company login's key, of the same digest as [`key`]'s for `n`.
-fn login(n: u8) -> Result<IdentityKey, String> {
-    kind_of(IdentityKind::CompanyLogin, n)
+    let hex: String = std::iter::repeat_n(format!("{n:02x}"), 32).collect();
+    IdentityKey::new(&hex).map_err(|e| e.to_string())
 }
 
 fn person(n: u64) -> Result<PrincipalId, String> {
@@ -42,20 +31,15 @@ pub async fn directory<D: Directory + ?Sized>(directory: &D) -> Verdict {
     racing(directory).await
 }
 
-/// A person's emails, and no other kind of identity of theirs, are unlinked only while they
-/// belong to no organization; then anyone may link them.
+/// A person's identities, every one an email address today, are unlinked only while they
+/// belong to no organization; then anyone may link them. Once another kind is linked,
+/// [`Directory::unlink_email_if_alone`] says this case must show it is never unlinked.
 async fn unlinking<D: Directory + ?Sized>(directory: &D) -> Verdict {
     let (grace, linus) = (person(5)?, person(6)?);
-    let (hers, also, company, his) = (key(5)?, key(6)?, login(5)?, key(7)?);
-    let linked = [
-        (&hers, grace),
-        (&also, grace),
-        (&company, grace),
-        (&his, linus),
-    ];
-    for (identity, whose) in linked {
+    let (hers, also, his) = (key(5)?, key(6)?, key(7)?);
+    for (email, whose) in [(&hers, grace), (&also, grace), (&his, linus)] {
         directory
-            .link(identity, whose)
+            .link(email, whose)
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -87,11 +71,6 @@ async fn unlinking<D: Directory + ?Sized>(directory: &D) -> Verdict {
             "the emails of someone in no organization lead to no one",
         )?;
     }
-    let stays = directory.find(&company).await.map_err(|e| e.to_string())?;
-    ensure(
-        stays == Some(grace),
-        "an identity of another kind is never unlinked",
-    )?;
     let theirs = directory.find(&his).await.map_err(|e| e.to_string())?;
     ensure(theirs == Some(linus), "another person's email stays theirs")?;
     let relinked = directory
@@ -120,19 +99,8 @@ async fn linking<D: Directory + ?Sized>(directory: &D) -> Verdict {
     ensure(found == Some(ada), "a linked identity is found")?;
     let other = directory.find(&two).await.map_err(|e| e.to_string())?;
     ensure(other.is_none(), "another identity leads to no one")?;
-    let company = directory
-        .link(&login(1)?, alan)
-        .await
-        .map_err(|e| e.to_string())?;
-    let still = directory.find(&one).await.map_err(|e| e.to_string())?;
     ensure(
-        company == alan && still == Some(ada),
-        "one digest of two kinds is two identities",
-    )?;
-    let email = IdentityKind::Email;
-    ensure(
-        IdentityKey::new(email, "not a digest").is_err()
-            && IdentityKey::new(email, &"A".repeat(64)).is_err(),
+        IdentityKey::new("not a digest").is_err() && IdentityKey::new(&"A".repeat(64)).is_err(),
         "a key is a SHA-256 in lowercase hex",
     )
 }

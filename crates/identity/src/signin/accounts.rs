@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::PrincipalId;
 use glave_ports::host::PublicOrigin;
-use glave_ports::{BoxFuture, Clock, Directory, EventLog, IdentityKey, IdentityKind, OrgId};
+use glave_ports::{BoxFuture, Clock, Directory, EventLog, IdentityKey, OrgId};
 
 use super::browsers::{
     BrowserError, Browsers, Ceremony, Discovered, Discoverer, Session, account_of, kept, new_id,
@@ -233,7 +233,7 @@ impl Accounts {
 /// reads it, lowercase and trimmed, apart from every other identity, so no address is kept.
 fn email_key(address: &str) -> Result<IdentityKey, BrowserError> {
     let read = address.trim().to_lowercase();
-    IdentityKey::new(IdentityKind::Email, &kept(&format!("email\0{read}")))
+    IdentityKey::new(&kept(&format!("email\0{read}")))
         .map_err(|e| BrowserError::Keep(e.to_string()))
 }
 
