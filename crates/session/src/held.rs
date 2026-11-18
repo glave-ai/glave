@@ -199,6 +199,16 @@ where
         }
     }
 
+    /// Whether other work than what only manages `thread` holds it here: a turn, which takes
+    /// messages. Never work that only manages it and outlasted every stop, which a message would
+    /// otherwise try again forever.
+    pub(crate) fn turn_holds(&self, thread: ThreadId) -> bool {
+        matches!(
+            self.lock().get(&thread),
+            Some(Slot::Busy { manages: false, .. })
+        )
+    }
+
     /// The end of the work that only manages `thread`, when such work holds it here, stopped
     /// first when `stop`: a look it makes is then owed, for later.
     pub(crate) fn managing(&self, thread: ThreadId, stop: bool) -> Option<watch::Receiver<bool>> {
@@ -235,7 +245,12 @@ where
         let mut stopped = false;
         for round in 0..=MOST_STOPS {
             let last = round == MOST_STOPS;
-            if !last && let Some(mut ending) = self.managing(thread, true) {
+            if let Some(mut ending) = self.managing(thread, !last) {
+                // Still running after every stop: its lease is this server's too, so taking it
+                // would only renew one that work lets go of as it ends, leaving none.
+                if last {
+                    return Err(busy(thread));
+                }
                 stopped = true;
                 // It lets go of its lease, which is this server's too, before it ends.
                 let _ = tokio::time::timeout(STOPPED_WITHIN, ending.wait_for(|ended| *ended)).await;
