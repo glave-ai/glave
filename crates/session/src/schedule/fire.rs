@@ -4,7 +4,8 @@
 //! its budget, as whoever made it, that waits for them where it needs them, as a chat does.
 //! One server on the store fires them, the holder of its scheduler lease; each run is claimed
 //! by its own `task.started`, so even two servers that both believe they hold it start it once
-//! (`tasks/run.rs`). Where schedules are on the store is read on each tick (`placed.rs`):
+//! (`tasks/run.rs`), the tick's own limit only bounding how long it takes where reads answer
+//! in time. Where schedules are on the store is read on each tick (`placed.rs`):
 //! organization by organization, each tick starting one further on, a few projects'
 //! ledgers are read at once and each one's due runs started right after, for at most a share of
 //! the tick each organization, the first read whatever the time, the next tick going on where
@@ -15,7 +16,7 @@
 //! schedule that missed runs while no server ran it runs once, as soon as one does, never once
 //! per missed time (systemd's `Persistent=true`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::future::Future;
 use std::time::Duration;
 
@@ -31,7 +32,7 @@ use crate::choice::Choice;
 use crate::cron::{Cron, SHORTEST_GAP};
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
-use crate::tasks::{Membership, Unstarted, Work, whose};
+use crate::tasks::{Membership, PeopleOnce, Unstarted, Work};
 use crate::words::Sentence;
 
 /// The longest the scheduler sleeps before looking again: schedules made by another process
@@ -82,9 +83,17 @@ where
         let until = clock.now().checked_add(TICK).ok();
         let past = || until.is_some_and(|until| clock.now() >= until);
         let mine = self.task_projects_here().await?;
-        // Where schedules are on the store, read on from where this server last read it.
+        // Where schedules are on the store, read on from where this server last read it, each
+        // project once, by its organization.
         let placed = self.placed().await;
-        let organizations = self.tick_organizations(&placed, &mine);
+        let (mut by_org, mut seen) = (BTreeMap::<OrgId, Vec<Located>>::new(), HashSet::new());
+        for at in mine.iter().chain(&placed) {
+            if seen.insert(*at) {
+                by_org.entry(at.org).or_default().push(*at);
+            }
+        }
+        let organizations: BTreeSet<OrgId> = by_org.keys().copied().collect();
+        self.tick_organizations(&organizations);
         let count = organizations.len();
         let (mut started, mut reached) = (Vec::new(), 0usize);
         for org in in_turn(organizations, self.next_turn()) {
@@ -93,13 +102,7 @@ where
                 tracing::warn!(left, "the tick took its time; the rest go on at the next");
                 break;
             }
-            let theirs = mine.iter().chain(&placed).filter(|at| at.org == org);
-            let mut projects: Vec<Located> = Vec::new();
-            for at in theirs {
-                if !projects.contains(at) {
-                    projects.push(*at);
-                }
-            }
+            let projects = by_org.remove(&org).unwrap_or_default();
             started.extend(self.fire_in(org, projects, until).await);
             reached = reached.saturating_add(1);
         }
@@ -124,6 +127,8 @@ where
         let until = share.into_iter().chain(tick).min();
         let past = || until.is_some_and(|until| clock.now() >= until);
         let (mut started, mut done) = (Vec::new(), 0usize);
+        // Its people ledger, read once, by the first run here that needs it.
+        let people = PeopleOnce::new();
         'chunks: for chunk in projects.chunks(READS) {
             if past() {
                 break;
@@ -146,7 +151,7 @@ where
                     .find(|(read, _)| read == at)
                     .map(|(_, result)| result)
                 {
-                    Some(Ok(())) => started.extend(self.recover_and_fire(*at).await),
+                    Some(Ok(())) => started.extend(self.recover_and_fire(*at, &people).await),
                     // Read again on the next tick.
                     Some(Err(error)) => {
                         let project = at.project;
@@ -166,19 +171,29 @@ where
     }
 
     /// Recovers the runs `project`'s ledger, just read, has open that a stopped server left,
-    /// then starts its runs due.
-    async fn recover_and_fire(&self, project: Located) -> Vec<ThreadId> {
-        if let Err(error) = self.recover_in(project).await {
-            let project = project.project;
-            tracing::warn!(%error, %project, "could not recover the project's runs left open");
+    /// then starts its runs due; one whose ledger has held no schedule for a day is unplaced.
+    async fn recover_and_fire(&self, project: Located, people: &PeopleOnce) -> Vec<ThreadId> {
+        if let Err(error) = self.recover_in(project, people).await {
+            let at = project.project;
+            tracing::warn!(%error, project = %at, "could not recover the project's runs left open");
         }
-        self.fire_due(project).await
+        let idle = (self.ledgers().get(&project))
+            .filter(|ledger| ledger.schedules.is_empty())
+            .map(|ledger| ledger.emptied);
+        if let Some(emptied) = idle {
+            if let Err(error) = self.unplace_if_idle(project, emptied).await {
+                let at = project.project;
+                tracing::warn!(%error, project = %at, "could not unplace the project");
+            }
+            return Vec::new();
+        }
+        self.fire_due(project, people).await
     }
 
     /// Starts every run due in `project`, found in its ledger as just read rather than in what
     /// this server keeps of ledgers, which forgets some past the most it keeps; answers their
     /// chats.
-    async fn fire_due(&self, project: Located) -> Vec<ThreadId> {
+    async fn fire_due(&self, project: Located, people: &PeopleOnce) -> Vec<ThreadId> {
         let now = self.inner.harness.clock().now();
         let mut due: Vec<(ScheduleCreated, Timestamp)> = (self.ledgers().get(&project))
             .map(|ledger| {
@@ -193,12 +208,12 @@ where
         let mut started = Vec::new();
         for (schedule, at) in due {
             // Held back by its maker's task limit before it is claimed, so it starts later.
-            if let Ok(maker) = whose(schedule.by.as_ref())
-                && self.at_task_limit(maker)
+            if let Ok(maker) = self.maker_of(schedule.by.as_ref())
+                && self.at_task_limit(Some(maker))
             {
                 continue;
             }
-            if let Ran::Started(chat) = self.fire(project, &schedule, at).await {
+            if let Ran::Started(chat) = self.fire(project, &schedule, at, people).await {
                 started.push(chat);
             }
         }
@@ -287,7 +302,7 @@ where
             .flat_map(|ledger| ledger.schedules.values())
             .filter_map(|scheduled| {
                 // One glave can't tell who made is refused at its time, whatever the limit.
-                let maker = whose(scheduled.created.by.as_ref()).ok().flatten();
+                let maker = self.maker_of(scheduled.created.by.as_ref()).ok();
                 next_fire(scheduled).map(|next| (maker, next))
             })
             .collect();
@@ -304,7 +319,13 @@ where
     /// made it, or they are no longer in its organization, or it runs more often than a
     /// schedule may. While its maker's place in the organization can't be told, it is held
     /// back.
-    async fn fire(&self, project: Located, schedule: &ScheduleCreated, at: Timestamp) -> Ran {
+    async fn fire(
+        &self,
+        project: Located,
+        schedule: &ScheduleCreated,
+        at: Timestamp,
+        people: &PeopleOnce,
+    ) -> Ran {
         let Some(chat) = schedule.thread else {
             return Ran::NotStarted;
         };
@@ -318,7 +339,7 @@ where
         let maker = if going {
             Err(crate::held::busy(chat))
         } else {
-            self.run_as(project, schedule).await
+            self.run_as(project, schedule, people).await
         };
         let caller = match maker {
             Ok(Some(caller)) => caller,
@@ -361,13 +382,16 @@ where
         &self,
         project: Located,
         schedule: &ScheduleCreated,
+        people: &PeopleOnce,
     ) -> Result<Option<Caller>, ApiError> {
         if let When::Cron(text) = &schedule.when {
             Cron::for_a_schedule(text).map_err(|why| ApiError::new(code::INVALID_PARAMS, why))?;
         }
-        let caller = self.acting_as(whose(schedule.by.as_ref())?, project.org);
-        match self.membership(&caller).await {
-            Ok(Membership::Member) => Ok(Some(caller)),
+        // Whoever made it, in its project's organization, before glave acts as them: the
+        // server's own person too, a member of the server's own organization alone by right.
+        let maker = self.maker_of(schedule.by.as_ref())?;
+        match self.membership(maker, project.org, people).await {
+            Ok(Membership::Member) => Ok(Some(self.acting_as(Some(maker), project.org))),
             Ok(Membership::Removed) => {
                 Err(ApiError::new(code::NOT_ALLOWED, Sentence::MakerRemoved))
             }

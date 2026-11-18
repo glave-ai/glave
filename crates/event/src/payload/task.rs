@@ -113,7 +113,8 @@ pub struct ScheduleCreated {
     /// The chat it was set up from, when it was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<ThreadId>,
-    /// Who made it. Absent: the project's person.
+    /// Who made it: named always from v4; absent in v1 to v3, which left the server's own
+    /// person implied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
 }
@@ -267,7 +268,7 @@ impl Payload for TaskEnded {
 
 impl Payload for ScheduleCreated {
     const TYPE: &'static str = CREATED;
-    const VERSION: u32 = 3;
+    const VERSION: u32 = 4;
 }
 
 impl Payload for SchedulePaused {
@@ -314,6 +315,13 @@ pub(crate) fn decode_created(
     match version {
         1 | 2 => Some(parse::<ScheduleCreatedBefore>(data).map(ScheduleCreated::from)),
         3 => Some(parse(data)),
+        // Named always from v4: none is no schedule of this version.
+        4 => Some(
+            parse(data).and_then(|created: ScheduleCreated| match created.by {
+                Some(_) => Ok(created),
+                None => Err(serde::de::Error::missing_field("by")),
+            }),
+        ),
         _ => None,
     }
 }
