@@ -271,7 +271,7 @@ where
                 self.record_in_ledger(project, &deleted).await?;
             }
             if !ledger.schedules.is_empty() {
-                self.unplace_if_none(project).await?;
+                self.unplace_if_none(project, person).await?;
             }
         }
         Ok(())
