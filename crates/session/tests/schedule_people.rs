@@ -5,7 +5,7 @@
 //! refused, and their waiting run not adopted, as is one whose people can't be read to tell; and
 //! schedules are offered only where a server fires them.
 
-use glave_event::{AuthMethod, Body, PersonRemoved, Principal, Skipped, ThreadId, decode};
+use glave_event::{AuthMethod, Body, PersonRemoved, Principal, Skipped, ThreadId, When, decode};
 use glave_ports::stream::Reserved;
 use glave_ports::testing::{FaultyLog, ManualClock};
 use std::sync::Arc;
@@ -15,7 +15,9 @@ use glave_ports::{
 };
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 
-use crate::schedule_firing::{append, daily, ledger_of, made_by, on_a_store, runs_in, set, setup};
+use crate::schedule_firing::{
+    append, daily, ledger_of, made_by, on_a_store, runs_in, set, setup, two_on_a_store,
+};
 use crate::support::*;
 
 #[test]
@@ -187,6 +189,81 @@ fn a_schedule_made_as_the_scheduler_unplaces_its_project_is_placed_back_and_fire
         set(&now, "2026-10-11T11:00:00Z");
         assert_eq!(server.tick().await.unwrap(), vec![made.thread.unwrap()]);
         settle_for(&server, &grace).await;
+    });
+}
+
+#[test]
+fn an_unplacing_whose_answer_is_lost_places_the_project_back() {
+    block_on!(async {
+        let log = Shared::default();
+        let faulty = FaultyLog::over(Arc::clone(&log.0));
+        let (_dir, one, two, now) =
+            two_on_a_store("people-unplace-lost", &log, &faulty, true).await;
+        let grace = elsewhere();
+        let gone = daily(&two, &grace).await.unwrap();
+        let deleted = Request::ScheduleDelete {
+            schedule: gone.schedule,
+        };
+        two.request_as(&grace, deleted).await.unwrap();
+        // A day on, the first, which fires schedules, reads her ledger idle, held as it reads,
+        // while the second makes her another; its unplacing then lands, its answer lost.
+        set(&now, "2026-10-11T10:30:00Z");
+        faulty.hold_read("schedule.deleted");
+        faulty.lose_answer("schedule.unplaced");
+        let making = async {
+            faulty.held().await;
+            let made = daily(&two, &grace).await.unwrap();
+            faulty.release();
+            made
+        };
+        let (ticked, made) = tokio::join!(one.tick(), making);
+        ticked.unwrap();
+        let listed = index_of(&log, scope().org()).await;
+        assert!(
+            matches!(listed.as_slice(), [.., Body::ScheduleUnplaced(_), Body::SchedulePlaced(back)] if back.project == made.project.as_uuid()),
+            "placed back, so the schedule made meanwhile stays listed: {listed:?}"
+        );
+        set(&now, "2026-10-11T11:00:00Z");
+        assert_eq!(one.tick().await.unwrap(), vec![made.thread.unwrap()]);
+        settle_for(&one, &grace).await;
+    });
+}
+
+#[test]
+fn a_project_whose_one_off_ran_is_unplaced_a_day_after() {
+    block_on!(async {
+        let log = Shared::default();
+        let first = setup();
+        let now = first.clock.clone();
+        let (server, _, _, _dir) = first
+            .build_in_repository("people-one-off", log.clone())
+            .await;
+        let grace = elsewhere();
+        let once = Request::ScheduleCreate {
+            project: None,
+            name: None,
+            when: When::At(
+                glave_event::At::try_from("2026-10-10T11:00:00.000Z".to_owned()).unwrap(),
+            ),
+            zone: None,
+            prompt: "check the build".into(),
+            budget: 5_000,
+        };
+        let made = match server.request_as(&grace, once).await.unwrap() {
+            Reply::Schedule { schedule } => schedule,
+            other => panic!("a schedule, not {other:?}"),
+        };
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![made.thread.unwrap()]);
+        settle_for(&server, &grace).await;
+        // Nothing of it will run again: a day on, its project is unplaced.
+        set(&now, "2026-10-11T11:30:00Z");
+        server.tick().await.unwrap();
+        let listed = index_of(&log, scope().org()).await;
+        assert!(
+            matches!(listed.as_slice(), [Body::SchedulePlaced(_), Body::ScheduleUnplaced(gone)] if gone.project == made.project.as_uuid()),
+            "{listed:?}"
+        );
     });
 }
 
