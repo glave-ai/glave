@@ -51,18 +51,18 @@ impl Directory for PostgresDirectory {
         })
     }
 
-    fn unlink_email_if_alone<'a>(
-        &'a self,
-        email: &'a IdentityKey,
+    fn unlink_email_if_alone(
+        &self,
         person: PrincipalId,
-    ) -> BoxFuture<'a, Result<(), DirectoryError>> {
+    ) -> BoxFuture<'_, Result<(), DirectoryError>> {
         Box::pin(async move {
             let client = unscoped(&self.pool).await.map_err(storage)?;
+            // An email's key is its digest alone; another kind's has a colon (`IdentityKey`).
             client
                 .execute(
-                    "DELETE FROM identities WHERE identity = $1 AND person = $2
-                     AND NOT EXISTS (SELECT 1 FROM memberships WHERE person = $2)",
-                    &[&email.as_str(), &person.as_uuid()],
+                    "DELETE FROM identities WHERE person = $1 AND identity NOT LIKE '%:%'
+                     AND NOT EXISTS (SELECT 1 FROM memberships WHERE person = $1)",
+                    &[&person.as_uuid()],
                 )
                 .await
                 .map(drop)

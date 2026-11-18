@@ -51,7 +51,7 @@ pub use blob::{
     saved_line,
 };
 pub use caller::Caller;
-pub use directory::{Directory, DirectoryError, IdentityKey};
+pub use directory::{Directory, DirectoryError, IdentityKey, IdentityKind};
 pub use end_users::{EndUser, EndUsers};
 pub use env::{Clock, Entropy, EntropyError, OsEntropy, SystemClock};
 pub use erase::{Erasable, EraseError, Eraser};

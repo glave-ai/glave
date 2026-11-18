@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::PrincipalId;
 use glave_ports::host::PublicOrigin;
-use glave_ports::{BoxFuture, Clock, Directory, EventLog, IdentityKey, OrgId};
+use glave_ports::{BoxFuture, Clock, Directory, EventLog, IdentityKey, IdentityKind, OrgId};
 
 use super::browsers::{
     BrowserError, Browsers, Ceremony, Discovered, Discoverer, Session, account_of, kept, new_id,
@@ -149,26 +149,17 @@ impl Accounts {
     }
 
     /// Takes `person` out of `org`: their sessions sign them in there no more. Left in no
-    /// organization, the account never signs in again, so `email`, the address `org` knew
-    /// them by, leads to it no more, if it did: a new invite or a sign-up may make it another
-    /// account's way back in.
-    pub async fn leave(
-        &self,
-        person: PrincipalId,
-        org: OrgId,
-        email: Option<&str>,
-    ) -> Result<(), BrowserError> {
+    /// organization, the account never signs in again, so its address leads to it no more:
+    /// a new invite or a sign-up may make it another account's way back in.
+    pub async fn leave(&self, person: PrincipalId, org: OrgId) -> Result<(), BrowserError> {
         self.directory
             .leave(person, org)
             .await
             .map_err(|e| BrowserError::Keep(e.to_string()))?;
-        if let Some(address) = email {
-            self.directory
-                .unlink_email_if_alone(&email_key(address)?, person)
-                .await
-                .map_err(|e| BrowserError::Keep(e.to_string()))?;
-        }
-        Ok(())
+        self.directory
+            .unlink_email_if_alone(person)
+            .await
+            .map_err(|e| BrowserError::Keep(e.to_string()))
     }
 
     /// Begins signing a browser in with any passkey made at the public origin.
@@ -242,7 +233,7 @@ impl Accounts {
 /// reads it, lowercase and trimmed, apart from every other identity, so no address is kept.
 fn email_key(address: &str) -> Result<IdentityKey, BrowserError> {
     let read = address.trim().to_lowercase();
-    IdentityKey::new(&kept(&format!("email\0{read}")))
+    IdentityKey::new(IdentityKind::Email, &kept(&format!("email\0{read}")))
         .map_err(|e| BrowserError::Keep(e.to_string()))
 }
 

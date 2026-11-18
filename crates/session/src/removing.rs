@@ -100,8 +100,7 @@ where
         // Their terminals too: their shells, on their own computer, which no one could reach.
         self.close_terminals_of(org, person).await;
         if let Some(accounts) = self.inner.accounts.as_deref() {
-            let email = self.people(org, |people| people.removed_email(person));
-            accounts.leave(person, org, email.as_deref()).await?;
+            accounts.leave(person, org).await?;
         }
         self.delete_schedules_of(org, person, &by).await?;
         Ok(Reply::Done {})

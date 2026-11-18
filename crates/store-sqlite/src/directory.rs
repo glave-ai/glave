@@ -57,21 +57,20 @@ impl Directory for SqliteDirectory {
         })
     }
 
-    fn unlink_email_if_alone<'a>(
-        &'a self,
-        email: &'a IdentityKey,
+    fn unlink_email_if_alone(
+        &self,
         person: PrincipalId,
-    ) -> BoxFuture<'a, Result<(), DirectoryError>> {
+    ) -> BoxFuture<'_, Result<(), DirectoryError>> {
         let connection = Arc::clone(&self.connection);
-        let email = email.as_str().to_owned();
         Box::pin(async move {
             run(&connection, move |connection| {
+                // An email's key is its digest alone; another kind's has a colon (`IdentityKey`).
                 connection
                     .prepare_cached(
-                        "DELETE FROM identities WHERE identity = ?1 AND person = ?2
-                         AND NOT EXISTS (SELECT 1 FROM memberships WHERE person = ?2)",
+                        "DELETE FROM identities WHERE person = ?1 AND identity NOT LIKE '%:%'
+                         AND NOT EXISTS (SELECT 1 FROM memberships WHERE person = ?1)",
                     )?
-                    .execute(params![email, person.to_string()])
+                    .execute(params![person.to_string()])
             })
             .await
             .map(drop)

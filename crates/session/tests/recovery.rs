@@ -250,8 +250,9 @@ fn an_invite_its_maker_was_shown_never_makes_its_address_a_way_back_in() {
     });
 }
 
-/// Taken out of the one organization they were in, someone's account never signs in again, so
-/// their address goes with it: the account a new invite makes gets it, and gets back in.
+/// Taken out of the last organization they were in, someone's account never signs in again, so
+/// its address goes with it, though that organization knew them by another: the account a new
+/// invite to the address makes gets it, and gets back in with it.
 #[test]
 fn a_removed_person_s_address_goes_to_the_account_a_new_invite_makes() {
     block_on!(async {
@@ -260,11 +261,24 @@ fn a_removed_person_s_address_goes_to_the_account_a_new_invite_makes() {
         let (served, clock) = serve_timed(&dir, true, &outbox).await;
         let theirs = "grace@example.com";
         let mut bob = organized(&served, &outbox, "bob@example.com", "Bob's").await;
+        let mut carol = organized(&served, &outbox, "carol@example.com", "Carol's").await;
+        // Grace joins Bob's by the address, then, signed in, Carol's by an invite to another.
         let mut first = joined_by_mail(&served, &outbox, &mut bob, theirs).await;
         assert_eq!(listed(&mut first).await["email"], json!(theirs));
+        let other = "grace@work.example.com";
+        asked(&mut carol, &invite_to(other)).await;
+        let code = linked(&outbox, outbox.sent().len(), "invite")
+            .await
+            .unwrap();
+        let accepted = asked(&mut first, &Request::InviteAccept { code }).await;
+        assert_eq!(accepted["person"]["email"], json!(other), "{accepted}");
+        // Taken out of Bob's, then Carol's, which knew her by the other address.
         let grace = picked(&mut bob, |it| it["email"] == json!(theirs)).await;
-        let removed = asked(&mut bob, &Request::PersonRemove { person: grace }).await;
-        assert_eq!(removed, json!({}));
+        let known = picked(&mut carol, |it| it["email"] == json!(other)).await;
+        assert_eq!(known, grace);
+        let out = Request::PersonRemove { person: grace };
+        assert_eq!(asked(&mut bob, &out).await, json!({}));
+        assert_eq!(asked(&mut carol, &out).await, json!({}));
 
         // Invited again, she makes a new account, which has the address.
         clock.advance_seconds(61);

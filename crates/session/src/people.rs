@@ -66,14 +66,6 @@ struct Kept {
     role: Option<OrgRole>,
 }
 
-/// Someone removed: who removed them, and the address the organization knew them by, which
-/// their glave account lets go once it is in no organization.
-#[derive(Debug, Clone)]
-struct Removed {
-    by: Principal,
-    email: Option<String>,
-}
-
 /// What the people ledger says so far: one entry per person, however many times they signed
 /// in, so it grows with the organization's people and not with its events.
 #[derive(Debug, Default)]
@@ -81,8 +73,8 @@ pub(crate) struct People {
     /// The `seq` the next event will take.
     next: u64,
     known: BTreeMap<PrincipalId, Kept>,
-    /// Those removed and not back by an invite since.
-    removed: BTreeMap<PrincipalId, Removed>,
+    /// Those removed and not back by an invite since, each with who removed them.
+    removed: BTreeMap<PrincipalId, Principal>,
     /// Whether someone was removed since the watches were last told.
     heard_removal: bool,
     /// Whom glave made its Owner as it made it, by sign-up or `organization/create`.
@@ -123,8 +115,7 @@ impl Peoples {
 
     /// Who removed `person` from `org`, as far as this server has read, while they are out.
     pub(crate) fn removed_by(&self, org: OrgId, person: PrincipalId) -> Option<Principal> {
-        let removed = self.held.get(&org)?.removed.get(&person)?;
-        Some(removed.by.clone())
+        self.held.get(&org)?.removed.get(&person).cloned()
     }
 
     /// One more watch follows someone's place in `org`.
@@ -184,10 +175,8 @@ impl People {
                 }
             }
             Body::PersonRemoved(gone) => {
-                let kept = self.known.remove(&gone.person);
-                let email = kept.and_then(|kept| kept.joined.profile.email);
-                let by = gone.by;
-                self.removed.insert(gone.person, Removed { by, email });
+                self.known.remove(&gone.person);
+                self.removed.insert(gone.person, gone.by);
                 self.heard_removal = true;
             }
             Body::RoleSet(set) => {
@@ -226,11 +215,6 @@ impl People {
     /// Whether `person` was removed, and has not come back by an invite since.
     pub(crate) fn removed(&self, person: PrincipalId) -> bool {
         self.removed.contains_key(&person)
-    }
-
-    /// The address the organization knew `person` by, while they are out.
-    pub(crate) fn removed_email(&self, person: PrincipalId) -> Option<String> {
-        self.removed.get(&person)?.email.clone()
     }
 
     /// Whether `person` is in the ledger now.
@@ -735,9 +719,8 @@ mod tests {
         let by = Principal::glave();
         let mut peoples = Peoples::default();
         peoples.watch(org(0));
-        let removed = Removed { by, email: None };
-        peoples.of(org(0)).removed.insert(person, removed.clone());
-        peoples.of(org(1)).removed.insert(person, removed);
+        peoples.of(org(0)).removed.insert(person, by.clone());
+        peoples.of(org(1)).removed.insert(person, by);
         for other in 2..=PEOPLES {
             peoples.of(org(other));
         }

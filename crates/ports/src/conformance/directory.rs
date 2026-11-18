@@ -1,17 +1,29 @@
-//! What every store of the directory must do: link an identity to one person, letting an email
-//! go only from someone in no organization, find it again, keep identities apart, and keep each
-//! person's organizations in the order they joined, once each, apart from anyone else's.
+//! What every store of the directory must do: link an identity to one person, letting a
+//! person's emails go only while they belong to no organization, find it again, keep
+//! identities apart, kinds too, and keep each person's organizations in the order they joined,
+//! once each, apart from anyone else's.
 
 use glave_event::PrincipalId;
 
 use super::racing::{WRITERS, together};
 use super::{Verdict, ensure, uuid_v7};
-use crate::directory::{Directory, IdentityKey};
+use crate::directory::{Directory, IdentityKey, IdentityKind};
 use crate::scope::OrgId;
 
-fn key(n: u8) -> Result<IdentityKey, String> {
+/// The key of an identity of `kind`, `n` telling it apart from others of its kind.
+fn kind_of(kind: IdentityKind, n: u8) -> Result<IdentityKey, String> {
     let hex: String = std::iter::repeat_n(format!("{n:02x}"), 32).collect();
-    IdentityKey::new(&hex).map_err(|e| e.to_string())
+    IdentityKey::new(kind, &hex).map_err(|e| e.to_string())
+}
+
+/// An email's key.
+fn key(n: u8) -> Result<IdentityKey, String> {
+    kind_of(IdentityKind::Email, n)
+}
+
+/// A company login's key, of the same digest as [`key`]'s for `n`.
+fn login(n: u8) -> Result<IdentityKey, String> {
+    kind_of(IdentityKind::CompanyLogin, n)
 }
 
 fn person(n: u64) -> Result<PrincipalId, String> {
@@ -30,14 +42,20 @@ pub async fn directory<D: Directory + ?Sized>(directory: &D) -> Verdict {
     racing(directory).await
 }
 
-/// An email is unlinked from a person only while they belong to no organization, and only when
-/// it leads to them; once it is, anyone may link it.
+/// A person's emails, and no other kind of identity of theirs, are unlinked only while they
+/// belong to no organization; then anyone may link them.
 async fn unlinking<D: Directory + ?Sized>(directory: &D) -> Verdict {
     let (grace, linus) = (person(5)?, person(6)?);
-    let (hers, his) = (key(5)?, key(6)?);
-    for (email, whose) in [(&hers, grace), (&his, linus)] {
+    let (hers, also, company, his) = (key(5)?, key(6)?, login(5)?, key(7)?);
+    let linked = [
+        (&hers, grace),
+        (&also, grace),
+        (&company, grace),
+        (&his, linus),
+    ];
+    for (identity, whose) in linked {
         directory
-            .link(email, whose)
+            .link(identity, whose)
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -46,36 +64,36 @@ async fn unlinking<D: Directory + ?Sized>(directory: &D) -> Verdict {
         .await
         .map_err(|e| e.to_string())?;
     directory
-        .unlink_email_if_alone(&hers, grace)
+        .unlink_email_if_alone(grace)
         .await
         .map_err(|e| e.to_string())?;
     let kept = directory.find(&hers).await.map_err(|e| e.to_string())?;
     ensure(
         kept == Some(grace),
-        "someone still in an organization keeps their email",
+        "someone still in an organization keeps their emails",
     )?;
     directory
         .leave(grace, org(5))
         .await
         .map_err(|e| e.to_string())?;
     directory
-        .unlink_email_if_alone(&his, grace)
+        .unlink_email_if_alone(grace)
         .await
         .map_err(|e| e.to_string())?;
+    for email in [&hers, &also] {
+        let freed = directory.find(email).await.map_err(|e| e.to_string())?;
+        ensure(
+            freed.is_none(),
+            "the emails of someone in no organization lead to no one",
+        )?;
+    }
+    let stays = directory.find(&company).await.map_err(|e| e.to_string())?;
+    ensure(
+        stays == Some(grace),
+        "an identity of another kind is never unlinked",
+    )?;
     let theirs = directory.find(&his).await.map_err(|e| e.to_string())?;
-    ensure(
-        theirs == Some(linus),
-        "an email leading to someone else stays theirs",
-    )?;
-    directory
-        .unlink_email_if_alone(&hers, grace)
-        .await
-        .map_err(|e| e.to_string())?;
-    let freed = directory.find(&hers).await.map_err(|e| e.to_string())?;
-    ensure(
-        freed.is_none(),
-        "the email of someone in no organization leads to no one",
-    )?;
+    ensure(theirs == Some(linus), "another person's email stays theirs")?;
     let relinked = directory
         .link(&hers, linus)
         .await
@@ -83,15 +101,6 @@ async fn unlinking<D: Directory + ?Sized>(directory: &D) -> Verdict {
     ensure(
         relinked == linus,
         "a freed email may be linked to someone else",
-    )?;
-    directory
-        .unlink_email_if_alone(&hers, grace)
-        .await
-        .map_err(|e| e.to_string())?;
-    let still = directory.find(&hers).await.map_err(|e| e.to_string())?;
-    ensure(
-        still == Some(linus),
-        "unlinking it from its former person changes nothing",
     )
 }
 
@@ -111,8 +120,19 @@ async fn linking<D: Directory + ?Sized>(directory: &D) -> Verdict {
     ensure(found == Some(ada), "a linked identity is found")?;
     let other = directory.find(&two).await.map_err(|e| e.to_string())?;
     ensure(other.is_none(), "another identity leads to no one")?;
+    let company = directory
+        .link(&login(1)?, alan)
+        .await
+        .map_err(|e| e.to_string())?;
+    let still = directory.find(&one).await.map_err(|e| e.to_string())?;
     ensure(
-        IdentityKey::new("not a digest").is_err() && IdentityKey::new(&"A".repeat(64)).is_err(),
+        company == alan && still == Some(ada),
+        "one digest of two kinds is two identities",
+    )?;
+    let email = IdentityKind::Email;
+    ensure(
+        IdentityKey::new(email, "not a digest").is_err()
+            && IdentityKey::new(email, &"A".repeat(64)).is_err(),
         "a key is a SHA-256 in lowercase hex",
     )
 }
