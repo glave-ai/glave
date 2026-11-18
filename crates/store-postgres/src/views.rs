@@ -229,7 +229,7 @@ pub(crate) async fn rebuild(
 /// Rebuilds the view of every thread in the database, one organization at a time. A thread that
 /// cannot be read, such as one sealed under an erased key, gets no view and is not listed.
 pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<(), StoreError> {
-    for org in organizations(pool, None, usize::MAX).await? {
+    for org in organizations(pool).await? {
         let client = connection(pool, org).await?;
         let rows = client
             .query(
