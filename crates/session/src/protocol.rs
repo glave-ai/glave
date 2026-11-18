@@ -15,6 +15,7 @@ mod exports;
 mod files;
 mod library;
 mod live;
+mod made;
 mod meta;
 mod methods;
 mod models;
