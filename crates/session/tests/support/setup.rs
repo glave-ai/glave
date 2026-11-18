@@ -534,9 +534,20 @@ pub(crate) fn shared_leases() -> (ManualClock, Arc<InMemoryLeases>) {
     (clock, leases)
 }
 
-/// A log in memory that two servers can share, as two processes share a database.
+/// A log in memory that two servers can share, as two processes share a database; told to,
+/// it fails every append of one type of event, as storage that can't be written does.
 #[derive(Clone, Default)]
-pub(crate) struct Shared(pub Arc<InMemoryLog>);
+pub(crate) struct Shared(
+    pub Arc<InMemoryLog>,
+    Arc<std::sync::Mutex<Option<&'static str>>>,
+);
+
+impl Shared {
+    /// Fails every append holding an event of type `kind` from now on.
+    pub(crate) fn fail_appends_of(&self, kind: &'static str) {
+        *self.1.lock().unwrap() = Some(kind);
+    }
+}
 
 impl EventLog for Shared {
     fn append(
@@ -544,7 +555,15 @@ impl EventLog for Shared {
         scope: &Scope,
         events: &[RawEvent],
     ) -> impl Future<Output = Result<(), LogError>> + Send {
-        self.0.append(scope, events)
+        let failing = *self.1.lock().unwrap();
+        let fails = failing.is_some_and(|kind| events.iter().any(|raw| raw.kind.as_str() == kind));
+        let append = self.0.append(scope, events);
+        async move {
+            if fails {
+                return Err(LogError::Storage("told to fail".into()));
+            }
+            append.await
+        }
     }
 
     fn read(
