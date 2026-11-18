@@ -2,9 +2,9 @@
 //! question ("Repeat this every weekday at 8:00 am?", or for a shape with no plain words "Repeat
 //! this, next on …?" with its next three runs), when it runs on their clock ("Monday to Friday,
 //! 8:00 am your time. First run: Tuesday 17 November."), the chat its runs go to, and what each
-//! run starts with, when the card shows it. Recorded in English as the approval's `ask` and
-//! `detail`, and written again from what it was written from (`repeating`) in the reader's
-//! language as a transport sends it.
+//! run starts with, always (the owner's decision, #1510). Recorded in English as the approval's
+//! `ask` and `detail`, and written again from what it was written from (`repeating`) in the
+//! reader's language as a transport sends it.
 
 use glave_event::{Ask, CardLines, Repeating, When, seen};
 use jiff::Timestamp;
@@ -299,5 +299,7 @@ mod tests {
                 .chars()
                 .any(|letter| letter != '\n' && !seen(letter))
         );
+        // A variation selector and a filler that draws as nothing are written out too.
+        assert_eq!(shown("ok\u{fe0f} go\u{3164}"), "ok\\u{fe0f} go\\u{3164}");
     }
 }
