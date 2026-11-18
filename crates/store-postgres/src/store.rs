@@ -153,7 +153,7 @@ impl Store {
     /// The organizations the store holds: every one with an organization key, so every one with
     /// a blob. Ids only, for work that runs once per organization, each then in its own scope.
     pub async fn organizations(&self) -> Result<Vec<OrgId>, StoreError> {
-        organizations(&self.pool).await
+        organizations(&self.pool, None, usize::MAX).await
     }
 
     pub fn leases(&self) -> PostgresLeases {
@@ -280,12 +280,22 @@ async fn borrowed(pool: &Pool, org: &str) -> Result<Object, StoreError> {
     Ok(client)
 }
 
-/// The organizations the store holds: every one with an organization key, made the first time
-/// anything of it is sealed. Ids only, for work that runs once per organization.
-pub(crate) async fn organizations(pool: &Pool) -> Result<Vec<OrgId>, StoreError> {
+/// The organizations the store holds after `after`, in id order, at most `limit`: every one
+/// with an organization key, made the first time anything of it is sealed, or a project. Ids
+/// only, for work that runs once per organization.
+pub(crate) async fn organizations(
+    pool: &Pool,
+    after: Option<OrgId>,
+    limit: usize,
+) -> Result<Vec<OrgId>, StoreError> {
     let client = unscoped(pool).await?;
+    let after = after.map(OrgId::as_uuid);
+    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let rows = client
-        .query("SELECT org FROM glave_orgs ORDER BY org", &[])
+        .query(
+            "SELECT org FROM glave_orgs WHERE $1::uuid IS NULL OR org > $1 ORDER BY org LIMIT $2",
+            &[&after, &limit],
+        )
         .await
         .map_err(|e| StoreError::Storage(describe(&e)))?;
     rows.iter()

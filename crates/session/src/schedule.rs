@@ -131,7 +131,20 @@ where
         self.place_schedules(project).await?;
         self.record_in_ledger(project, created).await?;
         // Again, as the project's last other schedule may have gone, unlisting it, meanwhile.
-        self.place_schedules(project).await
+        self.place_schedules(project).await?;
+        // Counted again once kept, so schedules made at once, on any server, never keep more
+        // than policy allows: one that finds too many goes, as though refused.
+        let kept = self.kept_schedules(caller).await?;
+        if kept > self.most_schedules() {
+            let deleted = ScheduleDeleted {
+                schedule: created.schedule,
+                by: self.someone_else(caller.person),
+            };
+            self.record_in_ledger(project, &deleted).await?;
+            self.unplace_if_none(project).await?;
+            return Err(self.too_many_schedules(kept.saturating_sub(1)));
+        }
+        Ok(())
     }
 
     /// A new chat in `scope` for a schedule's runs: on a copy of its project's folder where the
@@ -180,24 +193,37 @@ where
     /// may once resumed, a hundred where it sets none: a paused one counts, so pausing makes
     /// no room.
     async fn room_for_one_more(&self, caller: &Caller) -> Result<(), ApiError> {
-        let most = self.most_schedules();
-        let projects = self.read_ledgers_of(caller).await?;
-        let now = self.inner.harness.clock().now();
-        let kept = self
-            .ledgers()
-            .iter()
-            .filter(|(id, _)| projects.contains(id))
-            .flat_map(|(_, ledger)| ledger.schedules.values())
-            .filter(|scheduled| info::kept(scheduled, now))
-            .count();
-        if kept >= most {
-            let said = match self.inner.limits.max_schedules {
-                Some(_) => Sentence::TooManySchedules { kept, most },
-                None => Sentence::TooManySchedulesKept { kept, most },
-            };
-            return Err(ApiError::new(code::LIMIT, said));
+        let kept = self.kept_schedules(caller).await?;
+        if kept >= self.most_schedules() {
+            return Err(self.too_many_schedules(kept));
         }
         Ok(())
+    }
+
+    /// The schedules `caller` keeps that will still run, or may once resumed, read whole from
+    /// the ledger of each project of theirs the index lists, apart from what this server keeps:
+    /// so one made on another server a moment ago counts.
+    async fn kept_schedules(&self, caller: &Caller) -> Result<usize, ApiError> {
+        let listed = self.placed_in(self.org_of(caller)).await;
+        let theirs = self.projects_of(caller).await?;
+        let now = self.inner.harness.clock().now();
+        let mut kept = 0usize;
+        for project in theirs.into_iter().filter(|at| listed.contains(at)) {
+            let ledger = self.ledger_apart(project).await?;
+            let here = (ledger.schedules.values()).filter(|scheduled| info::kept(scheduled, now));
+            kept = kept.saturating_add(here.count());
+        }
+        Ok(kept)
+    }
+
+    /// `kept` schedules are as many as policy allows, or more, said in plain words.
+    fn too_many_schedules(&self, kept: usize) -> ApiError {
+        let most = self.most_schedules();
+        let said = match self.inner.limits.max_schedules {
+            Some(_) => Sentence::TooManySchedules { kept, most },
+            None => Sentence::TooManySchedulesKept { kept, most },
+        };
+        ApiError::new(code::LIMIT, said)
     }
 
     /// The schedules of every project `caller` works in, oldest first.

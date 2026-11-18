@@ -19,7 +19,7 @@ use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, OrgId};
 use tokio::task::JoinSet;
 
 use crate::held::Slot;
-use crate::people::{Acting, Permit, no_such_person, refuse_self};
+use crate::people::{Acting, People, Permit, no_such_person, refuse_self};
 use crate::projects::MOST_PROJECTS;
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
@@ -95,7 +95,8 @@ where
             .into_iter()
             .filter(|theirs| theirs.org == org && theirs.person == person)
             .collect();
-        let commands = self.interrupt_removed(theirs);
+        let people = self.people_apart(org).await?;
+        let commands = self.interrupt_removed(&people, theirs);
         self.stop_commands(commands).await;
         // Their terminals too: their shells, on their own computer, which no one could reach.
         self.close_terminals_of(org, person).await;
@@ -147,9 +148,16 @@ where
             for (org, running) in orgs.by_ref().take(READS) {
                 let server = self.clone();
                 reads.spawn(async move {
-                    // A ledger that cannot be read now is read again next time.
-                    match server.catch_up_people(org).await {
-                        Ok(()) => server.interrupt_removed(running),
+                    // A ledger that cannot be read now is read again next time. Read as this
+                    // server keeps it, the watches here hear of a removal; read whole and apart,
+                    // as that may forget one midway, it ends what the removed run here.
+                    let read = match server.catch_up_people(org).await {
+                        Ok(()) if running.is_empty() => return Vec::new(),
+                        Ok(()) => server.people_apart(org).await,
+                        Err(error) => Err(error),
+                    };
+                    match read {
+                        Ok(people) => server.interrupt_removed(&people, running),
                         Err(error) => {
                             tracing::warn!(%error, %org, "could not read the organization's people");
                             Vec::new()
@@ -198,16 +206,10 @@ where
     /// organization: a turn ends interrupted, and a task as stopped by whoever removed them.
     /// Waits for nothing. Answers those of `running` of such a person with commands still
     /// running, and who removed them.
-    fn interrupt_removed(&self, running: Vec<Theirs>) -> Vec<(Theirs, Principal)> {
+    fn interrupt_removed(&self, people: &People, running: Vec<Theirs>) -> Vec<(Theirs, Principal)> {
         let mut commands = Vec::new();
         for theirs in running {
-            let removed = self
-                .inner
-                .people
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .removed_by(theirs.org, theirs.person);
-            let Some(by) = removed else {
+            let Some(by) = people.removed_by(theirs.person) else {
                 continue;
             };
             if let Some(cancel) = &theirs.cancel {

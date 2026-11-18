@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use glave_event::{
     At, Body, EventId, Fired, Forge, Header, Outcome, Payload, Principal, ScheduleCreated,
-    ScheduleId, SchedulePlaced, Seq, TaskStarted, ThreadId, When, decode, encode,
+    ScheduleId, SchedulePlaced, Seq, Skipped, TaskStarted, ThreadId, When, decode, encode,
 };
 use glave_ports::computer::{CredentialHost, GitCredential};
 use glave_ports::stream::Reserved;
@@ -383,6 +383,38 @@ fn past_the_ledgers_a_server_keeps_every_project_s_runs_are_still_looked_at() {
 }
 
 #[test]
+fn reads_slower_than_an_organization_s_share_still_start_the_first_project_s_runs() {
+    block_on!(async {
+        let log = Shared::default();
+        let faulty = FaultyLog::over(Arc::clone(&log.0));
+        let first = setup();
+        let now = first.clock.clone();
+        let (server, _, _, _dir) = first
+            .build_in_repository("firing-slow", faulty.clone())
+            .await;
+        let chat = start(&server, false).await;
+        // A schedule another server wrote, so this one reads its ledger as it ticks.
+        let made = made_by(1, chat, server.person().map(Principal::person));
+        append(&log, &scope(), Reserved::Tasks.id(), 1, &made).await;
+        set(&now, "2026-10-10T11:00:00Z");
+        // That read takes longer than an organization's share of a tick.
+        faulty.hold_read("schedule.created");
+        let slow = async {
+            faulty.held().await;
+            set(&now, "2026-10-10T11:00:20Z");
+            faulty.release();
+        };
+        let (started, ()) = tokio::join!(server.tick(), slow);
+        assert_eq!(
+            started.unwrap(),
+            vec![chat],
+            "the first project read still starts"
+        );
+        settle(&server).await;
+    });
+}
+
+#[test]
 fn a_schedule_made_to_run_more_often_than_one_may_is_refused_at_its_time() {
     block_on!(async {
         let log = Shared::default();
@@ -433,12 +465,23 @@ fn a_schedule_made_by_no_one_glave_can_act_for_is_refused_and_recorded() {
             .build_in_repository("firing-no-one", log.clone())
             .await;
         let project = scope().project();
+        // Made by glave itself, and by no one named, which no server reads as its own person.
         let created = made_by(1, missing_chat(1), Some(Principal::glave()));
         append(&log, &scope(), Reserved::Tasks.id(), 1, &created).await;
+        let unnamed = made_by(2, missing_chat(2), None);
+        append(&log, &scope(), Reserved::Tasks.id(), 2, &unnamed).await;
         set(&now, "2026-10-10T11:00:00Z");
         assert_eq!(server.tick().await.unwrap(), Vec::new());
-        let refused = refusal_in(&log, project).await;
-        assert_eq!(refused, "MAKER_UNKNOWN");
+        let refused = (ledger_of(&log, project).await.into_iter())
+            .filter(|body| {
+                matches!(body, Body::ScheduleSkipped(skipped)
+                    if skipped.why == Skipped::Refused { reason: "MAKER_UNKNOWN".into() })
+            })
+            .count();
+        assert_eq!(
+            refused, 2,
+            "both refused, as made by no one glave can act for"
+        );
     });
 }
 

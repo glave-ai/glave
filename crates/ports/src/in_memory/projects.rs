@@ -242,10 +242,18 @@ impl Projects for InMemoryProjects {
         Box::pin(std::future::ready(self.find_folder_now(org, keys)))
     }
 
-    fn organizations(&self) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>> {
+    fn organizations(
+        &self,
+        after: Option<OrgId>,
+        limit: usize,
+    ) -> BoxFuture<'_, Result<Vec<OrgId>, ProjectError>> {
         let organizations = self.held().map(|held| {
-            let mut organizations: Vec<OrgId> = held.projects.keys().map(|(org, _)| *org).collect();
+            let mut organizations: Vec<OrgId> = (held.projects.keys())
+                .map(|(org, _)| *org)
+                .filter(|org| after.is_none_or(|after| *org > after))
+                .collect();
             organizations.dedup();
+            organizations.truncate(limit);
             organizations
         });
         Box::pin(std::future::ready(organizations))
