@@ -17,7 +17,7 @@ use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::held::{Slot, Use, finished};
+use crate::held::{MANAGED_WITHIN, Slot, Use, finished};
 use crate::protocol::{ApiError, ListedCommand, Reply, code};
 use crate::server::{Inner, Server, no_thread};
 use crate::words::Sentence;
@@ -158,8 +158,10 @@ where
 
     async fn record_idle_now(&self, thread: ThreadId, looks: bool) {
         // After other such work, a change to whether it is shown among them, which would
-        // otherwise find it busy and leave the look to the next turn.
-        self.manages_ended(thread).await;
+        // otherwise find it busy and leave the look to the next turn: waited for, never stopped.
+        if let Some(mut ending) = self.managing(thread, false) {
+            let _ = tokio::time::timeout(MANAGED_WITHIN, ending.wait_for(|ended| *ended)).await;
+        }
         if !matches!(self.lock().get(&thread), Some(Slot::Idle { .. })) {
             return;
         }

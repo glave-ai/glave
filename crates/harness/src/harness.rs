@@ -241,8 +241,9 @@ impl Thread {
 
     /// Whether a look over what its last working turn made is owed and may be made now, while it
     /// is idle: the turn was stopped, or its folder couldn't be looked over, and no command of its
-    /// runs in the background, whose end would make it; never on its person's own computer,
-    /// which looking would wake (`made.rs`).
+    /// runs in the background, whose end would make it; archived too, whose files are kept with
+    /// it, but never once deleted, nor on its person's own computer, which looking would wake
+    /// (`made.rs`).
     pub fn owes_look(&self) -> bool {
         self.owed_mark().is_some()
     }
@@ -250,7 +251,7 @@ impl Thread {
     /// Its mark, when the look it owes may be made now ([`Thread::owes_look`]).
     pub(crate) fn owed_mark(&self) -> Option<crate::made::Mark> {
         let looks = self.home.is_none()
-            && self.standing == Standing::Active
+            && self.standing != Standing::Deleted
             && !self.commands.any_running();
         self.made_mark.filter(|mark| mark.owed && looks)
     }
