@@ -15,7 +15,18 @@ use super::locked::Registry;
 pub(super) type Entry = (Registry, &'static str, &'static str, &'static str);
 
 /// The versions let in early.
-pub(super) const ALLOWED: &[Entry] = &[];
+pub(super) const ALLOWED: &[Entry] = &[(
+    Registry::Crates,
+    "lettre",
+    "0.11.24",
+    "RUSTSEC-2026-0560 (STARTTLS response injection lets a man-in-the-middle forge SMTP \
+     replies), RUSTSEC-2026-0561 (missing dot-stuffing after a bare LF or CR allows SMTP \
+     command injection), RUSTSEC-2026-0562 (panic on an EHLO reply line of only white space), \
+     RUSTSEC-2026-0563 (an address with a quoted local part is sent to a different address), \
+     RUSTSEC-2026-0564 (panic on a mailbox display name containing CR or LF) and \
+     RUSTSEC-2026-0565 (unbounded buffering of an SMTP reply), all fixed first in 0.11.24: a \
+     security fix that can't wait, and cargo deny fails on every branch until it comes in",
+)];
 
 #[cfg(test)]
 mod tests {

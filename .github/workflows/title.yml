@@ -15,7 +15,8 @@ concurrency:
 
 jobs:
   title:
-    runs-on: ubuntu-latest
+    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
+    runs-on: ubuntu-24.04
     steps:
       # In the merge queue the title was already checked on the pull request.
       - name: The title is a conventional commit message
