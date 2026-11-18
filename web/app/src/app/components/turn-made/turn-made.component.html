@@ -1,9 +1,19 @@
-@for (card of files(); track card.key) {
-  <app-made-file [file]="card.file" />
+@for (drawn of cards(); track drawn.card.key) {
+  <!-- Until the server describes it, a card is its room, unseen. -->
+  <app-made-file [class.room]="drawn.room" [file]="drawn.card.file" />
 }
-@for (card of room(); track card.key) {
-  <!-- Until the server describes it, the card's room, unseen. -->
-  <app-made-file class="room" [file]="card.file" />
+@if (folds()) {
+  <button
+    type="button"
+    class="fold"
+    data-testid="turn-made-fold"
+    [class.room]="foldRoom()"
+    [attr.aria-expanded]="unfolded()"
+    (click)="toggle()"
+  >
+    <span>{{ foldLabel() }}</span>
+    <glz-icon [icon]="foldIcon()" />
+  </button>
 }
 @if (note(); as note) {
   <div class="notes">

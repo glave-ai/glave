@@ -2,7 +2,7 @@ import { type Page } from '@playwright/test';
 
 import { PROJECT, THREAD, fakeApi } from './fake-api';
 import { FORMATTED } from './fake-formatted';
-import { MORE, madeTheFiles } from './fake-made';
+import { MORE, NOTES, madeTheFiles } from './fake-made';
 import { LONG, LONG_TURNS } from './fake-long';
 import { PHOTOS } from './fake-photos';
 import {
@@ -146,6 +146,27 @@ for (const [width, height, on, beside, narrow] of [
     expectStill(await feltOn(page));
   });
 }
+
+test('nothing moves on opening a thread whose turn made more files than it shows, as they are described late', async ({
+  page,
+}) => {
+  await watchFeel(page);
+  await fakeApi(page);
+  await madeTheFiles(page, NOTES);
+  await page.setViewportSize({ width: 1280, height: 1600 });
+  const held = await hold(page, '/', 'thread/files');
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await held.sent;
+  await expect(byTestId(page, 'thread-message').last()).toBeVisible();
+  // Three cards' room and the row that unfolds the other two, from the turn's end alone.
+  await expect(byTestId(page, 'made-file')).toHaveCount(3);
+  await expect(byTestId(page, 'turn-made-fold')).toHaveText('2 more files');
+  await atRest(page);
+  held.letGo();
+  await expect(byTestId(page, 'made-file-title').first()).toHaveText('Trip budget');
+  await atRest(page);
+  expectStill(await feltOn(page));
+});
 
 /** The first card's width in rem, and the lines its reasons keep there. */
 async function cardMeasured(
