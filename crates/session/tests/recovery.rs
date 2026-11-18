@@ -160,6 +160,50 @@ fn the_last_passkey_may_go_once_the_account_can_get_back_in_by_email() {
     });
 }
 
+/// An invite's code is answered to whoever made it, so opening its link proves nothing of the
+/// address it names: the account made with it never has that address as its way back in. Else
+/// the invite's maker opens it herself and holds the account the address's own person is then
+/// led into (#1465).
+#[test]
+fn an_invite_naming_an_address_never_makes_it_the_way_back_into_an_account() {
+    block_on!(async {
+        let dir = folder("recovery-invited");
+        let outbox = Arc::new(Outbox::default());
+        let (served, clock) = serve_timed(&dir, true, &outbox).await;
+        let theirs = "victim@example.com";
+        // Mallory invites an address that is not hers, and opens the invite herself.
+        let mut mallory = organized(&served, &outbox, "mallory@example.com", "Mallory's").await;
+        let invite = Request::InviteCreate {
+            role: OrgRole::Member,
+            email: Some(theirs.into()),
+        };
+        let code = Secret::new(asked(&mut mallory, &invite).await["code"].as_str().unwrap());
+        let made = make_passkey(&served, code, LinkKind::Invite, &mut device()).await;
+        let mut hers = elsewhere(&served, made["session"].as_str().map(str::to_owned));
+        let passkeys = listed(&mut hers).await;
+        assert!(
+            passkeys.get("email").is_none(),
+            "the address gets her back in: {passkeys}"
+        );
+
+        // Asked to get its person back in, the address is sent no link into her account.
+        clock.advance_seconds(61);
+        let mut anyone = elsewhere(&served, None);
+        let before = outbox.sent().len();
+        let back = Request::RecoveryStart {
+            email: theirs.into(),
+        };
+        assert_eq!(asked(&mut anyone, &back).await, json!({}));
+        assert!(linked(&outbox, before + 1, "recover").await.is_none());
+        // And its own person still signs up with it, to an account of their own.
+        clock.advance_seconds(61);
+        let mut victim = signed_up(&served, &outbox, theirs).await;
+        assert_eq!(listed(&mut victim).await["email"], json!(theirs));
+        assert_eq!(listed(&mut hers).await.get("email"), None);
+        served.close().await;
+    });
+}
+
 /// A device elsewhere that makes passkeys for [`ORIGIN`].
 fn device() -> Authenticator {
     Authenticator::new(ORIGIN).unwrap()
