@@ -53,6 +53,11 @@ pub struct Fired {
 #[serde(deny_unknown_fields)]
 pub struct TaskEnded {
     pub thread: ThreadId,
+    /// When the schedule's run it was came due, so it ends that run alone, never one started
+    /// in its chat since. Absent for a task no schedule started, and in version 1, which ends
+    /// whatever task its thread has open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<At>,
     /// How its last turn ended: `cancelled` when it was stopped, `limit_reached` when its
     /// budget ran out.
     pub outcome: Outcome,
@@ -216,7 +221,7 @@ impl Payload for TaskStarted {
 
 impl Payload for TaskEnded {
     const TYPE: &'static str = ENDED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for ScheduleCreated {
@@ -242,7 +247,8 @@ pub(crate) fn decode_started(
 }
 
 pub(crate) fn decode_ended(version: u32, data: &RawValue) -> Option<serde_json::Result<TaskEnded>> {
-    (version == 1).then(|| parse(data))
+    // Version 1 had no `due`, which reads as absent: it ends whatever its thread has open.
+    (version == 1 || version == 2).then(|| parse(data))
 }
 
 pub(crate) fn decode_created(

@@ -1,12 +1,13 @@
 //! A schedule's runs in its own chat, on a clock the test moves: the chat is named for it and
 //! each run is a turn there; a run that needs the person waits for them, as a chat does, holds
 //! no room under the task limit meanwhile, and stops when stopped, archived or deleted, or as
-//! the server stops; a run due meanwhile is skipped and recorded so once; a run refused
-//! otherwise is recorded with its reason, once for the same; the scheduler never wakes at once
-//! for a run it would not start; deleting the chat deletes the schedule; and a schedule is made
-//! on a copy of a repository or refused, its chat gone when it is not kept.
+//! the server stops; a run waiting across a restart keeps its budget; a run due meanwhile is
+//! skipped and recorded so once; a run refused otherwise is recorded with its reason, once for
+//! the same; the scheduler never wakes at once for a run it would not start; deleting the chat
+//! deletes the schedule; and a schedule is made on a copy of a repository or refused, its chat
+//! gone when it is not kept.
 
-use glave_event::{At, ThreadId, When};
+use glave_event::{At, Outcome, ThreadId, When};
 use glave_ports::testing::{ManualClock, TempDir};
 use glave_ports::{EventLog, InMemoryLog};
 use glave_session::Answering;
@@ -16,17 +17,17 @@ use serde_json::json;
 
 use crate::support::*;
 
-fn at(text: &str) -> At {
+pub(crate) fn at(text: &str) -> At {
     At::from(text.parse::<Timestamp>().unwrap())
 }
 
-fn set(now: &ManualClock, text: &str) {
+pub(crate) fn set(now: &ManualClock, text: &str) {
     now.set_millis(at(text).timestamp().as_millisecond());
 }
 
 /// A server answering `answers`, in Ask first so a write asks, with clients to answer, on a
 /// repository of its own in `name`, its clock at 10:03.
-async fn asking(
+pub(crate) async fn asking(
     name: &str,
     answers: Vec<glave_ports::Completion>,
     log: Shared,
@@ -39,7 +40,7 @@ async fn asking(
 }
 
 /// A schedule of `server`'s, called `name`, running `cron` with `budget`.
-async fn schedule<L: EventLog + 'static>(
+pub(crate) async fn schedule<L: EventLog + 'static>(
     server: &Tested<L>,
     name: &str,
     cron: &str,
@@ -74,7 +75,7 @@ async fn turns<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) -> u
 
 /// The answers of a run that asks the person before it writes, then says it is done, each
 /// model call using 15 tokens.
-fn writes_after_asking() -> Vec<glave_ports::Completion> {
+pub(crate) fn writes_after_asking() -> Vec<glave_ports::Completion> {
     let write = json!({"path": "note.md", "content": "hi"});
     vec![
         costing(answer(None, Some(("write", write))), 10, 5, 1),
@@ -259,7 +260,7 @@ fn a_skip_for_another_reason_than_the_last_is_recorded_and_one_for_the_same_is_n
 }
 
 /// The tasks `server` lists as running, here or elsewhere.
-async fn open_tasks<L: EventLog + 'static>(server: &Tested<L>) -> usize {
+pub(crate) async fn open_tasks<L: EventLog + 'static>(server: &Tested<L>) -> usize {
     (tasks(server).await.iter())
         .filter(|task| task.status != TaskStatus::Finished)
         .count()
@@ -412,7 +413,7 @@ fn a_schedule_that_is_not_kept_leaves_no_chat() {
     block_on!(async {
         let log = Shared::default();
         let (server, _, _, _dir) = asking("runs-not-kept", Vec::new(), log.clone()).await;
-        log.fail_appends_of("schedule.created");
+        log.fail_on("schedule.created");
         assert!(server.request(daily_check()).await.is_err());
         assert_eq!(chats(&server).await, 0);
     });
@@ -483,5 +484,38 @@ fn deleting_a_schedule_s_chat_deletes_the_schedule() {
             .await
             .unwrap();
         assert_eq!(listed(&server).await, Vec::new());
+    });
+}
+
+#[test]
+fn a_run_waiting_for_the_person_across_a_restart_keeps_its_budget() {
+    block_on!(async {
+        let log = Shared::default();
+        let (server, now, repo, _dir) =
+            asking("runs-restart", writes_after_asking(), log.clone()).await;
+        // 20 tokens: the first call's 15 pass, the second's go past.
+        let made = schedule(&server, "Careful", "0 11 * * *", 20).await;
+        let chat = made.thread.unwrap();
+        set(&now, "2026-10-10T11:00:00Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        let approval = asked_in(&server, chat).await;
+        server.shutdown().await;
+        drop(server);
+        let mut later = Setup::asking(writes_after_asking().split_off(1), Answering::Clients);
+        later.clock = now.clone();
+        later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
+        let (restarted, _) = later.build_on(&repo, log).await;
+        let recovered = restarted.recover_tasks().await.unwrap();
+        assert_eq!(recovered.closed, 0, "adopted, not interrupted");
+        let decided = Request::ApprovalDecide {
+            thread: chat,
+            approval,
+            decision: Answer::AllowOnce,
+        };
+        assert!(restarted.request(decided).await.is_ok());
+        settle(&restarted).await;
+        let ran = tasks(&restarted).await;
+        let run = ran.iter().find(|task| task.thread == chat).unwrap();
+        assert_eq!(run.outcome, Some(Outcome::LimitReached), "{run:?}");
     });
 }

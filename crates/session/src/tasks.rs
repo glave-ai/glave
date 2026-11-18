@@ -8,18 +8,23 @@
 //! ledger. `tasks/list` and `tasks/stop` show and stop them; `task/finished` tells the thread's
 //! watchers when one ends.
 
+mod adopted;
+
 use std::collections::HashMap;
+use std::future::Future;
+use std::sync::Arc;
 
 use glave_event::{
     At, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
     TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
+use glave_harness::Cancel;
 use glave_ports::computer::{Reason, Refusal};
-use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope, title_from};
+use glave_ports::{BlobStore, Caller, EventLog, Lease, Located, ModelProvider, Scope, title_from};
 
 use crate::choice::Choice;
 use crate::held::{Slot, busy};
-use crate::leased::Repaired;
+use crate::leased::{Repaired, elsewhere, renewing};
 use crate::ledger::Recorded;
 use crate::protocol::{
     ApiError, Notification, Reply, TaskInfo, TaskKind, TaskStatus, TurnResult, code,
@@ -54,6 +59,9 @@ pub(crate) struct Running {
     stopped: bool,
     stopped_by: Option<PrincipalId>,
     over_budget: bool,
+    /// Stops following it, where it is followed by what its thread records: as it is stopped,
+    /// as the server stops, or as another server takes its task lease.
+    unfollowed: Cancel,
 }
 
 pub(crate) type Tasks = HashMap<ThreadId, Running>;
@@ -150,6 +158,9 @@ where
             .may_start_task(caller, thread, schedule.is_some())
             .await?)
             .located();
+        // Whoever follows a task holds its task lease, so one server records its end.
+        let lease =
+            (self.take_task(project.org, thread).await?).ok_or_else(|| elsewhere(thread))?;
         let Work(prompt, choice) = work;
         let title = title_from(&prompt).unwrap_or_default();
         // A schedule's run waits for the person where it needs them, as their chat does; no one
@@ -177,6 +188,7 @@ where
             Ok(stream) => stream,
             Err(error) => {
                 self.inner.approvals.attend(thread);
+                self.let_go(&lease).await;
                 return Err(error);
             }
         };
@@ -203,36 +215,82 @@ where
             stopped: false,
             stopped_by: None,
             over_budget: false,
+            unfollowed: Cancel::new(),
         };
         let info = self.running_info(&running);
+        let unfollowed = running.unfollowed.clone();
         self.tasks().insert(thread, running);
         if let Err(error) = self.record_in_ledger(project, &started).await {
             self.cancel_busy(thread);
             self.follow_task(thread, stream).await;
+            self.let_go(&lease).await;
             return Err(error);
         }
         let server = self.clone();
-        let follow = tokio::spawn(async move { server.follow_task(thread, stream).await });
-        self.own(follow);
+        self.follow_held(lease, unfollowed, async move {
+            server.follow_task(thread, stream).await;
+        });
         Ok(info)
+    }
+
+    /// Runs `follow`, which follows a task to its end, in the background under the task's
+    /// `lease`, renewed as it goes and let go of once it ends; lost to another server, which
+    /// follows the task from then, `unfollowed` stops a follower of its thread's records.
+    fn follow_held(
+        &self,
+        lease: Lease,
+        unfollowed: Cancel,
+        follow: impl Future<Output = ()> + Send + 'static,
+    ) {
+        let server = self.clone();
+        let task = tokio::spawn(async move {
+            let leases = Arc::clone(&server.inner.leases);
+            renewing(leases.as_ref(), &lease, &unfollowed, follow).await;
+            server.let_go(&lease).await;
+        });
+        self.own(task);
     }
 
     /// Follows a task's work to its end, then records how it ended and says so.
     async fn follow_task(&self, thread: ThreadId, mut stream: TurnStream) {
-        let ended = loop {
+        let mut ended = loop {
             match stream.next().await {
-                Some(TurnItem::Note(note)) => self.count(thread, &note),
+                Some(TurnItem::Note(note)) => {
+                    self.count(thread, &note);
+                    // Its turn's own end, whoever went on with it after a wait.
+                    if let Some(result) = turn_ended(thread, &note) {
+                        break Ok(result);
+                    }
+                }
                 // A watcher this far behind is rare; the turn's own totals settle it at the end.
                 Some(TurnItem::Missed(_)) => {}
                 Some(TurnItem::Ended(ended)) => break ended,
                 None => break Err(ApiError::new(code::INTERNAL, Sentence::TaskStopped)),
             }
         };
+        // A turn waiting for the person whose follower was let go, but as this server stops: it
+        // is followed by what its thread records, to its end.
+        if matches!(&ended, Err(refused) if refused.code == code::NOT_AVAILABLE)
+            && !self.is_stopping()
+        {
+            ended = self.follow_by_notes(thread).await;
+        }
+        self.task_ended(thread, ended).await;
+    }
+
+    /// Records how `thread`'s task `ended` and says so; one this server stops following
+    /// (`-32022`) and no one stopped is let go of: as it stops, it stays open in the ledger for
+    /// the next server to adopt, and one whose task lease another server took is that server's.
+    async fn task_ended(&self, thread: ThreadId, ended: Result<TurnResult, ApiError>) {
         self.inner.approvals.attend(thread);
         let Some(running) = self.tasks().remove(&thread) else {
             return;
         };
         self.inner.tasks_ended.notify_one();
+        let let_go = matches!(&ended, Err(refused) if refused.code == code::NOT_AVAILABLE);
+        if let_go && !running.stopped {
+            return;
+        }
         let ended = settle(&running, &ended, self.is_stopping());
         // Recorded on a best effort: the thread's own events hold the work either way.
         let _ = self.record_in_ledger(running.project, &ended).await;
@@ -290,7 +348,7 @@ where
         caller: &Caller,
         thread: ThreadId,
     ) -> Result<Reply, ApiError> {
-        {
+        let unfollowed = {
             let mut tasks = self.tasks();
             let Some(running) = tasks.get_mut(&thread) else {
                 return Err(ApiError::new(
@@ -302,14 +360,18 @@ where
             };
             running.stopped = true;
             running.stopped_by = caller.person.or(self.inner.person);
-        }
+            running.unfollowed.clone()
+        };
         // A schedule's run waiting for the person holds no slot: it goes on stopped, declining
         // what it waits for, as `turn/cancel` stops it.
-        match self.cancel(thread).await {
+        let stopped = match self.cancel(thread).await {
             // Its turn ended meanwhile, and its end is being recorded.
             Err(refused) if refused.code == code::NO_TURN => Ok(Reply::Done {}),
             stopped => stopped,
-        }
+        };
+        // One followed by its thread's records whose turn's end never came ends now.
+        unfollowed.cancel();
+        stopped
     }
 
     /// Records that `thread`'s task, if it runs one, is stopped by `by`, unless someone
@@ -404,12 +466,32 @@ where
                 })
             };
             for thread in stale {
-                let Some(lease) = self.take(project.org, thread).await? else {
+                // Whoever follows a task holds its task lease: one server recovers each.
+                let Some(task) = self.take_task(project.org, thread).await? else {
                     recovered.held = recovered.held.saturating_add(1);
                     continue;
                 };
+                let Some(lease) = self.take(project.org, thread).await? else {
+                    self.let_go(&task).await;
+                    recovered.held = recovered.held.saturating_add(1);
+                    continue;
+                };
+                // A schedule's run that waits for the person goes on, under its budget, once
+                // they answer; one that can't be adopted is recorded interrupted.
+                let adopted = match self.adopt_waiting(project, thread, task).await {
+                    Ok(adopted) => adopted,
+                    Err(error) => {
+                        tracing::warn!(%error, %thread, "a waiting run could not be adopted");
+                        false
+                    }
+                };
+                if adopted {
+                    self.let_go(&lease).await;
+                    continue;
+                }
                 let ended = self.interrupt(project, thread).await;
                 self.let_go(&lease).await;
+                self.let_go(&task).await;
                 if ended? {
                     recovered.closed = recovered.closed.saturating_add(1);
                 }
@@ -422,15 +504,14 @@ where
     /// ending was recorded meanwhile; says whether it recorded.
     async fn interrupt(&self, project: Located, thread: ThreadId) -> Result<bool, ApiError> {
         self.catch_up(project).await?;
-        let open = self
-            .ledgers()
-            .get(&project)
-            .is_some_and(|ledger| ledger.open.contains_key(&thread));
-        if !open {
+        let open = (self.ledgers().get(&project))
+            .and_then(|ledger| ledger.open.get(&thread).map(|task| task.started.schedule));
+        let Some(fired) = open else {
             return Ok(false);
-        }
+        };
         let ended = TaskEnded {
             thread,
+            due: fired.map(|fired| fired.due),
             outcome: Outcome::Interrupted,
             tokens: TokenCounts::default(),
             cost: None,
@@ -532,6 +613,24 @@ where
     }
 }
 
+/// How `thread`'s turn ended, when `note` is its `turn.ended`.
+fn turn_ended(thread: ThreadId, note: &Notification) -> Option<TurnResult> {
+    let Notification::Event {
+        thread: from,
+        event,
+    } = note
+    else {
+        return None;
+    };
+    if *from != thread || event.kind.as_str() != TurnResult::TYPE {
+        return None;
+    }
+    match decode(event.clone()).ok()?.body {
+        Body::TurnEnded(result) => Some(result),
+        _ => None,
+    }
+}
+
 /// How a task ended: the turn's own totals when it reports them, else the tally. One the
 /// server's stop cut short, not the person, was interrupted.
 fn settle(running: &Running, ended: &Result<TurnResult, ApiError>, stopping: bool) -> TaskEnded {
@@ -545,6 +644,8 @@ fn settle(running: &Running, ended: &Result<TurnResult, ApiError>, stopping: boo
             };
             (outcome, running.tokens, running.cost)
         }
+        // Stopped while followed by its thread's records, before its turn's end came.
+        Err(_) if running.stopped => (Outcome::Cancelled, running.tokens, running.cost),
         Err(_) => (Outcome::Failed, running.tokens, running.cost),
     };
     let outcome = if running.over_budget && !running.stopped {
@@ -554,6 +655,7 @@ fn settle(running: &Running, ended: &Result<TurnResult, ApiError>, stopping: boo
     };
     TaskEnded {
         thread: running.started.thread,
+        due: running.started.schedule.map(|fired| fired.due),
         outcome,
         tokens,
         cost,
@@ -566,6 +668,23 @@ fn settle(running: &Running, ended: &Result<TurnResult, ApiError>, stopping: boo
 }
 
 impl<P, L, B> Server<P, L, B> {
+    /// Stops following every task followed by its thread's records, as the server stops: each
+    /// stays open in the ledger, for the next server to adopt.
+    pub(crate) fn unfollow_tasks(&self) {
+        let tasks = self
+            .inner
+            .running
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        #[expect(
+            clippy::iter_over_hash_type,
+            reason = "each is told alike; the order is never seen"
+        )]
+        for task in tasks.values() {
+            task.unfollowed.interrupt();
+        }
+    }
+
     /// Keeps `task` with the server's others, so shutting down waits for it.
     pub(crate) fn own(&self, task: tokio::task::JoinHandle<()>) {
         let mut tasks = self
