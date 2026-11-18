@@ -28,7 +28,8 @@ import { ServerService } from '../../services/server.service';
 /**
  * Inviting someone to the organization: their email, if the inviter has it, and what they can
  * do, Member or Admin, where the server shows the organization (alone in one it shows no one
- * yet, a Member); then the invite's link, with whether glave emailed it, to copy and send.
+ * yet, a Member); then the invite's link to copy and send, or, where glave emailed it, whom it
+ * went to, the link shown to no one else.
  */
 @Component({
   selector: 'app-invite-dialog',
@@ -85,8 +86,9 @@ export class InviteDialogComponent {
   /** Whether glave sends the link to an address: where it doesn't, none is asked for. */
   protected readonly emails = this.server.email;
   protected readonly makeLabel = computed(() => (this.busy() ? this.copy.making : this.copy.make));
-  protected readonly link = computed(() => this.made()?.link ?? '');
-  /** What the ready dialog says: whether glave emailed the link, and how long it works. */
+  /** The link to send, where glave did not email it to the invite's address alone. */
+  protected readonly link = computed(() => this.made()?.link ?? null);
+  /** What the ready dialog says: whom glave sent it to, or to send it; how long it works. */
   protected readonly told = computed(() => {
     const made = this.made();
     if (made === null) {
@@ -96,7 +98,7 @@ export class InviteDialogComponent {
     const to = made.invite.email ?? null;
     return to === null
       ? $localize`:@@inviteDialog.share:Send the link yourself. It works once, for ${works}:LASTS:.`
-      : $localize`:@@inviteDialog.emailed:We emailed it to ${to}:EMAIL:. You can also send the link yourself. It works once, for ${works}:LASTS:.`;
+      : $localize`:@@inviteDialog.sent:We sent the invite to ${to}:EMAIL:. It works once, for ${works}:LASTS:.`;
   });
 
   constructor() {

@@ -32,7 +32,7 @@ pub(crate) fn run() -> Option<ExitCode> {
         return Some(ExitCode::from(126));
     }
     let failure = glave_computer::sandbox_helper(&args)?;
-    eprintln!("glave sandbox: {failure}");
+    eprintln!("{}{failure}", glave_computer::SANDBOX_HELPER_FAILED);
     Some(ExitCode::from(126))
 }
 

@@ -12,6 +12,7 @@
 use std::pin::pin;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use glave_harness::Cancel;
 use glave_process::Processes;
 use tokio::io::BufReader;
@@ -127,6 +128,13 @@ pub(crate) async fn run(
     // Only the lock's holder removes a socket a server before it left.
     let listener = crate::socket::listen(&path).await?;
     let said = args.said();
+    // The key every push is signed with, made now where there is none, so reading it never
+    // has to. A store that can't keep it fails the start, as any store failing at start does,
+    // and whatever runs the server starts it again.
+    server
+        .ready_to_push()
+        .await
+        .context("the key notifications are signed with could not be made")?;
     said.info(&format!("serving you on {}", path.display()));
     let mut terminate = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;

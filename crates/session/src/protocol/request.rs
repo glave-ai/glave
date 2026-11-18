@@ -173,12 +173,12 @@ methods! {
     /// Owner removes an Owner, and never the last.
     "person/remove" => PersonRemove { person: PrincipalId } -> [Done],
     /// Makes an invite to the organization giving `role`, good once and for 7 days: answered
-    /// with its code, this once, for a link (`<origin>/#invite=<code>`). Only for those whose
-    /// role permits inviting, and only an Owner invites an Owner.
+    /// with its code, this once, for a link (`<origin>/#invite=<code>`), unless it was emailed.
+    /// Only for those whose role permits inviting, and only an Owner invites an Owner.
     "invite/create" => InviteCreate {
         role: OrgRole,
-        /// Whom to email its link to, where the server sends email; else it is the caller's to
-        /// share. The address is not kept.
+        /// Whom to email its link to, where the server sends email: sent there alone, and its
+        /// code not answered. Without it, the link is the caller's to share.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         email: Option<String>,
     } -> [Invited],
