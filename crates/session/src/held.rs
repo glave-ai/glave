@@ -36,6 +36,10 @@ pub(crate) enum Slot {
         /// Where a message sent meanwhile waits for the model's next call, when the work is a
         /// turn (`steer.rs`).
         inbox: Option<Inbox>,
+        /// Whether the work only manages the thread: changes whether it is shown, or records
+        /// what its commands did and what they made. A message sent meanwhile starts a turn
+        /// once it ends.
+        manages: bool,
         /// Its commands in the background, listed and stopped while the work holds it.
         commands: Arc<Commands>,
         /// The workspace it works in, where what it changed is read meanwhile.
@@ -163,6 +167,7 @@ where
                     cancel: cancel.clone(),
                     finished,
                     inbox,
+                    manages: purpose == Use::Manage,
                     commands: held.commands(),
                     workspace: self.inner.harness.works_in(&held),
                     at: held.scope.located(),

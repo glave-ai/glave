@@ -132,8 +132,34 @@
       "description": "What kind of thing a Library item is, which a client filters by.",
       "oneOf": [
         {
+          "enum": [
+            "pdf"
+          ],
+          "type": "string"
+        },
+        {
           "const": "picture",
           "description": "An image glave made (`image_generate`, `image_edit`).",
+          "type": "string"
+        },
+        {
+          "const": "document",
+          "description": "A file a turn made (`made.rs`): a Word or OpenDocument text, or RTF.",
+          "type": "string"
+        },
+        {
+          "const": "spreadsheet",
+          "description": "A workbook or a CSV file.",
+          "type": "string"
+        },
+        {
+          "const": "deck",
+          "description": "A slide deck.",
+          "type": "string"
+        },
+        {
+          "const": "other",
+          "description": "Any other file glave keeps, such as an e-book.",
           "type": "string"
         }
       ]
@@ -214,6 +240,29 @@
           "type": "object"
         }
       ]
+    },
+    "BlobRef": {
+      "additionalProperties": false,
+      "description": "Points to content held in the blob store instead of inside an event.",
+      "properties": {
+        "bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256",
+        "bytes",
+        "media_type"
+      ],
+      "type": "object"
     },
     "CallId": {
       "description": "Links a tool call to its result: 1 to 128 printable ASCII characters.",
@@ -1475,6 +1524,31 @@
       ],
       "type": "object"
     },
+    "FileMade": {
+      "additionalProperties": false,
+      "description": "A file a turn made, as its `turn.ended` records it: where it was made, its size, and its\ncontent kept for the thread or why it was not. The model never sees it; the person downloads\nit.",
+      "properties": {
+        "bytes": {
+          "description": "Its size on the computer.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kept": {
+          "$ref": "#/$defs/Kept"
+        },
+        "path": {
+          "description": "Where it was made, relative to the thread's folder.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "bytes",
+        "kept"
+      ],
+      "type": "object"
+    },
     "FilePiece": {
       "description": "A piece of a file a thread holds, as `file/read` answers it: read a piece at a time, so a\nfile of any size comes within the 16 MiB a message may be on every transport.",
       "properties": {
@@ -1779,6 +1853,39 @@
         }
       ]
     },
+    "Kept": {
+      "description": "Whether a file a turn made was kept for the thread.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Kept, sealed, in the blob store, the thread holding it.",
+          "properties": {
+            "blob": {
+              "$ref": "#/$defs/BlobRef"
+            }
+          },
+          "required": [
+            "blob"
+          ],
+          "type": "object"
+        },
+        {
+          "const": "too_large",
+          "description": "Left on the computer: larger than a thread keeps.",
+          "type": "string"
+        },
+        {
+          "const": "secret",
+          "description": "Left on the computer: it holds the value of one of the person's secrets.",
+          "type": "string"
+        },
+        {
+          "const": "unchecked",
+          "description": "Left on the computer: its parts inflate past what is looked through for secrets.",
+          "type": "string"
+        }
+      ]
+    },
     "LastRun": {
       "description": "A schedule's latest run: when it was due, what came of it, and that in the server's words.",
       "properties": {
@@ -1992,6 +2099,96 @@
         "data"
       ],
       "type": "object"
+    },
+    "MadeFile": {
+      "description": "A file a turn made for the person: kept with the thread, so it downloads after the computer\nthat made it is gone, or left there, said why.",
+      "properties": {
+        "bytes": {
+          "description": "Its size.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "file_name": {
+          "description": "The name its file is saved as.",
+          "type": "string"
+        },
+        "kept": {
+          "description": "Where it is kept, or why it was not, in a sentence: \"Kept with this chat\".",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/AssetKind"
+        },
+        "media_type": {
+          "description": "Its media type, such as `application/pdf`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "What it is called: its file's name without its end.",
+          "type": "string"
+        },
+        "sentence": {
+          "description": "What was made, in one line: \"Made a spreadsheet: Trip budget\".",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "Its content's SHA-256, which `file/read` reads it by; absent when it was not kept.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "file_name",
+        "media_type",
+        "bytes",
+        "kept",
+        "sentence"
+      ],
+      "type": "object"
+    },
+    "MadeLeft": {
+      "description": "What the files a turn made leave out.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "More were made than a turn keeps: these many more stayed on the computer, unnamed.",
+          "properties": {
+            "files": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "more",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "files"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The folder held too many files to look over in time, so none are named.",
+          "properties": {
+            "kind": {
+              "const": "too_many",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "MaxPrice": {
       "additionalProperties": false,
@@ -2908,6 +3105,10 @@
         "name": {
           "description": "What the person knows it as: \"Safari on iPhone\".",
           "type": "string"
+        },
+        "renew": {
+          "description": "The browser that asked should subscribe again now (`push/subscribe`), which keeps it 30\ndays more: less than half of that is left. A browser not subscribed again in time is\nforgotten.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -4406,6 +4607,32 @@
       ],
       "type": "object"
     },
+    "TurnFiles": {
+      "description": "The files one turn made, in path order, by the `seq` of its `turn.started`.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/MadeFile"
+          },
+          "type": "array"
+        },
+        "note": {
+          "description": "What `files` leave out, in a sentence, when they leave something out: more than a turn\nkeeps, or a folder too large to look over.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "$ref": "#/$defs/Seq"
+        }
+      },
+      "required": [
+        "turn",
+        "files"
+      ],
+      "type": "object"
+    },
     "TurnResult": {
       "additionalProperties": false,
       "description": "A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.\nIt is what a client that ran the turn is answered with too, so every client reads the same.\nA turn recorded before it held more than `outcome` reads with nothing counted.",
@@ -4431,6 +4658,37 @@
         "estimated": {
           "default": false,
           "description": "True when a usage count was estimated, because a stream ended before the provider\nreported it.",
+          "type": "boolean"
+        },
+        "made": {
+          "description": "The files it made for the person: each document, spreadsheet, deck or PDF in no hidden\nfolder of the thread's, changed since it started, in path order, kept for the thread or\nsaid why not (`session.md`, \"Files it made\"). Absent when it made none.",
+          "items": {
+            "$ref": "#/$defs/FileMade"
+          },
+          "type": "array"
+        },
+        "made_left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MadeLeft"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What `made` leaves out, when it leaves something out: more files than a turn keeps, or a\nfolder too large to look over."
+        },
+        "made_until_ns": {
+          "description": "Where its look-over stopped, in nanoseconds since 1970 by the computer's clock: the\nnext look-over starts no earlier. Absent when it did not look.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "made_waits": {
+          "description": "Whether what was made after `made_until_ns` is still to be looked over: a command of the\nthread's still ran in the background, or the folder couldn't be looked over.",
           "type": "boolean"
         },
         "model_calls": {
@@ -8815,6 +9073,35 @@
         },
         "required": [
           "events"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/files": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The files a thread's turns made for the person.",
+        "properties": {
+          "made": {
+            "items": {
+              "$ref": "#/$defs/TurnFiles"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "made"
         ],
         "type": "object"
       },

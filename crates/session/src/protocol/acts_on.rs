@@ -21,6 +21,7 @@ impl Request {
             | Self::ThreadTurns { thread, .. }
             | Self::ThreadSources { thread }
             | Self::ThreadChanges { thread }
+            | Self::ThreadFiles { thread }
             | Self::ThreadSteps { thread }
             | Self::ThreadPlan { thread }
             | Self::PlanEdit { thread, .. }
