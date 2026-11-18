@@ -23,6 +23,9 @@ conformance = [
 # Looking a host's name up for an HTTP client, keeping the addresses a client may reach
 # (`host::Lookup`): the one resolver web_fetch, remote tool servers and pushes share.
 lookup = ["dep:reqwest", "dep:tokio", "tokio/net"]
+# What every model provider's HTTP client shares (`auth::http`): the header that proves who is
+# calling, what a failed request means, and an answer it cannot read.
+http = ["dep:reqwest"]
 
 [dependencies]
 # The operating system's randomness, for the random part of new ids.
@@ -41,6 +44,9 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+# URLs read as browsers and HTTP clients read them, to show one with what it carries hidden
+# (`host::shown`); already in the tree, under every HTTP client.
+url.workspace = true
 # The runtime tests run on, the gate a scripted model waits at (`testing`), the paused clock
 # the model provider suite waits out a silence on, and a client that stalls mid-request.
 tokio = { workspace = true, optional = true }

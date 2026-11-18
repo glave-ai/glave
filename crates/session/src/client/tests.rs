@@ -9,6 +9,35 @@ fn only_https_or_this_computer_gets_a_sign_in() {
 }
 
 #[test]
+fn a_servers_address_is_never_said_with_what_it_carries() {
+    let secret = glave_ports::testing::any_secret();
+    let Err(refused) = Remote::new(
+        &format!("https://me:{secret}@glave.example.com"),
+        "t".into(),
+    ) else {
+        panic!("a name and password before the host refused");
+    };
+    assert_eq!(
+        refused.message.to_string(),
+        "the server at https://***@glave.example.com is not https (http only to this computer) \
+         with no name or password in it: your sign-in goes there"
+    );
+    // Nothing listens on the discard port.
+    let remote = Remote::new(&format!("http://127.0.0.1:9/?token={secret}"), "t".into()).unwrap();
+    assert_eq!(remote.url(), "http://127.0.0.1:9?…");
+    let answered = glave_ports::block_on!(remote.request(&Request::Discover {}));
+    let said = answered
+        .err()
+        .map(|error| error.message.to_string())
+        .unwrap_or_default();
+    assert!(
+        said.starts_with("could not reach the server at http://127.0.0.1:9?…: "),
+        "{said}"
+    );
+    assert!(!said.contains(&secret), "the address said");
+}
+
+#[test]
 fn events_are_notifications_then_the_ending() {
     let thread = glave_event::ThreadId::new(jiff::Timestamp::UNIX_EPOCH, [1; 10]).unwrap();
     let sent = Arc::new(Notification::Live {
