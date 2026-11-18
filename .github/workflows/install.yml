@@ -38,7 +38,8 @@ env:
 # tools with install-action has ten minutes (ci.yml says why).
 jobs:
   server:
-    runs-on: ubuntu-latest
+    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
