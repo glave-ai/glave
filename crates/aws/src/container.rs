@@ -61,7 +61,7 @@ impl Container {
         let response = call.send().await.map_err(|error| {
             AuthError::unreachable(format!(
                 "could not reach the container credentials endpoint {}: {}",
-                self.uri,
+                glave_ports::host::shown(&self.uri),
                 error.without_url()
             ))
         })?;
@@ -69,7 +69,7 @@ impl Container {
         if !status.is_success() {
             let message = format!(
                 "the container credentials endpoint {} answered HTTP {}",
-                self.uri,
+                glave_ports::host::shown(&self.uri),
                 status.as_u16()
             );
             return Err(if status.is_server_error() || status.as_u16() == 429 {
