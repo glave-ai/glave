@@ -81,7 +81,8 @@ function answer(method: string, params: Record<string, unknown>, kept: Kept): un
         ...(typeof email === 'string' ? { email } : {}),
       };
       kept.invites = [...kept.invites, invite];
-      return { invite, code: INVITE_CODE };
+      // An emailed invite's link goes to its address alone, never back to whoever made it.
+      return typeof email === 'string' ? { invite } : { invite, code: INVITE_CODE };
     }
     default:
       return undefined;

@@ -23,6 +23,8 @@ mod nested_repository;
 
 mod own_settings;
 
+mod startup;
+
 mod stores;
 
 pub(super) mod terminals;
@@ -468,8 +470,10 @@ fn a_sandboxed_worktree_commits_but_never_writes_the_main_checkout() {
             common = common.display(),
             own = own.display(),
         );
-        let (_, said) = run(&computers, mine.id, &sandbox, &moves).await;
-        assert!(said.contains("done"), "{said}");
+        // The output holds the command's standard error too: an end with neither says the
+        // sandbox itself refused to start it.
+        let (ending, said) = run(&computers, mine.id, &sandbox, &moves).await;
+        assert!(said.contains("done"), "ended {ending:?}, saying: {said}");
         let prepared = [
             "n/hooks/pre-commit",
             "s/x/hooks/pre-commit",
