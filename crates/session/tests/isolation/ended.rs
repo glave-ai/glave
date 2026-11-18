@@ -5,13 +5,14 @@
 //! access that can end while they follow.
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use glave_event::{Auth, AuthMethod, ThreadId};
+use glave_event::{At, Auth, AuthMethod, ThreadId};
 use glave_ports::testing::ManualClock;
 use glave_ports::{Caller, Completion, InMemoryLog};
 use glave_session::protocol::{ApiError, Notification, Reply, Request, Update, code};
 use glave_session::signin::Browsers;
-use glave_session::{Answering, Sent, TurnItem, TurnStream, Watched};
+use glave_session::{Answering, ListWatch, Sent, TurnItem, TurnStream, Watched};
 use jiff::Timestamp;
 use serde_json::json;
 
@@ -235,6 +236,125 @@ fn a_list_watch_ends_when_its_token_expires() {
         no_sign_in(&ended);
         assert!(list.next().await.is_none(), "nothing more after");
     });
+}
+
+/// The longest these tests wait, on the runtime's paused time, which passes at once, for an
+/// idle watch to wake at its token's end.
+const IDLE: Duration = Duration::from_secs(3_600);
+
+/// Watches waiting with nothing to send still end when their token expires: each wakes for it
+/// on the runtime's time, and finds it past on the server's clock.
+#[test]
+fn idle_watches_end_when_their_token_expires() {
+    block_on!(async {
+        let dir = folder("ended-token-idle");
+        let (server, clock) = company(&dir, Vec::new()).await;
+        let grace = with_token(&clock);
+        let thread = started_by(&server, &grace).await;
+        let logged = events_as(&server, &grace, thread).await;
+        let after = logged.last().map(|event| event.seq);
+        let mut watch = server.watch(&grace, thread, after).await.unwrap();
+        let mut list = server.watch_list(&grace, None, None, false).await.unwrap();
+        // Whatever starting the thread set going is done first: from here nothing happens.
+        for _ in 0..1_000 {
+            tokio::task::yield_now().await;
+        }
+        tokio::time::pause();
+        // The thread's watch waits for something to send, as the list's does already, while
+        // the token is still taken.
+        let mut next = std::pin::pin!(watch.next());
+        tokio::select! {
+            biased;
+            _ = &mut next => panic!("the watch sent with nothing to send"),
+            () = tokio::task::yield_now() => {}
+        }
+        clock.advance_millis(TAKEN);
+        let Ok(Some(Watched::Ended(ended))) = tokio::time::timeout(IDLE, next).await else {
+            panic!("the waiting watch did not end at its token's end");
+        };
+        no_sign_in(&ended);
+        let Ok(Some(Watched::Ended(ended))) = tokio::time::timeout(IDLE, list.next()).await else {
+            panic!("the waiting list watch did not end at its token's end");
+        };
+        no_sign_in(&ended);
+    });
+}
+
+/// A list watch sending a page of what changed stops at its token's end between one thread's
+/// summary and the next, not once the page is sent: what it sends after is only what it began
+/// sending before.
+#[test]
+fn a_list_watch_sends_nothing_begun_after_its_token_expires() {
+    block_on!(async {
+        let dir = folder("ended-token-page");
+        let (server, clock) = company(&dir, Vec::new()).await;
+        let grace = with_token(&clock);
+        let since = At::from(Timestamp::from_millisecond(clock.millis()).unwrap());
+        for _ in 0..4 {
+            started_by(&server, &grace).await;
+        }
+        // From before the four: a page of four to send, one held for the client at a time. It
+        // sends the first and waits to send the second.
+        let mut list = server
+            .watch_list(&grace, None, Some(since), false)
+            .await
+            .unwrap();
+        for _ in 0..1_000 {
+            tokio::task::yield_now().await;
+        }
+        clock.advance_millis(TAKEN);
+        let sent = sent_until_ended(&mut list).await;
+        assert!(
+            sent <= 2,
+            "{sent} sent: one held, and one begun before its end"
+        );
+    });
+}
+
+/// A list watch sending a page of what changed stops when its browser signs out between one
+/// thread's summary and the next, not once the page is sent.
+#[test]
+fn a_list_watch_sends_nothing_begun_after_its_browser_signs_out() {
+    block_on!(async {
+        let dir = folder("ended-signout-page");
+        let (server, browser) = signed_in(&dir, Vec::new()).await;
+        for _ in 0..4 {
+            start(&server, false).await;
+        }
+        // From the start: a page of every thread to send, one held for the client at a time.
+        let since = At::from(Timestamp::UNIX_EPOCH);
+        let mut list = server
+            .watch_list(&browser, None, Some(since), false)
+            .await
+            .unwrap();
+        for _ in 0..1_000 {
+            tokio::task::yield_now().await;
+        }
+        server
+            .request_as(&browser, Request::SigninEnd {})
+            .await
+            .unwrap();
+        let sent = sent_until_ended(&mut list).await;
+        assert!(
+            sent <= 2,
+            "{sent} sent: one held, and one begun before the sign-out"
+        );
+    });
+}
+
+/// How many summaries `list` sends before it ends, as an ended sign-in ends it.
+async fn sent_until_ended(list: &mut ListWatch) -> usize {
+    let mut sent = 0;
+    loop {
+        match list.next().await {
+            Some(Watched::Note(_)) => sent += 1,
+            Some(Watched::Ended(ended)) => {
+                no_sign_in(&ended);
+                return sent;
+            }
+            None => panic!("the list watch ended without saying why"),
+        }
+    }
 }
 
 /// Follows `stream` until its turn waits for an approval.
