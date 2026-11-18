@@ -10,7 +10,7 @@
 //! no order of steps loses a schedule.
 
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::PoisonError;
 
 use glave_event::{
@@ -20,12 +20,21 @@ use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, EventLog, Located, ModelProvider, OrgId, ProjectId, Scope};
 use jiff::SignedDuration;
 
+use super::info::live;
 use crate::protocol::ApiError;
 use crate::server::Server;
 
-/// How long a project's ledger holds no schedule before the scheduler unplaces it: a day, so a
+/// How long a project's ledger holds nothing to run before the scheduler unplaces it: a day, so a
 /// project whose schedules come and go costs at most one pair of events a day.
 const IDLE: SignedDuration = SignedDuration::from_hours(24);
+
+/// How far back a server, as it starts, looks again at projects unplaced: further than a
+/// scheduler that stopped between unplacing a project and reading its ledger again could have
+/// left one.
+const RECENT: SignedDuration = SignedDuration::from_mins(10);
+
+/// The most projects unplaced a server keeps to look at again as it starts.
+const MOST_RECENT: usize = 256;
 
 /// The stream as far as this server has read it: the projects with schedules, in the order
 /// they were placed, each with when; how many ticks of the scheduler read it, and where in each
@@ -37,6 +46,11 @@ pub(crate) struct Placed {
     held: HashMap<Located, At>,
     ticks: usize,
     stopped: HashMap<OrgId, usize>,
+    /// Projects an unplacing may have left unlisted though a schedule came, placed back at each
+    /// tick until that lands.
+    again: HashSet<Located>,
+    /// The projects unplaced latest, with when, for a server that starts to look at again.
+    recent: VecDeque<(Located, At)>,
 }
 
 impl Placed {
@@ -57,6 +71,10 @@ impl Placed {
                 let project = located(unplaced.org, unplaced.project);
                 if self.held.remove(&project).is_some() {
                     self.items.retain(|item| *item != project);
+                    if self.recent.len() >= MOST_RECENT {
+                        self.recent.pop_front();
+                    }
+                    self.recent.push_back((project, at));
                 }
             }
             _ => {}
@@ -148,19 +166,21 @@ where
         self.list_once(&placed, absent).await
     }
 
-    /// For the scheduler: unplaces the project `at` where its ledger, just read, has held no
-    /// schedule for [`IDLE`], `emptied` being when its last went (none: it held none since it
+    /// For the scheduler: unplaces the project `at` where its ledger, just read, has held
+    /// nothing to run for [`IDLE`], `since` being since when, as it says (none: never since it
     /// was placed), then reads the ledger again whole and places the project back where a
-    /// schedule came meanwhile.
+    /// schedule came meanwhile. Where anything fails once the unplacing may have landed, it is
+    /// placed back, at each tick until that lands, so no schedule recorded meanwhile is left
+    /// unlisted; found idle again, it goes then.
     pub(crate) async fn unplace_if_idle(
         &self,
         at: Located,
-        emptied: Option<At>,
+        since: Option<At>,
     ) -> Result<(), ApiError> {
         let Some(placed) = self.held_placed(|held| held.held.get(&at).copied()) else {
             return Ok(());
         };
-        let since = emptied.map_or(placed, |emptied| emptied.max(placed));
+        let since = since.map_or(placed, |since| since.max(placed));
         let now = self.inner.harness.clock().now();
         if since
             .timestamp()
@@ -174,11 +194,57 @@ where
             project: at.project.as_uuid(),
         };
         let listed = |held: &Placed| held.held.contains_key(&at).then(|| held.next_seq());
-        self.list_once(&gone, listed).await?;
-        if self.ledger_apart(at).await?.schedules.is_empty() {
+        let unplaced = async {
+            self.list_once(&gone, listed).await?;
+            if live(&self.ledger_apart(at).await?, now) {
+                self.place_schedules(at).await?;
+            }
+            Ok::<_, ApiError>(())
+        };
+        let Err(error) = unplaced.await else {
             return Ok(());
+        };
+        if self.place_schedules(at).await.is_err() {
+            self.held_placed(|held| held.again.insert(at));
         }
-        self.place_schedules(at).await
+        Err(error)
+    }
+
+    /// For the scheduler: places back each project an unplacing may have left unlisted, until
+    /// placing it lands.
+    pub(crate) async fn place_again(&self) {
+        let again: Vec<Located> = self.held_placed(|held| held.again.iter().copied().collect());
+        for at in again {
+            if self.place_schedules(at).await.is_ok() {
+                self.held_placed(|held| held.again.remove(&at));
+            }
+        }
+    }
+
+    /// As a server starts: reads again the ledger of each project unplaced in the last
+    /// [`RECENT`], and places it back where something there will still run, as a scheduler
+    /// that stopped between unplacing it and reading it again would have; one whose ledger
+    /// can't be read now is placed back at each tick until that lands.
+    pub(crate) async fn look_again_at_unplaced(&self) {
+        let now = self.inner.harness.clock().now();
+        let recent: Vec<(Located, At)> = self.held_placed(|held| held.recent.drain(..).collect());
+        for (at, when) in recent {
+            let lately = when
+                .timestamp()
+                .checked_add(RECENT)
+                .is_ok_and(|by| by > now);
+            if !lately || self.is_placed(at) {
+                continue;
+            }
+            let back = match self.ledger_apart(at).await {
+                Ok(ledger) if !live(&ledger, now) => continue,
+                Ok(_) => self.place_schedules(at).await.is_ok(),
+                Err(_) => false,
+            };
+            if !back {
+                self.held_placed(|held| held.again.insert(at));
+            }
+        }
     }
 
     /// Appends `payload` to the stream, after anything others wrote meanwhile, at the `seq`
