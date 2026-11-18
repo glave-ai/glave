@@ -169,6 +169,7 @@ where
             Request::LanguageSet { language } => {
                 boxed(|| self.set_language(caller, language)).await
             }
+            Request::ZoneSet { zone } => boxed(|| self.set_zone(caller, zone)).await,
             Request::GroupingGet {} => boxed(|| self.grouping(caller)).await,
             Request::GroupingSet { grouping } => {
                 boxed(|| self.set_grouping(caller, grouping)).await
@@ -463,19 +464,28 @@ where
             }
             Request::ScheduleCreate {
                 project,
+                name,
                 when,
+                zone,
                 prompt,
                 budget,
             } => {
                 let new = NewSchedule {
                     project,
+                    name,
                     when,
+                    zone,
                     prompt,
                     budget,
+                    from: None,
                 };
-                boxed(|| self.create_schedule(caller, new)).await
+                let made = boxed(|| self.create_schedule(caller, new)).await;
+                made.map(|schedule| Reply::Schedule { schedule })
             }
-            Request::ScheduleList {} => boxed(|| self.list_schedules(caller)).await,
+            Request::ScheduleList {} => {
+                let listed = boxed(|| self.list_schedules(caller)).await;
+                listed.map(|schedules| Reply::Schedules { schedules })
+            }
             Request::ScheduleDelete { schedule } => {
                 boxed(|| self.delete_schedule(caller, schedule)).await
             }

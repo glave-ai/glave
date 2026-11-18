@@ -16,6 +16,7 @@ use glave_ports::computer::{
 
 use super::landlocked;
 use crate::local::sandbox::tests::terminals::AnotherTerminal;
+use crate::local::sandbox::tests::token;
 use crate::local::sandbox_available;
 use crate::{CancelSwitch, LocalComputers};
 
@@ -191,26 +192,48 @@ if __name__ == '__main__':
         print('pooled', sum(pool.map(abs, [-1, -2])))
 ";
 
-/// A Unix socket listening where tmux's servers do (`/tmp/tmux-<uid>`), removed when dropped,
-/// with the folder if this made it.
-struct Tmux {
+/// Something listening at a Unix socket where a daemon's would be, removed when dropped, with
+/// its folder if this made it.
+struct Daemon {
     socket: PathBuf,
     made: Option<PathBuf>,
     _listener: std::os::unix::net::UnixListener,
 }
 
-impl Tmux {
-    fn listen() -> Self {
+impl Daemon {
+    /// Where tmux's servers listen.
+    fn tmux() -> Self {
+        Self::listen(format!("/tmp/tmux-{}", rustix::process::getuid().as_raw()))
+    }
+
+    /// Where sshd keeps an agent it forwards to this machine: `ssh-` and ten letters and
+    /// digits, open to its owner alone.
+    fn forwarded_agent() -> Self {
+        Self::listen(format!("/tmp/ssh-glave{:05}", std::process::id() % 100_000))
+    }
+
+    /// At a socket of this test's own in `folder`, made for its owner alone if it is not there.
+    fn listen(folder: String) -> Self {
         use std::os::unix::fs::DirBuilderExt as _;
-        let folder = PathBuf::from(format!("/tmp/tmux-{}", rustix::process::getuid().as_raw()));
-        let made = (!folder.exists()).then(|| folder.clone());
-        if made.is_some() {
-            std::fs::DirBuilder::new()
-                .mode(0o700)
-                .create(&folder)
-                .unwrap();
-        }
+        let folder = PathBuf::from(folder);
+        let made = match std::fs::DirBuilder::new().mode(0o700).create(&folder) {
+            Ok(()) => Some(folder.clone()),
+            // There already: the person's own, as their tmux's is where they use it.
+            Err(error) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists, "{error}");
+                None
+            }
+        };
         let socket = folder.join(format!("glave-test-{}", std::process::id()));
+        Self::bound(socket, made)
+    }
+
+    /// At `socket` itself, a file in a folder that is there.
+    fn at(socket: String) -> Self {
+        Self::bound(PathBuf::from(socket), None)
+    }
+
+    fn bound(socket: PathBuf, made: Option<PathBuf>) -> Self {
         let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
         Self {
             socket,
@@ -220,7 +243,7 @@ impl Tmux {
     }
 }
 
-impl Drop for Tmux {
+impl Drop for Daemon {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.socket);
         if let Some(folder) = &self.made {
@@ -248,7 +271,7 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
     let dir = scratch("seccomp");
     let socket = glave_ports::testing::SocketPath::new(&dir, "outside.sock").unwrap();
     let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
-    let tmux = Tmux::listen();
+    let tmux = Daemon::tmux();
     std::fs::write(dir.join("project/pool.py"), POOL).unwrap();
     let sandboxed = |network: bool, script: &str| {
         run(&dir, Some((SandboxLevel::Project, network)), None, script)
@@ -273,6 +296,88 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
         "python3 -c \"import ctypes; print('ptrace', ctypes.CDLL(None).ptrace(0, 0, 0, 0))\"";
     let said = sandboxed(true, ptrace);
     assert!(said.contains("ptrace -1"), "{said}");
+}
+
+/// Whether a command connects to `daemon`'s socket: in the project's sandbox with the network
+/// on, or outside any.
+fn reached(dir: &Path, sandboxed: bool, daemon: &Daemon) -> bool {
+    let sandbox = sandboxed.then_some((SandboxLevel::Project, true));
+    let (_, said) = run(dir, sandbox, None, &connect(&daemon.socket)).unwrap();
+    said.contains("connected")
+}
+
+/// What listens in `/tmp` for the person's other programs has no fixed name, so it is looked
+/// for before each command: an agent sshd forwarded (no `SSH_AUTH_SOCK` names it), a connection
+/// ssh shares, Neovim's and VS Code's servers. With the network on a command reaches none of
+/// them, and still reaches a folder that only looks like sshd's, which is someone's own.
+#[test]
+fn bubblewrap_hides_what_listens_in_tmp_for_the_person_s_other_programs() {
+    if !bubblewrap() {
+        return;
+    }
+    let dir = scratch("listening");
+    let pid = std::process::id();
+    let theirs = [
+        Daemon::forwarded_agent(),
+        Daemon::listen(format!("/tmp/nvim.glave{pid}")),
+        Daemon::at(format!("/tmp/ssh-glave@test:{pid}")),
+        Daemon::at(format!("/tmp/ssh_mux_test_{pid}_glave")),
+        Daemon::at(format!("/tmp/vscode-ipc-glave{pid}.sock")),
+        Daemon::at(format!("/tmp/vscode-git-glave{pid}.sock")),
+    ];
+    let unrelated = Daemon::listen(format!("/tmp/ssh-glave-notes-{pid}"));
+    for daemon in theirs.iter().chain([&unrelated]) {
+        let socket = daemon.socket.display();
+        assert!(reached(&dir, false, daemon), "control, {socket}");
+    }
+    for daemon in &theirs {
+        assert!(!reached(&dir, true, daemon), "{}", daemon.socket.display());
+    }
+    assert!(reached(&dir, true, &unrelated), "someone's own folder");
+}
+
+/// Every place a daemon or a session listens is hidden, proved where it can be: the ones kept
+/// in `/tmp`, made here with something listening (GNU screen's, Zellij's, Emacs's), and
+/// whichever of the rest this machine has, which only root could make: on CI's runners,
+/// Docker's socket and the system bus. tmux's is the test's above, which makes it while this
+/// one runs.
+#[test]
+fn bubblewrap_hides_every_place_a_daemon_or_a_session_listens() {
+    if !bubblewrap() {
+        return;
+    }
+    let dir = scratch("daemons");
+    let uid = rustix::process::getuid().as_raw();
+    let made = [
+        "/tmp/uscreens".to_owned(),
+        format!("/tmp/zellij-{uid}"),
+        format!("/tmp/emacs{uid}"),
+    ]
+    .map(Daemon::listen);
+    for daemon in &made {
+        let socket = daemon.socket.display();
+        assert!(reached(&dir, false, daemon), "control, {socket}");
+        assert!(!reached(&dir, true, daemon), "{socket}");
+    }
+    // Each place there is, a socket or a folder with something in it, shows as neither.
+    let tmux = PathBuf::from(format!("/tmp/tmux-{uid}"));
+    let look: Vec<String> = super::mounts::daemons(None, uid, None)
+        .iter()
+        .filter(|place| **place != tmux)
+        .map(|place| {
+            let place = place.display();
+            format!(
+                "if [ -S '{place}' ] || {{ [ -d '{place}' ] && \
+                 [ -n \"$(ls -A '{place}' 2>/dev/null)\" ]; }}; then echo 'reached {place}'; fi"
+            )
+        })
+        .chain(["true".to_owned()])
+        .collect();
+    let look = look.join("\n");
+    let (_, open) = run(&dir, None, None, &look).unwrap();
+    assert!(open.contains("reached /tmp/uscreens"), "control: {open}");
+    let (_, said) = run(&dir, Some((SandboxLevel::Project, true)), None, &look).unwrap();
+    assert!(!said.contains("reached"), "{said}");
 }
 
 #[test]
@@ -396,6 +501,35 @@ fn bubblewrap_shows_no_process_but_the_command_s_own() {
     assert!(open.contains(&name), "{open}");
 }
 
+/// Computers with `helper`, the read-only sandbox Landlock runs, with `dir` as the home folder
+/// and `dir/.glave` as glave's folder, and `dir/project` opened on one of them, its root.
+fn landlocked(dir: &Path, helper: &Path) -> (LocalComputers, Sandbox, WorkspaceId, PathBuf) {
+    let glave_home = dir.join(".glave");
+    std::fs::create_dir_all(&glave_home).unwrap();
+    let environment: Vec<(OsString, OsString)> = std::env::vars_os()
+        .filter(|(name, _)| name == "PATH")
+        .chain([("HOME".into(), dir.as_os_str().to_owned())])
+        .collect();
+    let computers = LocalComputers::new(dir.join("copies"), environment).with_helper(helper);
+    // As `glave computer serve` makes them, the folder of a computer's token hidden too.
+    let computers = token::serving(computers, &glave_home);
+    let sandbox = Sandbox {
+        level: SandboxLevel::ReadOnly,
+        network: SandboxNetwork::Off,
+        home: Some(dir.to_path_buf()),
+        glave_home: Some(glave_home),
+    };
+    let root = dir.join("project");
+    let workspace = block_on!(async {
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        let sources = Sources::Folder {
+            path: root.to_string_lossy().into_owned(),
+        };
+        computers.open(computer.id, &sources).await.unwrap().id
+    });
+    (computers, sandbox, workspace, root)
+}
+
 /// Under Landlock too, what glave writes in its folder while a command runs stays hidden from
 /// it, and its package cache works.
 #[test]
@@ -404,29 +538,22 @@ fn landlock_keeps_what_glave_writes_later_hidden() {
         return;
     };
     let dir = scratch("landlock-late");
-    let glave_home = dir.join(".glave");
-    std::fs::create_dir_all(&glave_home).unwrap();
-    let environment: Vec<(OsString, OsString)> = std::env::vars_os()
-        .filter(|(name, _)| name == "PATH")
-        .chain([("HOME".into(), dir.as_os_str().to_owned())])
-        .collect();
-    let computers = LocalComputers::new(dir.join("copies"), environment).with_helper(&helper);
-    let sandbox = Sandbox {
-        level: SandboxLevel::ReadOnly,
-        network: SandboxNetwork::Off,
-        home: Some(dir.to_path_buf()),
-        glave_home: Some(glave_home),
+    let (computers, sandbox, here, root) = landlocked(&dir, &helper);
+    block_on!(super::super::tests::written_later_stays_hidden(
+        &computers, here, &root, &sandbox
+    ));
+}
+
+/// Under Landlock too, a computer's token in glave's folder is neither read nor replaced, nor
+/// its key read (#1502).
+#[test]
+fn landlock_keeps_a_computer_s_token_unread_and_unreplaced() {
+    let Some(helper) = landlock() else {
+        return;
     };
-    let root = dir.join("project");
-    block_on!(async {
-        let computer = computers.create(&Environment::host()).await.unwrap();
-        let sources = Sources::Folder {
-            path: root.to_string_lossy().into_owned(),
-        };
-        let opened = computers.open(computer.id, &sources).await.unwrap();
-        super::super::tests::written_later_stays_hidden(&computers, opened.id, &root, &sandbox)
-            .await;
-    });
+    let dir = scratch("landlock-token");
+    let (computers, sandbox, here, _) = landlocked(&dir, &helper);
+    block_on!(token::kept_from_a_command(&computers, here, &sandbox));
 }
 
 /// Under Landlock too, glave's folder on commands' `PATH` stays readable though the rest of

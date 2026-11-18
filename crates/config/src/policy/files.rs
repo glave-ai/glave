@@ -1,18 +1,20 @@
 //! The two files as written: `config.toml` (choices) and `policy.toml` (constraints), every key
 //! typed, and any key glave does not know refused with the file and key named.
 
+use std::fmt;
 use std::path::Path;
 
 use crate::error::invalid;
 use glave_event::{HookPoint, Money, Nanos, Permissions, Precision};
 use glave_ports::auth::safe_to_send;
 use glave_ports::computer::{CredentialHost, Forge};
-use glave_ports::host::PublicOrigin;
+use glave_ports::host::{PublicOrigin, shown};
 use glave_ports::settings::{Hook, Hooks};
 use globset::Glob;
 
 use crate::policy::memory::{MemoryRules, ProjectChoice};
 use crate::policy::provider::ProviderFile;
+use crate::policy::unreadable::unreadable;
 use crate::policy::web::WebFile;
 use crate::policy::workers::{ComputersFile, WorkerRules, WorkersFile};
 use serde::Deserialize;
@@ -106,8 +108,9 @@ fn least_precision<'de, D: serde::Deserializer<'de>>(
 ) -> Result<Option<Precision>, D::Error> {
     let name = String::deserialize(reader)?;
     match Precision::of(Some(&name)) {
+        // In backticks, which a settings error keeps: what it quotes it leaves out.
         Precision::Unstated => Err(serde::de::Error::custom(format!(
-            "{name:?} is not a precision: name one such as \"fp8\" ({})",
+            "`{name}` is not a precision: name one such as `fp8` ({})",
             Precision::FourBit.at_least().join(", ")
         ))),
         precision => Ok(Some(precision)),
@@ -128,7 +131,7 @@ fn countries<'de, D: serde::Deserializer<'de>>(reader: D) -> Result<Vec<String>,
         .find(|place| place.len() != 2 || !place.bytes().all(|b| b.is_ascii_uppercase()))
     {
         Some(place) => Err(serde::de::Error::custom(format!(
-            "{place:?} is not a country's two-letter code, such as \"US\""
+            "`{place}` is not a country's two-letter code, such as `US`"
         ))),
         None => Ok(places),
     }
@@ -218,22 +221,32 @@ impl GithubFile {
             ));
         }
         let url = self.url.as_ref()?;
-        CredentialHost::named(url, Forge::Github).is_none().then(|| {
-            format!(
-                "url = {url:?} is not a GitHub server's address: https:// and its host, such as \
-                 https://github.example.com (http only to this computer)"
-            )
-        })
+        CredentialHost::named(url, Forge::Github)
+            .is_none()
+            .then(|| {
+                "url is not a GitHub server's address: https:// and its host, such as \
+             https://github.example.com (http only to this computer)"
+                    .to_owned()
+            })
     }
 }
 
 /// `[server]`: a session server elsewhere (`glave --server`), such as an organization's.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServerFile {
     /// Where it is, such as `https://glave.example.com`: https, or http only on this
     /// computer.
     pub url: String,
+}
+
+/// Its URL as it may be shown (`glave_ports::host::shown`), never what it carries.
+impl fmt::Debug for ServerFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ServerFile")
+            .field("url", &shown(&self.url))
+            .finish()
+    }
 }
 
 /// `[serve]`: how people reach this glave from elsewhere (`specs/one-server.md`, "Finding
@@ -298,20 +311,20 @@ impl ServeFile {
         if let Some(origin) = &self.origin
             && PublicOrigin::parse(origin).is_none()
         {
-            return Some(format!(
-                "origin = {origin:?} is not an address people reach glave at: https:// and its \
-                 name, such as https://glave.example.com, and nothing after it; or, for people \
-                 who share this computer, http://localhost, with the port glave serves at or \
-                 none to follow it"
-            ));
+            return Some(
+                "origin is not an address people reach glave at: https:// and its name, such as \
+                 https://glave.example.com, and nothing after it; or, for people who share this \
+                 computer, http://localhost, with the port glave serves at or none to follow it"
+                    .to_owned(),
+            );
         }
         if let Some(domain) = &self.domain
             && Self::named(domain).is_none()
         {
-            return Some(format!(
-                "domain = {domain:?} is not a name glave can get a certificate for, such as \
-                 glave.example.com"
-            ));
+            return Some(
+                "domain is not a name glave can get a certificate for, such as glave.example.com"
+                    .to_owned(),
+            );
         }
         if self.public_origin().is_none() {
             return Some(
@@ -333,7 +346,7 @@ impl ServeFile {
 /// `[store]`: the one data store (AGENTS.md, "One of each"). The local SQLite file in glave's
 /// folder unless `url` names a Postgres database; blobs' bytes in a folder in glave's folder
 /// unless `bucket` names an S3-compatible bucket.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StoreFile {
     /// `postgres://user:password@host/database`; TLS off this computer unless
@@ -359,13 +372,32 @@ impl StoreFile {
     }
 }
 
+/// Its URLs as they may be shown: the database's holds its password.
+impl fmt::Debug for StoreFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StoreFile")
+            .field("url", &self.url.as_deref().map(shown))
+            .field("bucket", &self.bucket.as_deref().map(shown))
+            .finish()
+    }
+}
+
 /// `[telemetry]`: an OpenTelemetry collector to send spans and metrics to. Off unless set;
 /// never content: no prompts, answers, file contents or secrets.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TelemetryFile {
     /// The collector's OTLP/HTTP endpoint, such as `http://localhost:4318`.
     pub otlp: String,
+}
+
+/// Its URL as it may be shown: a collector's may carry a token.
+impl fmt::Debug for TelemetryFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TelemetryFile")
+            .field("otlp", &shown(&self.otlp))
+            .finish()
+    }
 }
 
 /// One of `[[models]]`: a model offered for a thread besides the default, at the same
@@ -584,19 +616,18 @@ fn dollars<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<M
 
 /// `config.toml` at `path`, from its `text`.
 pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
-    let file: ConfigFile = toml::from_str(text)
-        .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
+    let file: ConfigFile = toml::from_str(text).map_err(|error| unreadable(path, text, &error))?;
     if let Some(hooks) = &file.hooks {
         Hooks::new(hooks.hooks())
             .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
     }
+    // A value refused is never repeated: malformed, it may be anything, a secret among it.
     if let Some(telemetry) = &file.telemetry {
         let url = telemetry.otlp.trim();
         if !(url.starts_with("http://") || url.starts_with("https://")) {
             invalid!(
-                "{}: [telemetry] otlp = {:?} is not an http or https URL",
-                path.display(),
-                telemetry.otlp
+                "{}: [telemetry] otlp is not an http or https URL",
+                path.display()
             );
         }
     }
@@ -610,10 +641,9 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
         && !safe_to_send(&server.url, &[])
     {
         invalid!(
-            "{}: [server] url = {:?} is not https (http only to this computer): your sign-in \
-             goes there",
-            path.display(),
-            server.url
+            "{}: [server] url is not https (http only to this computer), with no name or \
+             password in it: your sign-in goes there",
+            path.display()
         );
     }
     if let Some(problem) = file.serve.as_ref().and_then(ServeFile::problem) {
@@ -622,20 +652,12 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
     if let Some(url) = file.store.as_ref().and_then(|store| store.url.as_ref())
         && !StoreFile::postgres(url)
     {
-        invalid!(
-            "{}: [store] url = {:?} is not a postgres:// URL",
-            path.display(),
-            crate::policy::redacted(url)
-        );
+        invalid!("{}: [store] url is not a postgres:// URL", path.display());
     }
     if let Some(bucket) = file.store.as_ref().and_then(|store| store.bucket.as_ref())
         && !StoreFile::bucket(bucket)
     {
-        invalid!(
-            "{}: [store] bucket = {:?} is not an s3:// bucket",
-            path.display(),
-            bucket
-        );
+        invalid!("{}: [store] bucket is not an s3:// bucket", path.display());
     }
     if let Some(web) = &file.web {
         web.policy().map_err(|error| {
@@ -647,8 +669,7 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
 
 /// `policy.toml` at `path`, from its `text`: a version glave knows, and globs that compile.
 pub(super) fn policy(text: &str, path: &Path) -> crate::Result<PolicyFile> {
-    let file: PolicyFile = toml::from_str(text)
-        .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
+    let file: PolicyFile = toml::from_str(text).map_err(|error| unreadable(path, text, &error))?;
     if file.version != POLICY_VERSION {
         invalid!(
             "{}: version = {} is not one this glave knows: use version = {POLICY_VERSION}",

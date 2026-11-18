@@ -3,6 +3,8 @@
 //! over each request. Secrets here never show in `Debug`, in `Display` or in errors.
 
 mod cache;
+#[cfg(feature = "http")]
+mod http;
 
 use std::fmt;
 use std::sync::Arc;
@@ -14,6 +16,8 @@ use crate::tools::BoxFuture;
 
 pub use cache::{Fresh, Refreshing};
 pub use glave_event::Secret;
+#[cfg(feature = "http")]
+pub use http::{CONNECT_TIMEOUT, credential_header, not_json, request_failed, send_signed};
 
 /// The header a fixed key goes in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -258,11 +262,11 @@ pub fn signs_in(url: &str) -> bool {
 /// scheme's name such as `Bearer` stays readable.
 pub const SHORTEST_SECRET: usize = 8;
 
-/// What [`redact`] puts in a secret's place.
+/// What `redact` puts in a secret's place.
 pub const REDACTED: &str = "[redacted]";
 
 /// `text` with each of `secrets` at least 8 characters long replaced by [`REDACTED`].
-pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {
+pub(crate) fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {
     let mut text = text.to_owned();
     for secret in secrets {
         if secret.len() >= SHORTEST_SECRET && text.contains(secret) {
@@ -285,14 +289,14 @@ fn redact_credentials(text: &str, sent: &[Header]) -> String {
 
 /// The most of a provider's error body read: far more than any message, never all of a page
 /// a proxy or a failing server may send.
-pub const ERROR_BODY_BYTES: usize = 64 << 10;
+pub(crate) const ERROR_BODY_BYTES: usize = 64 << 10;
 
 /// How much of an error's message is kept, in characters.
 const ERROR_CHARS: usize = 500;
 
 impl ProviderError {
     /// A provider's answer with the error status `status`, its body `body` (at most
-    /// [`ERROR_BODY_BYTES`] of it read), to a request that `sent` credentials: the message in
+    /// `ERROR_BODY_BYTES` of it read), to a request that `sent` credentials: the message in
     /// the fields OpenAI, OpenRouter, Ollama, Anthropic and Google send it in (Vertex AI's
     /// sometimes in a one-element array), or else the body itself, on one line, cut short,
     /// and with the credentials redacted, since some providers repeat the key they were sent.

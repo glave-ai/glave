@@ -1997,7 +1997,6 @@ dependencies = [
  "glave-ports",
  "globset",
  "insta",
- "proptest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -2202,6 +2201,7 @@ name = "glave-office"
 version = "0.0.0"
 dependencies = [
  "calamine",
+ "glave-event",
  "glave-ports",
  "lopdf",
  "proptest",
@@ -2231,6 +2231,7 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror 2.0.21",
  "tokio",
+ "url",
  "uuid",
 ]
 

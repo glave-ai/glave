@@ -61,6 +61,7 @@ mod providers;
 mod push;
 mod recovery;
 mod removing;
+mod repeats;
 mod reread;
 pub mod rpc;
 mod schedule;
@@ -86,6 +87,7 @@ mod turn;
 mod usage;
 mod watch;
 mod words;
+mod zone;
 
 pub use accounts::{AccountLedger, Accounts, AccountsError, KeptConnector, Placement};
 pub use approvals::Answering;

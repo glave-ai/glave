@@ -107,7 +107,12 @@ impl Workspace {
             None => "git init --quiet".to_owned(),
             Some(url) => {
                 let quoted = single_quoted(url).ok_or_else(|| {
-                    ComputerError::Refused(format!("{url:?} is not a repository's address").into())
+                    ComputerError::Refused(
+                        "the repository's address is empty, or holds a quote or a control \
+                         character, which git is never given"
+                            .to_owned()
+                            .into(),
+                    )
                 })?;
                 format!("GIT_TERMINAL_PROMPT=0 git clone --quiet -- {quoted} .")
             }

@@ -509,7 +509,7 @@ async fn line_up(
     let mut built = match lineup.build(&accounts, &catalogs) {
         Ok(built) => built,
         Err(error) if !accounts.is_empty() => {
-            Said::of(args.log.as_deref()).warn(&format!(
+            args.said().warn(&format!(
                 "the model accounts you connected are set aside: {error:#}"
             ));
             lineup.build(&[], &[])?

@@ -51,10 +51,12 @@ pub(super) enum Kind {
     Device,
     /// An item of a person's Library.
     Asset,
+    /// A file a person keeps, by its content's hash, as `file/read` names one a thread holds.
+    Sha,
 }
 
 impl Kind {
-    pub(super) const ALL: [Self; 21] = [
+    pub(super) const ALL: [Self; 22] = [
         Self::Thread,
         Self::Project,
         Self::Approval,
@@ -76,6 +78,7 @@ impl Kind {
         Self::InviteCode,
         Self::Device,
         Self::Asset,
+        Self::Sha,
     ];
 
     /// How a template writes it.
@@ -102,6 +105,7 @@ impl Kind {
             Self::InviteCode => "@invite_code",
             Self::Device => "@device",
             Self::Asset => "@asset",
+            Self::Sha => "@sha",
         }
     }
 
@@ -134,7 +138,8 @@ impl Kind {
             | Self::Flow
             | Self::Code
             | Self::Session
-            | Self::Files => None,
+            | Self::Files
+            | Self::Sha => None,
         }
     }
 
@@ -165,6 +170,7 @@ impl Kind {
             Self::InviteCode => "1".repeat(64),
             Self::Device => uuid(0xdead_000d),
             Self::Asset => uuid(0xdead_000e),
+            Self::Sha => "e".repeat(64),
             Self::Files => String::new(),
         })
     }
@@ -234,6 +240,8 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             "language/set",
             vec![json!({"language": "en-XA"}), json!({})],
         ),
+        // The caller's own time zone: no one else's to name.
+        ("zone/set", vec![json!({"zone": "Europe/Lisbon"})]),
         // How the caller's own threads are grouped: no one else's to name.
         ("grouping/get", vec![json!({})]),
         ("grouping/set", vec![json!({"grouping": "status"})]),
@@ -414,9 +422,11 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
                 json!({"project": "@project", "name": "notes.txt", "media_type": "text/plain", "data": "aGk="}),
             ],
         ),
+        // A thread of the caller's own names no file of anyone else's, so theirs is read
+        // through it no more than one nobody keeps.
         (
             "file/read",
-            vec![json!({"thread": "@thread", "sha256": "e".repeat(64), "offset": 0})],
+            vec![json!({"thread": "@thread", "sha256": "@sha", "offset": 0})],
         ),
         ("library/list", vec![json!({})]),
         (

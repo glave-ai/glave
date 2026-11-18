@@ -62,7 +62,7 @@ impl Setup {
             choices,
             hooks,
             sandbox: None,
-            said: Said::of(args.log.as_deref()),
+            said: args.said(),
         })
     }
 
@@ -92,7 +92,7 @@ impl Setup {
             choices,
             hooks,
             sandbox: None,
-            said: Said::of(args.log.as_deref()),
+            said: args.said(),
         };
         Ok((setup, aside))
     }

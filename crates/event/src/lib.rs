@@ -47,7 +47,7 @@ pub use payload::{
     ToolCallRequested, ToolCallStarted, ToolError, ToolKind, TraceId, TurnResult, TurnStarted,
     Usage, Verdict, WebPage,
 };
-pub use payload::{AssetKind, LibraryKept, LibraryRemoved};
+pub use payload::{AssetKind, LibraryKept, LibraryRemoved, Parts};
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{
     Catalog, CatalogEndpoint, CatalogModel, CatalogProvider, CatalogRefreshed, Precision,
@@ -57,7 +57,8 @@ pub use payload::{Caution, Phrase, Risk, Settled, Worded, sentence};
 pub use payload::{Checkout, CommandEnded, CommandEnding, CommandStarted, FolderSource};
 pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
-    TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,
+    ScheduleSkipped, Skipped, TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved,
+    ZoneSet, sealed_under_memory,
 };
 pub use payload::{ConnectionConnected, ConnectionRemoved, SignInClient};
 pub use payload::{CostKind, CreditsAdded, CreditsCharged, CreditsHeld, CreditsLimitSet};

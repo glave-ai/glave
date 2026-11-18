@@ -208,6 +208,8 @@ impl<L: EventLog> Https<L> {
         if let Some(account) = kept.account {
             let credentials: AccountCredentials =
                 serde_json::from_str(account.credentials.expose()).map_err(|error| {
+                    // Never what serde shows of it: the account's private key is in it.
+                    let error = glave_ports::settings::unquoted(&error.to_string());
                     HttpsError::Keep(format!("the account kept is not readable: {error}"))
                 })?;
             return builder()?

@@ -15,6 +15,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use glave_event::{CredentialConnected, CredentialId, Secret};
+use glave_ports::host::shown;
 use glave_session::AccountsError;
 use tokio::sync::watch;
 use tokio::task::JoinSet;
@@ -197,7 +198,10 @@ impl<R: Renew> Renewing<R> {
     /// Renews the token, unless a renewal was made already, and keeps it in its place while
     /// the sign-in it renews is still kept.
     async fn run(self) -> Ended<R::Kept> {
-        let url = self.job.url().to_owned();
+        // Only for the log: where the sign-in is, never what its address carries.
+        let url = shown(self.job.url());
+        // A renewal made already is one an earlier run could not keep.
+        let again = self.fresh.is_some();
         let fresh = match self.fresh {
             Some(fresh) => fresh,
             None => match self.job.renewed().await {
@@ -207,19 +211,38 @@ impl<R: Renew> Renewing<R> {
         };
         for attempt in 1..=KEEPS {
             match self.job.keep(&fresh).await {
-                Ok(true) => return Ended::Done(Instant::now()),
+                Ok(true) => {
+                    if again {
+                        tracing::info!(%url, "kept a renewed sign-in at last");
+                    }
+                    return Ended::Done(Instant::now());
+                }
                 Ok(false) => {
                     tracing::info!(
-                        "the sign-in to {url} was removed or replaced while it was renewed: \
-                         the renewed token is not kept"
+                        %url,
+                        "a sign-in was removed or replaced while it was renewed: the renewed \
+                         token is not kept"
                     );
                     return Ended::Done(Instant::now());
                 }
+                Err(error) if attempt < KEEPS => {
+                    let error = format!("{error:#}");
+                    tracing::warn!(%url, %error, "could not keep a renewed sign-in yet");
+                    tokio::time::sleep(KEEP_PAUSE).await;
+                }
+                // The store failing at the last try. The renewal is held in memory and served
+                // from there, and each request for the sign-in tries keeping it again; but the
+                // refresh token that made it is spent, so a restart before one keeps it loses
+                // the sign-in once its old token runs out, unless someone acts. An error the
+                // first time, a warning each time after, so an outage is one error, not one a
+                // request.
+                Err(error) if again => {
+                    let error = format!("{error:#}");
+                    tracing::warn!(%url, %error, "still could not keep a renewed sign-in");
+                }
                 Err(error) => {
-                    tracing::warn!("could not keep the renewed sign-in to {url}: {error:#}");
-                    if attempt < KEEPS {
-                        tokio::time::sleep(KEEP_PAUSE).await;
-                    }
+                    let error = format!("{error:#}");
+                    tracing::error!(%url, %error, "could not keep a renewed sign-in");
                 }
             }
         }
@@ -252,7 +275,8 @@ impl Renew for HostRenewal {
                 .iter()
                 .any(|kept| kept.credential == current.credential),
             Err(error) => {
-                tracing::warn!("could not read the git hosts to renew {url}: {error:#}");
+                let error = format!("{error:#}");
+                tracing::warn!(url = %shown(url), %error, "could not read the hosts to renew");
                 return Err(failed());
             }
         };
@@ -261,7 +285,8 @@ impl Renew for HostRenewal {
         };
         // Made before the refresh token is spent, so nothing after can lose what it gets.
         let id = super::new_id().map_err(|error| {
-            tracing::warn!("could not make an id to renew {url}: {error:#}");
+            let error = format!("{error:#}");
+            tracing::warn!(url = %shown(url), %error, "could not make an id to renew a sign-in");
             failed()
         })?;
         match self.github.refresh(&self.http, &renewal.refresh).await {
@@ -282,7 +307,8 @@ impl Renew for HostRenewal {
                 ..current.clone()
             }),
             Err(error) => {
-                tracing::warn!("could not renew the sign-in to {url}: {}", error.message);
+                let error = &error.message;
+                tracing::warn!(url = %shown(url), %error, "could not renew a sign-in");
                 Err(failed())
             }
         }

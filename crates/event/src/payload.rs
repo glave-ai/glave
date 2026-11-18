@@ -21,6 +21,7 @@ pub(crate) mod hook;
 pub(crate) mod instructions;
 pub(crate) mod language;
 pub(crate) mod library;
+pub(crate) mod made;
 pub(crate) mod memory;
 pub(crate) mod message;
 pub(crate) mod model;
@@ -44,6 +45,7 @@ pub(crate) mod tool;
 pub(crate) mod trust;
 pub(crate) mod turn;
 pub(crate) mod workspace;
+pub(crate) mod zone;
 
 pub use appearance::{Accent, AppearanceSet, BrandSet, Color, HeldLogo};
 pub use approval::{ApprovalDecided, ApprovalRequested, Ask, Lifted, OutsideSandbox, Verdict};
@@ -68,6 +70,7 @@ pub use hook::{HookPoint, HookRan, HookResult};
 pub use instructions::{InstructionsFile, InstructionsRead, SkillFound};
 pub use language::LanguageSet;
 pub use library::{AssetKind, LibraryKept, LibraryRemoved};
+pub use made::Parts;
 pub use memory::{
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
     MemoryTidied, sealed_under_memory,
@@ -94,7 +97,9 @@ pub use service::{
 };
 pub use signup::{MailAsked, SignupFinished, SignupStarted};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
-pub use task::{Fired, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, When};
+pub use task::{
+    Fired, ScheduleCreated, ScheduleDeleted, ScheduleSkipped, Skipped, TaskEnded, TaskStarted, When,
+};
 pub use thread::{Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted};
 pub use tool::{
     Arguments, ToolCallCompleted, ToolCallRequested, ToolCallStarted, ToolError, ToolKind, WebPage,
@@ -104,3 +109,4 @@ pub use turn::{Auth, AuthMethod, Outcome, TraceId, TurnResult, TurnStarted};
 pub use workspace::{
     ComputerKind, ComputerRef, Opened, RemovedReason, WorkspaceBound, WorkspaceRemoved,
 };
+pub use zone::ZoneSet;
