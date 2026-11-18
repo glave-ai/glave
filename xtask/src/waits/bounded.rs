@@ -4,15 +4,6 @@
 /// that file say it, and what bounds the wait.
 pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     (
-        "crates/session/src/held.rs",
-        "let _ = finished.wait_for(|ended| *ended).await;",
-        1,
-        "work that only manages the thread, held to its own limits: a change to whether it is \
-         shown, or the look over what a turn or a command made, which waits at most a minute for \
-         its place among the server's look-overs, then looks for about 2 s, keeps a few files \
-         and reads them within 30 s: about 90 s in all",
-    ),
-    (
         "crates/harness/src/shares.rs",
         "let place = self.places.acquire().await.ok()?;",
         1,
@@ -143,10 +134,8 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "crates/session/src/turn.rs",
         "match ending.wait_for(|ended| *ended).await {",
         1,
-        "a turn already ending, whose last events are being written, or work that only manages \
-         the thread, held to its own limits: the look over what a command made once it ended \
-         waits at most a minute for its place among the server's look-overs, then looks for \
-         about 2 s, keeps a few files and reads them within 30 s: about 90 s in all",
+        "a turn already ending, stopped or at its last call, whose last events are being \
+         written",
     ),
     // A life that ends when it is stopped or closed: a server's, a connection's, a watch's.
     (

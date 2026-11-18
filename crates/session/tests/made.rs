@@ -4,9 +4,12 @@
 //! reader read it; `file/read` reads it back and `file/preview` gives the preview its turn kept;
 //! a file the server doesn't preview is refused plainly, and one its reader couldn't read only
 //! downloads, said why. A command that waits for the person makes a file once they allow it. A
-//! message sent while what a command made is looked over starts a turn once it is done. A turn
-//! the person stopped keeps what it made once it has ended, with no message after it.
+//! message sent while what a command made is looked over stops the look and starts a turn, whose
+//! start makes it. A turn the person stopped keeps what it made once it has ended, with no message
+//! after it. A chat archived while glave looks over what it made is archived at once, the look
+//! stopped and made again after.
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -204,32 +207,40 @@ fn what_a_turn_and_its_worker_made_is_listed_read_back_and_previewed() {
 /// How long a test waits for what the server does by itself: seconds, however busy the machine.
 const TOLD: Duration = Duration::from_secs(10);
 
+/// A server whose thread's turn started a command that makes late.pdf in the background once the
+/// turn's own look at it is past, with its blobs' puts held from then on, and the thread.
+async fn making_late(dir: &Path) -> (Tested, SharedBlobs, ThreadId) {
+    // Past the first look the tool takes at a command it starts, which would see it end.
+    let late = "sleep 3; printf '%%PDF-1.7' > late.pdf";
+    let answers = vec![
+        answer(
+            None,
+            Some(("bash", json!({"command": late, "background": true}))),
+        ),
+        answer(Some("It is making it."), None),
+        answer(Some("Here it is."), None),
+    ];
+    let mut setup = Setup::new(answers);
+    setup.settings.titles = false;
+    let blobs = setup.blobs.clone();
+    let (server, _) = setup.build(dir).await;
+    let thread = start(&server, false).await;
+    turn(&server, thread, "make it in the background")
+        .await
+        .unwrap();
+    // The command ends while the thread is idle: its file is looked over, and kept slowly.
+    blobs.hold_puts();
+    (server, blobs, thread)
+}
+
 /// A message sent while the thread is idle but for the look over what a command made once it
-/// ended starts a turn once the look-over is done, rather than being refused as busy.
+/// ended stops the look and starts a turn, whose start makes the look: never refused as busy,
+/// nor held up behind it.
 #[test]
 fn a_message_sent_while_a_command_s_files_are_looked_over_starts_a_turn_after() {
     let dir = folder("made-waits");
     block_on!(async {
-        // Past the first look the tool takes at a command it starts, which would see it end.
-        let late = "sleep 3; printf '%%PDF-1.7' > late.pdf";
-        let answers = vec![
-            answer(
-                None,
-                Some(("bash", json!({"command": late, "background": true}))),
-            ),
-            answer(Some("It is making it."), None),
-            answer(Some("Here it is."), None),
-        ];
-        let mut setup = Setup::new(answers);
-        setup.settings.titles = false;
-        let blobs = setup.blobs.clone();
-        let (server, _) = setup.build(&dir).await;
-        let thread = start(&server, false).await;
-        turn(&server, thread, "make it in the background")
-            .await
-            .unwrap();
-        // The command ends while the thread is idle: its file is looked over, and kept slowly.
-        blobs.hold_puts();
+        let (server, blobs, thread) = making_late(&dir).await;
         tokio::time::timeout(TOLD, blobs.put_held())
             .await
             .expect("the file the command made is kept within seconds");
@@ -239,7 +250,7 @@ fn a_message_sent_while_a_command_s_files_are_looked_over_starts_a_turn_after() 
             blobs.let_go();
         };
         let (sent, ()) = tokio::join!(sending, letting_go);
-        let mut stream = sent.expect("taken, once the look-over is done, not refused as busy");
+        let mut stream = sent.expect("taken, the look stopped, not refused as busy");
         stream.finish().await.unwrap();
         let events = events(&server, thread).await;
         assert_eq!(
@@ -264,36 +275,47 @@ fn turns(events: &[RawEvent]) -> Vec<&'static str> {
         .collect()
 }
 
+/// A server whose turn wrote notes.csv and was stopped by the person, its blobs' puts held from
+/// before the stop when `held`, and the turn's thread.
+async fn stopped_after_writing(dir: &Path, held: bool) -> (Tested, SharedBlobs, ThreadId) {
+    let write = json!({"path": "notes.csv", "content": TABLE});
+    let answers = vec![
+        answer(None, Some(("write", write))),
+        answer(Some("Done."), None),
+    ];
+    let gate = Arc::new(Notify::new());
+    let mut setup = Setup::new(answers);
+    setup.settings.titles = false;
+    setup.gate = Some(Arc::clone(&gate));
+    setup.reader = Some(reader());
+    let blobs = setup.blobs.clone();
+    let (server, seen) = setup.build(dir).await;
+    let thread = start(&server, false).await;
+    let mut running = stream_turn(&server, thread, "write it", None)
+        .await
+        .unwrap();
+    // The first answer writes the file; the second is never let through, so the turn runs until
+    // the person stops it.
+    gate.notify_one();
+    asked(&seen, 2).await;
+    if held {
+        blobs.hold_puts();
+    }
+    server
+        .request(Request::TurnCancel { thread })
+        .await
+        .unwrap();
+    assert_eq!(running.finish().await.unwrap().outcome, Outcome::Cancelled);
+    (server, blobs, thread)
+}
+
 /// A turn the person stops after it wrote a file owes the look over what it made: made once its
 /// end is in the log, so the file is kept though they send nothing more.
 #[test]
 fn a_file_a_turn_the_person_stopped_made_is_kept_with_no_message_after() {
     let dir = folder("made-stopped");
     block_on!(async {
-        let write = json!({"path": "notes.csv", "content": TABLE});
-        let answers = vec![
-            answer(None, Some(("write", write))),
-            answer(Some("Done."), None),
-        ];
-        let gate = Arc::new(Notify::new());
-        let mut setup = Setup::new(answers);
-        setup.settings.titles = false;
-        setup.gate = Some(Arc::clone(&gate));
-        setup.reader = Some(reader());
-        let (server, seen) = setup.build(&dir).await;
-        let thread = start(&server, false).await;
-        let mut running = stream_turn(&server, thread, "write it", None)
-            .await
-            .unwrap();
-        // The first answer writes the file; the second is never let through, so the turn runs
-        // until the person stops it.
-        gate.notify_one();
-        asked(&seen, 2).await;
-        server
-            .request(Request::TurnCancel { thread })
-            .await
-            .unwrap();
-        assert_eq!(running.finish().await.unwrap().outcome, Outcome::Cancelled);
+        let (server, _, thread) = stopped_after_writing(&dir, false).await;
         let looked = async {
             loop {
                 let events = events(&server, thread).await;
@@ -308,5 +330,51 @@ fn a_file_a_turn_the_person_stopped_made_is_kept_with_no_message_after() {
             .expect("the stopped turn's files are looked over within seconds");
         assert_eq!(turns(&events), ["started", "ended", "made"]);
         assert_eq!(made_names(&server, thread).await, ["notes.csv"]);
+    });
+}
+
+/// Archives `thread` while glave's own look over what it made keeps a file, held: the archive
+/// answers at once, the look stopped, and the look made again after it keeps `name`.
+async fn archived_while_looked_over(
+    server: &Tested,
+    blobs: &SharedBlobs,
+    thread: ThreadId,
+    name: &str,
+) {
+    tokio::time::timeout(TOLD, blobs.put_held())
+        .await
+        .expect("the look keeps the file within seconds");
+    let archive = server.request(Request::ThreadArchive { thread });
+    let archived = tokio::time::timeout(TOLD, archive).await;
+    assert!(
+        matches!(archived, Ok(Ok(Reply::Done {}))),
+        "archived at once, never refused or held up by the look: {archived:?}"
+    );
+    blobs.let_go();
+    let kept = async {
+        while made_names(server, thread).await != [name] {
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::time::timeout(TOLD, kept)
+        .await
+        .expect("what it made is kept once it is archived");
+}
+
+#[test]
+fn a_chat_archived_right_after_its_turn_is_stopped_is_archived_at_once_and_keeps_its_files() {
+    let dir = folder("made-stopped-archived");
+    block_on!(async {
+        let (server, blobs, thread) = stopped_after_writing(&dir, true).await;
+        archived_while_looked_over(&server, &blobs, thread, "notes.csv").await;
+    });
+}
+
+#[test]
+fn a_chat_archived_while_a_command_s_files_are_looked_over_is_archived_at_once_and_keeps_them() {
+    let dir = folder("made-command-archived");
+    block_on!(async {
+        let (server, blobs, thread) = making_late(&dir).await;
+        archived_while_looked_over(&server, &blobs, thread, "late.pdf").await;
     });
 }
