@@ -184,6 +184,29 @@ where
         }
     }
 
+    /// Loads `thread` and refuses work of the kind `purpose` that cannot start there, once work
+    /// that only manages it has ended.
+    async fn ready_for(&self, thread: ThreadId, purpose: Use) -> Result<(), ApiError> {
+        self.load(thread).await?;
+        self.manages_ended(thread).await;
+        self.refuse_early(thread, purpose)
+    }
+
+    /// Waits for work that only manages `thread`, such as glave's own look over what its turns
+    /// made once one is stopped, to end: what is asked of the thread meanwhile (archiving it, a
+    /// turn) starts after it, rather than being refused as though a turn ran.
+    pub(crate) async fn manages_ended(&self, thread: ThreadId) {
+        let mut finished = match self.lock().get(&thread) {
+            Some(Slot::Busy {
+                manages: true,
+                finished,
+                ..
+            }) => finished.clone(),
+            _ => return,
+        };
+        let _ = finished.wait_for(|ended| *ended).await;
+    }
+
     /// Refuses work of the kind `purpose` on `thread` that cannot start, as this server holds it
     /// now, before its lease is taken: the server is stopping, other work runs there, or the
     /// thread is archived for work other than changing whether it is shown.
@@ -324,8 +347,7 @@ where
             Use::Manage => None,
             Use::Work | Use::Steered | Use::Answer => self.folder_now(scope.located()).await?,
         };
-        self.load(thread).await?;
-        self.refuse_early(thread, purpose)?;
+        self.ready_for(thread, purpose).await?;
         // From here the store's lease keeps every other server off the thread; work that does
         // not start after all lets it lapse rather than end one this server's other work holds.
         let lease = self.lease(thread).await?;

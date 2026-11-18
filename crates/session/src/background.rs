@@ -157,6 +157,9 @@ where
     }
 
     async fn record_idle_now(&self, thread: ThreadId, looks: bool) {
+        // After other such work, a change to whether it is shown among them, which would
+        // otherwise find it busy and leave the look to the next turn.
+        self.manages_ended(thread).await;
         if !matches!(self.lock().get(&thread), Some(Slot::Idle { .. })) {
             return;
         }
