@@ -270,7 +270,10 @@ async fn sealing<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
             kind: "turn.started",
             ..fields
         },
-        EventFields { v: 2, ..fields },
+        EventFields {
+            v: fields.v.saturating_add(1),
+            ..fields
+        },
         EventFields { glave: 2, ..fields },
     ];
     for fields in moved {

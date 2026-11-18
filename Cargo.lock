@@ -2087,6 +2087,7 @@ dependencies = [
  "glave-shell",
  "image",
  "jiff",
+ "memchr",
  "proptest",
  "schemars 1.2.3",
  "serde",

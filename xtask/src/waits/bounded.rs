@@ -4,6 +4,20 @@
 /// that file say it, and what bounds the wait.
 pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     (
+        "crates/harness/src/shares.rs",
+        "let place = self.places.acquire().await.ok()?;",
+        1,
+        "a server's place, which every caller waits for within its own limit: a look-over \
+         within WAITS_TO_LOOK (glave-harness's made.rs)",
+    ),
+    (
+        "crates/harness/src/shares.rs",
+        "let freed = self.freed.notified();",
+        1,
+        "a place among the server's, which every caller waits for within its own limit: a \
+         look-over within WAITS_TO_LOOK (glave-harness's made.rs)",
+    ),
+    (
         "crates/cli/src/providers/endpoints.rs",
         "let Some(done) = asked.join_next().await else {",
         1,
@@ -128,7 +142,10 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "crates/session/src/turn.rs",
         "match ending.wait_for(|ended| *ended).await {",
         1,
-        "a turn already ending, whose last events are being written",
+        "a turn already ending, whose last events are being written, or work that only manages \
+         the thread, held to its own limits: the look over what a command made once it ended \
+         waits at most a minute for its place among the server's look-overs, then looks for \
+         about 2 s and keeps a few files",
     ),
     // A life that ends when it is stopped or closed: a server's, a connection's, a watch's.
     (

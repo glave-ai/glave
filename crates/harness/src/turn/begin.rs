@@ -106,6 +106,7 @@ where
                 missing: offer.missing.clone(),
             },
         )?;
+        thread.turn_open = crate::made::opened_by(&events);
         let message = MessageAdded {
             role: Role::User,
             parts: parts.clone(),
