@@ -78,7 +78,21 @@ where
         org: OrgId,
         thread: ThreadId,
     ) -> Result<Option<Lease>, ApiError> {
-        let on = Leased::Thread(thread);
+        self.take_on(org, Leased::Thread(thread)).await
+    }
+
+    /// Takes the lease of the task in `thread`, in `org`, for this server to follow it: `None`
+    /// while another server follows it.
+    pub(crate) async fn take_task(
+        &self,
+        org: OrgId,
+        thread: ThreadId,
+    ) -> Result<Option<Lease>, ApiError> {
+        self.take_on(org, Leased::Task(thread)).await
+    }
+
+    /// Takes the lease `on`, in `org`, for this server: `None` while another server holds it.
+    async fn take_on(&self, org: OrgId, on: Leased) -> Result<Option<Lease>, ApiError> {
         let leases = &self.inner.leases;
         leases
             .acquire(org, on, self.holder()?, LEASE)

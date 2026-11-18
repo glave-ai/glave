@@ -74,6 +74,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (hook::TYPE, 1),
     (task::STARTED, 1),
     (task::ENDED, 1),
+    (task::ENDED, 2),
     (task::CREATED, 1),
     (task::CREATED, 2),
     (task::CREATED, 3),

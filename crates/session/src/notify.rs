@@ -230,8 +230,20 @@ where
             org: Some(scope.org()),
             ..Caller::default()
         };
+        let person = self.person_of(&caller)?;
+        // Someone taken out of the organization hears nothing more of anything in it
+        // (`specs/invariants.md`, 6): their browsers there are forgotten instead.
+        if self.removed_from(scope.org(), person).await? {
+            if let Some(personal) = self.chats_found(scope.org(), person).await? {
+                for device in self.devices(&personal, person).await? {
+                    self.forget_device(&personal, device.subscribed.device, false)
+                        .await?;
+                }
+            }
+            return Ok(());
+        }
         let (_, personal) = self.personal_project(&caller).await?;
-        let devices = self.devices(&personal, self.person_of(&caller)?).await?;
+        let devices = self.devices(&personal, person).await?;
         if devices.is_empty() {
             return Ok(());
         }
