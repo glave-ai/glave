@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use glave_ports::SseDecoder;
 use glave_ports::auth::safe_to_send;
+use glave_ports::host::{shown, urls_shown};
 use serde_json::Value;
 use tokio::io::{AsyncBufRead, AsyncWrite};
 
@@ -69,10 +70,11 @@ impl Remote {
         Self(Transport::Lines(lines::Lines::new(read, write, name)))
     }
 
-    /// Where the server is: its URL, or the name a connection of lines was given.
+    /// Where the server is, as it may be shown: its address with nothing it carries, or the
+    /// name a connection of lines was given.
     pub fn url(&self) -> &str {
         match &self.0 {
-            Transport::Http(http) => &http.url,
+            Transport::Http(http) => &http.shown,
             Transport::Lines(lines) => lines.name(),
         }
     }
@@ -150,6 +152,8 @@ fn answers_within(request: &Request) -> Duration {
 /// A session server over HTTP, and the token that signs this client in.
 struct Http {
     url: String,
+    /// Where it is, as it may be shown in an error.
+    shown: String,
     token: String,
     client: reqwest::Client,
     next_id: AtomicU64,
@@ -162,8 +166,9 @@ impl Http {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
                 format!(
-                    "the server {url:?} is not https (http only to this computer): your sign-in \
-                     goes there"
+                    "the server at {} is not https (http only to this computer) with no name or \
+                     password in it: your sign-in goes there",
+                    shown(&url)
                 ),
             ));
         }
@@ -172,6 +177,7 @@ impl Http {
             .build()
             .map_err(|e| ApiError::new(code::INTERNAL, format!("could not start HTTP: {e}")))?;
         Ok(Self {
+            shown: shown(&url),
             url,
             token,
             client,
@@ -209,7 +215,7 @@ impl Http {
             decoder: SseDecoder::default(),
             events: VecDeque::new(),
             ended: false,
-            url: self.url.clone(),
+            shown: self.shown.clone(),
         }))
     }
 
@@ -234,7 +240,7 @@ impl Http {
                 code::NO_SIGN_IN,
                 format!(
                     "{} did not accept your sign-in{}: set GLAVE_SERVER_TOKEN to a current token",
-                    self.url,
+                    self.shown,
                     said.map(|said| format!(" ({said})")).unwrap_or_default()
                 ),
             ));
@@ -247,7 +253,7 @@ impl Http {
                 format!(
                     "{} answered with HTTP {status} instead of glave: check that glave is running \
                      there and can be reached{}",
-                    self.url,
+                    self.shown,
                     if said.is_empty() {
                         String::new()
                     } else {
@@ -260,10 +266,12 @@ impl Http {
     }
 
     fn unreachable(&self, error: &reqwest::Error) -> ApiError {
-        // reqwest names the URL, never the token, which travels only in a header.
+        // reqwest names the URL, as it may be shown here too, and never the token, which
+        // travels only in a header.
+        let error = urls_shown(&error.to_string());
         ApiError::new(
             code::INTERNAL,
-            format!("could not reach the server at {}: {error}", self.url),
+            format!("could not reach the server at {}: {error}", self.shown),
         )
     }
 }
@@ -293,7 +301,8 @@ struct HttpTurn {
     /// Events decoded and not yet read.
     events: VecDeque<String>,
     ended: bool,
-    url: String,
+    /// Where the server is, as it may be shown in an error.
+    shown: String,
 }
 
 impl HttpTurn {
@@ -314,7 +323,7 @@ impl HttpTurn {
                     format!(
                         "{} sent nothing for {}, so glave stopped following the turn; it goes \
                          on there",
-                        self.url,
+                        self.shown,
                         glave_ports::spoken(STREAM_IDLE)
                     ),
                 )));
@@ -327,7 +336,7 @@ impl HttpTurn {
                             code::INTERNAL,
                             format!(
                                 "could not read the turn's stream from {}: {error}",
-                                self.url
+                                self.shown
                             ),
                         )));
                     }
@@ -339,13 +348,17 @@ impl HttpTurn {
                     }
                     break TurnItem::Ended(Err(ApiError::new(
                         code::INTERNAL,
-                        format!("{} closed the turn's stream before it ended", self.url),
+                        format!("{} closed the turn's stream before it ended", self.shown),
                     )));
                 }
                 Err(error) => {
                     break TurnItem::Ended(Err(ApiError::new(
                         code::INTERNAL,
-                        format!("lost the turn's stream from {}: {error}", self.url),
+                        format!(
+                            "lost the turn's stream from {}: {}",
+                            self.shown,
+                            urls_shown(&error.to_string())
+                        ),
                     )));
                 }
             }

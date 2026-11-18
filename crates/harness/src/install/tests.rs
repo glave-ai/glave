@@ -100,6 +100,16 @@ fn what_it_adds_is_read_and_shown_in_one_line() {
         "Connect “linear”, at https://mcp.linear.test/mcp, sending Authorization from \
          ${LINEAR_TOKEN}, X-Team. Signing in to it stays yours either way."
     );
+    // Its path shown, which tells two servers on one host apart; never what a query carries.
+    let secret = glave_ports::testing::any_secret();
+    let carried = arguments(json!({"kind": "server", "name": "notes", "server": {
+        "type": "http", "url": format!("https://me:{secret}@mcp.notes.test/mcp?key={secret}")
+    }}));
+    assert_eq!(
+        message(&change(&carried).unwrap()),
+        "Connect “notes”, at https://***@mcp.notes.test/mcp?…. Signing in to it stays yours \
+         either way."
+    );
     let program = arguments(json!({"kind": "server", "name": "files", "server": {
         "command": "npx", "args": ["-y", "files-server"], "env": {"ROOT": "/srv"}
     }}));

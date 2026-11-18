@@ -1,8 +1,9 @@
 //! Tasks: a turn run in a thread with no one attached, in any project its caller works in,
 //! always on a copy of the project's folder (a worktree or a scratch folder), never in the
-//! folder itself. The server starts the work as it would for a client,
-//! answers its approvals "no one there" (in auto mode the judge still clears what the person
-//! asked for), keeps a running tally of its tokens and cost from the `model.responded` events
+//! folder itself, but for a schedule's run, which works where its chat does. The server starts
+//! the work as it would for a client, answers its approvals "no one there" (in auto mode the
+//! judge still clears what the person asked for) but for a schedule's run, which waits for the
+//! person as their chat does, keeps a running tally of its tokens and cost from the `model.responded` events
 //! it records, stops a turn at its budget, and records the task's start and end in its project's
 //! ledger. `tasks/list` and `tasks/stop` show and stop them; `task/finished` tells the thread's
 //! watchers when one ends.
@@ -13,6 +14,7 @@ use glave_event::{
     At, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
     TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
+use glave_ports::computer::{Reason, Refusal};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope, title_from};
 
 use crate::choice::Choice;
@@ -61,9 +63,24 @@ pub(crate) fn in_place() -> ApiError {
     ApiError::new(code::INVALID_PARAMS, Sentence::TaskInPlace)
 }
 
-/// Refused: no copy of the project's folder could be made for a task to work on.
+/// Refused: no copy of the project's folder could be made for a task to work on, since the
+/// folder is no git repository with a commit.
 pub(crate) fn no_copy() -> ApiError {
     ApiError::new(code::WORKSPACE, Sentence::TaskNoCopy)
+}
+
+/// Whether `refused` is [`no_copy`]'s, and not any other reason a copy could not be made.
+pub(crate) fn is_no_copy(refused: &ApiError) -> bool {
+    refused.code == code::WORKSPACE && refused.message.is(&Sentence::TaskNoCopy)
+}
+
+/// Whether a computer refused a copy for `reason` as the folder is no git repository with a
+/// commit to copy.
+pub(crate) fn no_repository(reason: &Reason) -> bool {
+    matches!(
+        reason.refusal(),
+        Some(Refusal::NotInRepository { .. } | Refusal::NoCommitsYet { .. })
+    )
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -74,9 +91,15 @@ where
 {
     /// The scope of `thread`, refused for a task for `caller` where the thread works in its
     /// project's folder itself, beyond the policy's limit, or while a turn runs there.
-    async fn may_start_task(&self, caller: &Caller, thread: ThreadId) -> Result<Scope, ApiError> {
+    async fn may_start_task(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+        run: bool,
+    ) -> Result<Scope, ApiError> {
         let scope = self.authorize(caller, thread).await?;
-        if self.in_its_folder(&scope, thread).await? {
+        // A schedule's run works where its chat was made to.
+        if !run && self.in_its_folder(&scope, thread).await? {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
                 Sentence::TaskThreadInFolder,
@@ -119,17 +142,24 @@ where
         budget: Option<u64>,
         schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
-        let project = self.may_start_task(caller, thread).await?.located();
+        let project = (self
+            .may_start_task(caller, thread, schedule.is_some())
+            .await?)
+            .located();
         let Work(prompt, choice) = work;
         let title = title_from(&prompt).unwrap_or_default();
-        self.inner.approvals.unattend(thread);
+        // A schedule's run waits for the person where it needs them, as their chat does; no one
+        // answers any other task.
+        if schedule.is_none() {
+            self.inner.approvals.unattend(thread);
+        }
         // A task's own turn never queues: one running in the thread refuses it.
         let message = Message {
             files: &[],
             prompt: &prompt,
             choice,
             queue: false,
-            // Its thread is unattended for the whole task already.
+            // Its thread is unattended for the whole task already, where it is.
             unattended: false,
         };
         let stream = self
@@ -154,7 +184,7 @@ where
             model: stream.model.clone(),
             budget,
             schedule,
-            by: self.other_than_person(caller.person),
+            by: self.someone_else(caller.person),
         };
         let running = Running {
             project,
@@ -198,6 +228,7 @@ where
         let Some(running) = self.tasks().remove(&thread) else {
             return;
         };
+        self.inner.tasks_ended.notify_one();
         let ended = settle(&running, &ended, self.is_stopping());
         // Recorded on a best effort: the thread's own events hold the work either way.
         let _ = self.record_in_ledger(running.project, &ended).await;
@@ -268,10 +299,13 @@ where
             running.stopped = true;
             running.stopped_by = caller.person.or(self.inner.person);
         }
-        if let Some(mut finished) = self.cancel_busy(thread) {
-            let _ = finished.wait_for(|done| *done).await;
+        // A schedule's run waiting for the person holds no slot: it goes on stopped, declining
+        // what it waits for, as `turn/cancel` stops it.
+        match self.cancel(thread).await {
+            // Its turn ended meanwhile, and its end is being recorded.
+            Err(refused) if refused.code == code::NO_TURN => Ok(Reply::Done {}),
+            stopped => stopped,
         }
-        Ok(Reply::Done {})
     }
 
     /// Records that `thread`'s task, if it runs one, is stopped by `by`, unless someone
@@ -409,17 +443,28 @@ where
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// `person` as a task records them: absent for the project's own person.
-    fn other_than_person(&self, person: Option<PrincipalId>) -> Option<Principal> {
+    /// `person` as a task's or a schedule's events record them: absent for the server's own
+    /// person.
+    pub(crate) fn someone_else(&self, person: Option<PrincipalId>) -> Option<Principal> {
         person
             .filter(|person| Some(*person) != self.inner.person)
             .map(Principal::person)
     }
 
     fn running_for(&self, person: Option<PrincipalId>) -> usize {
-        self.tasks()
-            .values()
-            .filter(|task| task.by == person)
+        self.working(|task| task.by == person)
+    }
+
+    /// How many of the tasks `counted` takes are working now: a schedule's run waiting for the
+    /// person holds nothing until they answer, and counts toward no limit.
+    pub(crate) fn working(&self, counted: impl Fn(&Running) -> bool) -> usize {
+        let threads: Vec<ThreadId> = (self.tasks().iter())
+            .filter(|(_, task)| counted(task))
+            .map(|(thread, _)| *thread)
+            .collect();
+        let held = self.lock();
+        (threads.iter())
+            .filter(|thread| matches!(held.get(thread), Some(Slot::Busy { .. })))
             .count()
     }
 

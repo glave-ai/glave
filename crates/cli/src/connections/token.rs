@@ -43,6 +43,7 @@ pub(super) async fn read(url: &str) -> anyhow::Result<Secret> {
         } else {
             "this terminal will show it"
         };
+        let url = glave_ports::host::shown(url);
         eprint!("Paste the token for {url} ({shows}), then press Enter: ");
     }
     let line = Input::start().line().await;
@@ -53,7 +54,7 @@ pub(super) async fn read(url: &str) -> anyhow::Result<Secret> {
     let line = line.unwrap_or_default();
     let token = line.trim();
     if token.is_empty() {
-        bail!("no token given: paste it when asked, or pipe it in: ... | glave connect {url}");
+        bail!("no token given: paste it when asked, or pipe it in to the same command");
     }
     Ok(Secret::new(token))
 }

@@ -177,19 +177,32 @@ impl Accounts {
     }
 
     /// Signs a browser in with the account passkey `discovered` says it is, its handle its
-    /// person's id: [`BrowserError::NoPasskey`] for one that is no member's here.
+    /// person's id. Its handle is read before any signature is checked, so anyone can name any
+    /// id: a passkey no account here knows is refused alike whether the id is no one's, an
+    /// account's in no organization here, or a member's whose passkey this is not, so the
+    /// answer never says whether an account has that id.
     pub async fn signed_in_by(
         &self,
         discovered: Discovered,
     ) -> Result<(PrincipalId, Session), BrowserError> {
-        let person =
-            PrincipalId::try_from(discovered.handle()).map_err(|_| BrowserError::NoPasskey)?;
-        let (browsers, _) = self
-            .member(person)
-            .await
-            .map_err(|_| BrowserError::NoPasskey)?;
-        let session = browsers.get_discovered(discovered).await?;
-        Ok((person, session))
+        let unknown = self.discoverer.no_account_knows(&discovered);
+        let member = match PrincipalId::try_from(discovered.handle()) {
+            Ok(person) => self
+                .member(person)
+                .await
+                .map(|(browsers, _)| (person, browsers)),
+            Err(_) => Err(BrowserError::Ended),
+        };
+        let (person, browsers) = match member {
+            Ok(member) => member,
+            Err(BrowserError::Ended) => return Err(unknown),
+            Err(error) => return Err(error),
+        };
+        match browsers.get_discovered(discovered).await {
+            Ok(session) => Ok((person, session)),
+            Err(BrowserError::Unknown(_)) => Err(unknown),
+            Err(error) => Err(error),
+        }
     }
 
     /// The account a session's `token` proves, with the organizations its person belongs to;
@@ -217,3 +230,6 @@ fn email_key(address: &str) -> Result<IdentityKey, BrowserError> {
     IdentityKey::new(&kept(&format!("email\0{read}")))
         .map_err(|e| BrowserError::Keep(e.to_string()))
 }
+
+#[cfg(test)]
+mod tests;

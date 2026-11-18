@@ -266,6 +266,26 @@ pub(crate) fn id(subject: &str) -> glave_event::PrincipalId {
     glave_session::signin::person(ISSUER, subject).unwrap()
 }
 
+/// The call whose `approval.requested` `thread` waits at, once its turn has asked.
+pub(crate) async fn asked_in<L: EventLog + 'static>(
+    server: &Tested<L>,
+    thread: ThreadId,
+) -> glave_event::CallId {
+    for _ in 0..100_000 {
+        let asked = (events(server, thread).await.into_iter()).find_map(|raw| {
+            match decode(raw).ok()?.body {
+                Body::ApprovalRequested(asked) => Some(asked.call_id),
+                _ => None,
+            }
+        });
+        if let Some(call) = asked {
+            return call;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("the turn never asked");
+}
+
 /// The commands `thread` keeps running in the background, as `command/list` answers them.
 pub(crate) async fn listed<L: EventLog + 'static>(
     server: &Tested<L>,

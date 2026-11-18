@@ -15,6 +15,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use glave_event::{CredentialConnected, CredentialId, Secret};
+use glave_ports::host::shown;
 use glave_session::AccountsError;
 use tokio::sync::watch;
 use tokio::task::JoinSet;
@@ -197,7 +198,8 @@ impl<R: Renew> Renewing<R> {
     /// Renews the token, unless a renewal was made already, and keeps it in its place while
     /// the sign-in it renews is still kept.
     async fn run(self) -> Ended<R::Kept> {
-        let url = self.job.url().to_owned();
+        // Only for the log: where the sign-in is, never what its address carries.
+        let url = shown(self.job.url());
         // A renewal made already is one an earlier run could not keep.
         let again = self.fresh.is_some();
         let fresh = match self.fresh {
@@ -273,7 +275,8 @@ impl Renew for HostRenewal {
                 .iter()
                 .any(|kept| kept.credential == current.credential),
             Err(error) => {
-                tracing::warn!("could not read the git hosts to renew {url}: {error:#}");
+                let error = format!("{error:#}");
+                tracing::warn!(url = %shown(url), %error, "could not read the hosts to renew");
                 return Err(failed());
             }
         };
@@ -282,7 +285,8 @@ impl Renew for HostRenewal {
         };
         // Made before the refresh token is spent, so nothing after can lose what it gets.
         let id = super::new_id().map_err(|error| {
-            tracing::warn!("could not make an id to renew {url}: {error:#}");
+            let error = format!("{error:#}");
+            tracing::warn!(url = %shown(url), %error, "could not make an id to renew a sign-in");
             failed()
         })?;
         match self.github.refresh(&self.http, &renewal.refresh).await {
@@ -303,7 +307,8 @@ impl Renew for HostRenewal {
                 ..current.clone()
             }),
             Err(error) => {
-                tracing::warn!("could not renew the sign-in to {url}: {}", error.message);
+                let error = &error.message;
+                tracing::warn!(url = %shown(url), %error, "could not renew a sign-in");
                 Err(failed())
             }
         }
