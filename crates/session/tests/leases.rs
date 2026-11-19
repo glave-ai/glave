@@ -1,14 +1,19 @@
 //! Servers on one store, under the threads' leases (`specs/invariants.md`, 3 and 5): a turn one
 //! server runs holds its thread there, another is refused it (`-32011`), and reading the thread
 //! anywhere records nothing; a turn a server left open is closed by the next work on its thread,
-//! or as the person's server starts, once no live server's lease holds it; and a retry with
-//! the key a turn was started with, reaching another server, starts no second turn.
+//! or as the person's server starts, once no live server's lease holds it; a retry with the
+//! key a turn was started with, reaching another server, starts no second turn; and work asked
+//! of a thread while work that only manages it outlasts every stop takes no lease.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use glave_event::{Body, Outcome, RawEvent, ThreadId, decode};
-use glave_ports::{EventLog as _, Holder, InMemoryLeases, Leased, Leases};
+use glave_ports::testing::FaultyLog;
+use glave_ports::{
+    BoxFuture, EventLog as _, Holder, InMemoryLeases, Lease, LeaseError, Leased, Leases, OrgId,
+};
 use glave_session::protocol::{IdempotencyKey, Notification, Reply, Request, code};
 use glave_session::{Answering, Repaired, TurnItem, TurnStream};
 use tokio::sync::Notify;
@@ -292,5 +297,66 @@ fn a_retry_after_its_server_stopped_mid_turn_closes_that_turn_and_starts_none() 
         let events = stored(&log, thread).await;
         assert_eq!(turns_started(&events), 1, "no second turn");
         assert_eq!(kinds_of(&events).last(), Some(&"turn.ended"));
+    });
+}
+
+/// Leases in memory that count the times one is taken.
+struct Counted(Arc<InMemoryLeases>, AtomicUsize);
+
+#[deny(clippy::missing_trait_methods)]
+impl Leases for Counted {
+    fn acquire(
+        &self,
+        org: OrgId,
+        on: Leased,
+        holder: Holder,
+        ttl: Duration,
+    ) -> BoxFuture<'_, Result<Option<Lease>, LeaseError>> {
+        self.1.fetch_add(1, Ordering::SeqCst);
+        self.0.acquire(org, on, holder, ttl)
+    }
+
+    fn renew<'a>(
+        &'a self,
+        lease: &'a Lease,
+        ttl: Duration,
+    ) -> BoxFuture<'a, Result<Option<Lease>, LeaseError>> {
+        self.0.renew(lease, ttl)
+    }
+
+    fn release<'a>(&'a self, lease: &'a Lease) -> BoxFuture<'a, Result<(), LeaseError>> {
+        self.0.release(lease)
+    }
+}
+
+/// A turn asked for while work that only manages its thread outlasts every stop (a rename,
+/// which no stop ends, whose record the store holds) is refused, taking no lease: one taken
+/// then would only renew the rename's, which it lets go of as it ends, leaving the turn
+/// running under none, open to another server.
+#[test]
+fn a_turn_asked_while_managing_work_outlasts_every_stop_takes_no_lease() {
+    let dir = folder("leases-outlasted");
+    block_on!(async {
+        let counted = Arc::new(Counted(shared_leases().1, AtomicUsize::new(0)));
+        let mut setup = Setup::new(vec![answer(Some("Hi."), None)]);
+        setup.leases = Some(Arc::clone(&counted) as Arc<dyn Leases>);
+        let log = FaultyLog::default();
+        let (server, _) = setup.build_on(&dir, log.clone()).await;
+        let thread = start(&server, false).await;
+        log.hold("thread.renamed");
+        let title = "Notes".to_owned();
+        let renaming = server.request(Request::ThreadRename { thread, title });
+        let asking = async {
+            log.held().await;
+            let taken = counted.1.load(Ordering::SeqCst);
+            let refused = stream_turn(&server, thread, "hi", None).await;
+            let after = counted.1.load(Ordering::SeqCst);
+            log.release();
+            (refused.err().map(|error| error.code), after - taken)
+        };
+        let (renamed, (refused, leases)) = tokio::join!(renaming, asking);
+        assert!(renamed.is_ok(), "{renamed:?}");
+        assert_eq!(refused, Some(code::TURN_RUNNING));
+        assert_eq!(leases, 0, "no lease taken while the rename held the thread");
     });
 }

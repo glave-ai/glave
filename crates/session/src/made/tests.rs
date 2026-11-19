@@ -76,7 +76,7 @@ fn each_turn_s_files_are_what_its_end_and_a_later_look_over_say_it_made() {
 }
 
 #[test]
-fn a_file_is_named_by_its_cleaned_file_name() {
+fn a_file_is_named_by_its_title_else_its_cleaned_file_name() {
     assert_eq!(cleaned("Trip_budget  2026.xlsx"), "Trip budget 2026");
     assert_eq!(cleaned("notes"), "notes");
     assert_eq!(cleaned("_.pdf"), "_.pdf");
@@ -89,5 +89,16 @@ fn a_file_is_named_by_its_cleaned_file_name() {
     let shown = made_file(&kept);
     assert_eq!(shown.name, "Lisbon plan");
     assert_eq!(shown.file_name, "Lisbon_plan.pdf");
-    assert!(shown.sha256.is_some());
+    assert!(shown.unread.is_some() && !shown.previews);
+    let read = FileMade {
+        read: Some(glave_event::FileRead {
+            title: Some("Lisbon".into()),
+            parts: Some(Parts::Pages(2)),
+            preview: None,
+        }),
+        ..kept
+    };
+    let shown = made_file(&read);
+    assert_eq!(shown.name, "Lisbon");
+    assert!(shown.unread.is_none() && shown.previews && shown.parts.is_some());
 }

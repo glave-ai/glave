@@ -55,6 +55,7 @@ where
         thread: &mut Thread,
         prompt: Prompt<'_>,
         offer: &ToolSet,
+        cancel: &crate::cancel::Cancel,
     ) -> Result<(), HarnessError> {
         let Prompt {
             text: prompt,
@@ -72,7 +73,7 @@ where
             thread.unnumbered = thread.unnumbered.saturating_add(1);
         }
         // What ended in the background since the last turn is recorded before this one.
-        self.check_commands(thread).await?;
+        self.check_commands(thread, cancel).await?;
         let (sent_to, provider) = (self.model_for(thread), self.current_default().provider);
         let config = self
             .store_config(thread, offer, &sent_to, &provider)
