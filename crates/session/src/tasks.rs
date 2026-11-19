@@ -10,14 +10,17 @@
 
 mod acting;
 mod adopted;
+mod run;
+
+pub(crate) use run::Unstarted;
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 
 use glave_event::{
-    At, Body, Currency, Fired, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
-    TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
+    At, Body, Currency, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId, TaskEnded,
+    TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
 use glave_harness::Cancel;
 use glave_ports::computer::{Reason, Refusal};
@@ -160,15 +163,32 @@ where
         thread: ThreadId,
         work: Work,
         budget: Option<u64>,
-        schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
-        let project = (self
-            .may_start_task(caller, thread, schedule.is_some())
-            .await?)
-            .located();
+        let project = (self.may_start_task(caller, thread, false).await?).located();
+        self.run_task(caller, (project, thread), work, budget, None)
+            .await
+    }
+
+    /// Starts `work` in `thread` of `project` as a task for `caller`, who may, and answers
+    /// with it at once: its start recorded once its turn started, unless it came `claimed`, a
+    /// schedule's run whose start was recorded first under its task's lease (`run.rs`).
+    async fn run_task(
+        &self,
+        caller: &Caller,
+        (project, thread): (Located, ThreadId),
+        work: Work,
+        budget: Option<u64>,
+        claimed: Option<(TaskStarted, Lease)>,
+    ) -> Result<TaskInfo, ApiError> {
+        let (claimed, held) = claimed.unzip();
+        let schedule = claimed.as_ref().and_then(|started| started.schedule);
         // Whoever follows a task holds its task lease, so one server records its end.
-        let lease =
-            (self.take_task(project.org, thread).await?).ok_or_else(|| elsewhere(thread))?;
+        let lease = match held {
+            Some(lease) => lease,
+            None => {
+                (self.take_task(project.org, thread).await?).ok_or_else(|| elsewhere(thread))?
+            }
+        };
         let Work(prompt, choice) = work;
         let title = title_from(&prompt).unwrap_or_default();
         // A schedule's run waits for the person where it needs them, as their chat does; no one
@@ -203,14 +223,14 @@ where
         };
         // Its end is what the ledger records, though its person signs out meanwhile.
         stream.outlasting_access();
-        let started = TaskStarted {
+        let started = claimed.clone().unwrap_or_else(|| TaskStarted {
             thread,
             title,
             model: stream.model.clone(),
             budget,
             schedule,
             by: self.someone_else(caller.person),
-        };
+        });
         let running = Running {
             project,
             started: started.clone(),
@@ -229,7 +249,11 @@ where
         let info = self.running_info(&running);
         let unfollowed = running.unfollowed.clone();
         self.tasks().insert(thread, running);
-        if let Err(error) = self.record_in_ledger(project, &started).await {
+        let recorded = match claimed {
+            Some(_) => Ok(()),
+            None => self.record_in_ledger(project, &started).await,
+        };
+        if let Err(error) = recorded {
             self.cancel_busy(thread);
             self.follow_task(thread, stream).await;
             self.let_go(&lease).await;
@@ -462,6 +486,19 @@ where
         let mut recovered = Repaired::default();
         for project in self.task_projects().await? {
             self.catch_up(project).await?;
+            let here = self.recover_in(project).await?;
+            recovered.closed = recovered.closed.saturating_add(here.closed);
+            recovered.held = recovered.held.saturating_add(here.held);
+        }
+        Ok(recovered)
+    }
+
+    /// Recovers the tasks `project`'s ledger, as read, has open that no server follows any more:
+    /// those whose task lease lapsed, adopted when a schedule's run waits for the person, else
+    /// recorded interrupted. Those another server's lease holds are counted, to look at again.
+    pub(crate) async fn recover_in(&self, project: Located) -> Result<Repaired, ApiError> {
+        let mut recovered = Repaired::default();
+        {
             let stale: Vec<ThreadId> = {
                 let ledgers = self.ledgers();
                 let here = self.tasks();
