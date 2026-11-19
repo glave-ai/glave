@@ -68,8 +68,13 @@ pub(super) struct Layout {
     pub(super) base: PathBuf,
     pub(super) empty_file: PathBuf,
     pub(super) empty_folder: PathBuf,
-    /// `/tmp`, shared, which models reach for constantly.
+    /// `/tmp`, shared, which models reach for constantly; none for someone else's commands,
+    /// which get one of their own (`own_tmp`).
     pub(super) shared_tmp: Option<PathBuf>,
+    /// Whether each command gets a `/tmp` of its own, its own temp folder there: someone else's
+    /// (`RunsFor::SomeoneElse`), which leave nothing in the shared one that the person's
+    /// commands later read or run, and read nothing the person's left there (#1583).
+    pub(super) own_tmp: bool,
     pub(super) home: Option<PathBuf>,
     /// What the computer hides beside the home folder's credential stores.
     pub(super) also_hidden: Vec<PathBuf>,
@@ -97,6 +102,8 @@ pub(super) enum Mount {
     HiddenFile(PathBuf),
     /// Hidden under the empty folder; also the stand-in for a protected path not there yet.
     HiddenFolder(PathBuf),
+    /// The command's own temp folder, at `/tmp` too.
+    Tmp(PathBuf),
     /// Hidden whole under an empty folder of the sandbox's own, which the mounts inside it are
     /// made in and which is read-only once they are: what is written there after the command
     /// starts stays hidden, where a stand-in hides only what was there.
@@ -111,6 +118,7 @@ impl Mount {
             | Self::HiddenFile(path)
             | Self::HiddenFolder(path)
             | Self::Emptied(path) => path.as_path(),
+            Self::Tmp(_) => Path::new("/tmp"),
         }
     }
 }
@@ -184,6 +192,9 @@ pub(super) fn plan(
         .collect();
     mounts.push(Mount::ReadOnly(layout.base.clone()));
     mounts.push(Mount::Writable(temp.to_owned()));
+    if layout.own_tmp {
+        mounts.push(Mount::Tmp(temp.to_owned()));
+    }
     let mut held = Held {
         paths: Vec::new(),
         stand_ins: Arc::clone(stand_ins),
@@ -518,6 +529,7 @@ mod tests {
             runtime: None,
             daemons,
             moved_sessions: moved,
+            own_tmp: false,
             git_common: None,
         };
         let (mounts, _held) = plan(&layout, &dir.join("temp"), &StandIns::default()).unwrap();

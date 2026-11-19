@@ -8,7 +8,7 @@ use glave_computer::LocalComputers;
 use glave_event::{Forge, RemovedReason, Secret, StopReason, WorkspaceRemoved};
 use glave_harness::{AllowAll, Place, Workspace, record_removed};
 use glave_ports::computer::{
-    CredentialHost, GitCredential, Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork,
+    CredentialHost, GitCredential, RunsFor, Sandbox, SandboxLevel, SandboxNetwork,
 };
 use glave_ports::secrets::{Known, KnownSecrets};
 use glave_ports::testing::{FixedGitCredentials, TempDir, any_secret};
@@ -47,7 +47,7 @@ async fn persons_workspace(
         network: SandboxNetwork::when(false),
         home: Some(base.to_owned()),
         glave_home: Some(base.join(".glave")),
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     let known = KnownSecrets::default();
     known.set(vec![Known::new(

@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 use glave_ports::BoxFuture;
 use glave_ports::auth::Secret;
 use glave_ports::computer::{
-    Bytes, Command, ComputerId, Computers, Environment, FileWrite, Glob, Listing, Output,
-    SandboxCaches, Search, Sources, WorkspaceId, refuse_protected,
+    Bytes, Command, ComputerId, Computers, Environment, FileWrite, Glob, Listing, Output, RunsFor,
+    Search, Sources, WorkspaceId, refuse_protected,
 };
 use glave_ports::conformance::{
     Confinement, confinement_case, confinement_escapes, confinement_fixture, confinement_untouched,
@@ -298,7 +298,7 @@ fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
         network: glave_ports::computer::SandboxNetwork::Off,
         home: None,
         glave_home: None,
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     let protected = |path: &str| FileWrite {
         protect: Some(guarded.clone()),

@@ -13,9 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use glave_computer::{LocalComputers, Peek, Wake, Waking};
 use glave_event::{HookPoint, Permissions, PrincipalId, StopReason};
 use glave_harness::{AllowAll, Cancel, Decision, Homes, Place, ProjectFolders, Workspace};
-use glave_ports::computer::{
-    ComputerError, Home, Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork,
-};
+use glave_ports::computer::{ComputerError, Home, RunsFor, Sandbox, SandboxLevel, SandboxNetwork};
 use glave_ports::settings::{Hook, Hooks};
 use glave_ports::stream::Reserved;
 use glave_ports::testing::ManualClock;
@@ -114,7 +112,7 @@ impl Sleepy {
             network: SandboxNetwork::Off,
             home: Some(home.to_owned()),
             glave_home: Some(home.join(".glave")),
-            caches: SandboxCaches::Kept,
+            runs_for: RunsFor::Owner,
         });
         sleepy
     }

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use glave_computer::LocalComputers;
 use glave_harness::Workspace;
-use glave_ports::computer::{Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{RunsFor, Sandbox, SandboxLevel, SandboxNetwork};
 
 use super::Setup;
 use crate::error::EvalError;
@@ -41,7 +41,7 @@ pub(super) async fn workspace(
         network: SandboxNetwork::when(task.network),
         home: environment.get(&OsString::from("HOME")).map(PathBuf::from),
         glave_home: None,
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     match open().await?.with_sandbox(&sandbox).await {
         Ok(workspace) => Ok(workspace),

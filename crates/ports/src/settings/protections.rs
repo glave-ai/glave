@@ -45,7 +45,7 @@ impl Protections {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::computer::{SandboxCaches, SandboxNetwork};
+    use crate::computer::{RunsFor, SandboxNetwork};
     use Permissions::{Ask, Auto, FullAccess, Plan};
 
     #[test]
@@ -68,7 +68,7 @@ mod tests {
             network: SandboxNetwork::Direct,
             home: None,
             glave_home: None,
-            caches: SandboxCaches::Kept,
+            runs_for: RunsFor::Owner,
         };
         let level = |protections: Protections, mode, here: Option<&Sandbox>| {
             protections

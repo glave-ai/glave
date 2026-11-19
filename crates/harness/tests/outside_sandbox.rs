@@ -13,7 +13,7 @@ use glave_event::{Body, Caution, Event, Principal, StopReason, ThreadId, Verdict
 use glave_harness::{
     ApprovalRequest, Approver, Cancel, Decision, Harness, HarnessError, NoOneToAsk, Settings,
 };
-use glave_ports::computer::{Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{RunsFor, Sandbox, SandboxLevel, SandboxNetwork};
 use glave_ports::{Caller, Completion, InMemoryBlobs, InMemoryLog, ModelRequest, Purpose};
 use serde_json::json;
 
@@ -110,7 +110,7 @@ pub(crate) async fn walled(base: &Path, network: bool) -> glave_harness::Workspa
         network: SandboxNetwork::when(network),
         home: Some(base.to_owned()),
         glave_home: Some(base.join(".glave")),
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     workspace(&base.join("project"))
         .await

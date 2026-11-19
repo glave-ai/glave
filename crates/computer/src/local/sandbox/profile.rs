@@ -49,6 +49,10 @@ pub(crate) struct Places {
     pub git_common: Option<PathBuf>,
     /// For a worktree: its own folder in the shared one (`worktrees/<name>`).
     pub git_own: Option<PathBuf>,
+    /// Whether commands share `/tmp`, readable and writable, as the person's do. Someone else's
+    /// neither read nor write it (`RunsFor::SomeoneElse`): Seatbelt can't give them one of
+    /// their own, so they use their own temp folder (`TMPDIR`) alone.
+    pub shared_tmp: bool,
 }
 
 /// The parameter naming a command's own temp folder, made for it when it starts.
@@ -80,6 +84,9 @@ pub(crate) fn profile(places: &Places, level: SandboxLevel, network: SandboxNetw
 
 fn reads(profile: &mut Profile, places: &Places) {
     let mut conditions = vec![r#"(subpath "/")"#.to_owned(), OTHER_TERMINALS.to_owned()];
+    if !places.shared_tmp {
+        conditions.push(r#"(require-not (subpath "/private/tmp"))"#.to_owned());
+    }
     for (index, path) in places.hidden.iter().cloned().enumerate() {
         let name = format!("SECRET_{index}");
         conditions.push(format!(r#"(require-not (subpath (param "{name}")))"#));
@@ -149,11 +156,16 @@ fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
     // Temp folders never grant the project itself: a project that lives inside one keeps its
     // protections, and at `read-only` stays unwritable.
     profile.text.push_str(
-        "; writes: the run's temp folder, /tmp and output devices, never the project through them\n\
+        "; writes: the run's temp folder and output devices, never the project through them\n\
          (allow file-write* (require-all (subpath (param \"TEMP\")) (require-not (subpath (param \"ROOT\")))))\n\
-         (allow file-write* (require-all (subpath \"/private/tmp\") (require-not (subpath (param \"ROOT\")))))\n\
          (allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\") (regex #\"^/dev/fd/\"))\n",
     );
+    if places.shared_tmp {
+        profile.text.push_str(
+            "; writes: the shared /tmp, never the project through it\n\
+             (allow file-write* (require-all (subpath \"/private/tmp\") (require-not (subpath (param \"ROOT\")))))\n",
+        );
+    }
     if let Some(cache) = &places.cache {
         // What is inside it, never the folder itself, which a link could replace.
         profile.params.push(("CACHE".into(), cache.clone()));
@@ -281,6 +293,7 @@ mod tests {
             glave_on_path: Some(PathBuf::from("/Users/me/.glave/bin")),
             git_common: None,
             git_own: None,
+            shared_tmp: true,
         }
     }
 
