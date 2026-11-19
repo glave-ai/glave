@@ -97,7 +97,14 @@ uuid.workspace = true
 [target.'cfg(target_env = "musl")'.dependencies]
 mimalloc.workspace = true
 
+# Every allocation counted on macOS, so a reader of a file a turn made is held to a limit there,
+# which RLIMIT_DATA does on Linux and nothing does on macOS (src/allocator.rs, src/reading.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+cap.workspace = true
+
 [dev-dependencies]
+# A workbook that grows a reader's memory, made in the test (already in the tree).
+flate2.workspace = true
 # A passkey authenticator in software, signing in to glave as the installer set it up.
 glave-identity = { workspace = true, features = ["fake-authenticator"] }
 glave-ports = { workspace = true, features = ["conformance"] }

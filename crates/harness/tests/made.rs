@@ -12,7 +12,7 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use glave_event::{Body, Event, FileMade, Kept, MadeLeft, Principal, Secret, StopReason};
-use glave_harness::{AllowAll, NoOneToAsk, Workspace};
+use glave_harness::{AllowAll, Cancel, NoOneToAsk, Workspace};
 use glave_ports::secrets::{Known, KnownSecrets};
 use glave_ports::testing::any_secret;
 use glave_ports::{BlobStore as _, Completion, InMemoryLog};
@@ -25,7 +25,7 @@ const BEFORE: Duration = Duration::from_secs(1_700_000_000);
 
 /// What the turns in `events` made, by turn, with what each leaves out; and what later
 /// look-overs made, as the turns they name.
-fn made(events: &[Event]) -> Vec<(Vec<FileMade>, Option<MadeLeft>)> {
+pub(crate) fn made(events: &[Event]) -> Vec<(Vec<FileMade>, Option<MadeLeft>)> {
     events
         .iter()
         .filter_map(|event| match &event.body {
@@ -37,7 +37,7 @@ fn made(events: &[Event]) -> Vec<(Vec<FileMade>, Option<MadeLeft>)> {
 }
 
 /// Each file's path and whether it was kept, left too large, or left holding a secret.
-fn told(made: &[FileMade]) -> Vec<(&str, &str)> {
+pub(crate) fn told(made: &[FileMade]) -> Vec<(&str, &str)> {
     made.iter()
         .map(|file| {
             let kept = match file.kept {
@@ -51,7 +51,7 @@ fn told(made: &[FileMade]) -> Vec<(&str, &str)> {
         .collect()
 }
 
-fn bash(command: &str) -> Completion {
+pub(crate) fn bash(command: &str) -> Completion {
     answer(
         None,
         vec![("bash", json!({ "command": command }))],
@@ -59,7 +59,7 @@ fn bash(command: &str) -> Completion {
     )
 }
 
-fn done() -> Completion {
+pub(crate) fn done() -> Completion {
     answer(Some("Done."), vec![], StopReason::EndTurn)
 }
 
@@ -234,7 +234,10 @@ fn a_turn_shows_what_settled_at_once_and_what_a_command_may_still_write_once_it_
                 .await
                 .unwrap()
         );
-        harness.record_ended(&mut resumed).await.unwrap();
+        harness
+            .record_ended(&mut resumed, &Cancel::new())
+            .await
+            .unwrap();
         let events = events(harness.log(), thread.id).await;
         let later = events.iter().find_map(|event| match &event.body {
             Body::TurnMade(made) => Some(made.clone()),

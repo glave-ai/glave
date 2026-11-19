@@ -187,13 +187,15 @@ where
 
     /// After an answer stopped for repeating itself: records what it used, and none of its
     /// words, so the call asked again is sent what this one was. The first time, the turn goes
-    /// on to ask once more; `again`, the turn ends, failed, saying why.
+    /// on to ask once more; `again`, the turn ends, failed, saying why, the files it made read
+    /// until `cancel` stops it.
     pub(super) async fn stopped_repeating(
         &self,
         thread: &mut Thread,
         summary: &mut glave_event::TurnResult,
         cut: &Completion,
         again: bool,
+        cancel: &crate::cancel::Cancel,
     ) -> Result<(), HarnessError> {
         summary.take_in(&cut.responded());
         let mut events = Vec::new();
@@ -203,7 +205,7 @@ where
             return Ok(());
         }
         summary.outcome = glave_event::Outcome::Failed;
-        self.end(thread, summary).await?;
+        self.end(thread, summary, cancel).await?;
         Err(HarnessError::Repeating)
     }
 

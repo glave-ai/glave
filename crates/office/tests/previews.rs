@@ -122,9 +122,14 @@ fn a_pdf_is_described_by_the_title_its_information_gives_unless_a_program_gives_
 
 /// The Word document in `docx` with `count` more paragraphs after its body's last.
 fn with_paragraphs(docx: &[u8], count: usize) -> Vec<u8> {
+    let paragraph = "<w:p><w:r><w:t>A line the report says again.</w:t></w:r></w:p>";
+    with_body(docx, &paragraph.repeat(count))
+}
+
+/// The Word document in `docx` with `more` after its body's last paragraph.
+fn with_body(docx: &[u8], more: &str) -> Vec<u8> {
     let mut source = zip::ZipArchive::new(Cursor::new(docx)).unwrap();
     let mut out = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let paragraph = "<w:p><w:r><w:t>A line the report says again.</w:t></w:r></w:p>";
     for index in 0..source.len() {
         let mut file = source.by_index(index).unwrap();
         let name = file.name().unwrap().into_owned();
@@ -132,7 +137,6 @@ fn with_paragraphs(docx: &[u8], count: usize) -> Vec<u8> {
         file.read_to_end(&mut content).unwrap();
         if name == "word/document.xml" {
             let text = String::from_utf8(content).unwrap();
-            let more = paragraph.repeat(count);
             content = text
                 .replacen("</w:body>", &format!("{more}</w:body>"), 1)
                 .into_bytes();
@@ -142,4 +146,17 @@ fn with_paragraphs(docx: &[u8], count: usize) -> Vec<u8> {
         out.write_all(&content).unwrap();
     }
     out.finish().unwrap().into_inner()
+}
+
+/// What a preview reads is the text as a person reads it: runs Word split a word across joined,
+/// and characters written as references written out. So the server looks through it for
+/// secrets too (`specs/invariants.md`, 8).
+#[test]
+fn a_document_previews_its_text_joined_up_as_a_person_reads_it() {
+    let split = "<w:p><w:r><w:t>key-</w:t></w:r><w:r><w:t>split</w:t></w:r></w:p>";
+    let referenced = "<w:p><w:r><w:t>&#107;&#101;&#121;-ref</w:t></w:r></w:p>";
+    let docx = with_body(&bytes("report.docx"), &format!("{split}{referenced}"));
+    let shown = preview(&docx, DOCX).unwrap();
+    assert!(shown.markdown.contains("key-split"), "{}", shown.markdown);
+    assert!(shown.markdown.contains("key-ref"), "{}", shown.markdown);
 }

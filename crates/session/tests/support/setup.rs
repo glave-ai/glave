@@ -239,6 +239,8 @@ pub(crate) struct Setup {
     pub filters: Option<Arc<PersonFilters>>,
     /// Where the person's secrets are kept; with none, adding one is refused.
     pub secrets: Option<KeepSecrets>,
+    /// What reads the files turns make; with none, they are kept unread.
+    pub reader: Option<glave_ports::ReadMade>,
 }
 
 /// What a test server keeps on its log beside threads, where a test asks: organizations' credits
@@ -317,6 +319,7 @@ impl Setup {
             homes: None,
             filters: None,
             secrets: None,
+            reader: None,
         }
     }
 
@@ -460,6 +463,7 @@ impl Setup {
             identity_provider: self.identity_provider,
             schedules: self.schedules,
             homes: self.homes,
+            reader: self.reader,
             secrets,
             credits,
             ..Wiring::new(provider, log, self.blobs, workspace, projects)
