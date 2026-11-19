@@ -184,7 +184,7 @@ fn someone_else_s_commands_share_no_cache_with_the_person_s() {
         .unwrap()
         .join("sandbox-cache/xdg");
     let kept = kept.display();
-    let bash = |command: String| {
+    let runs = |command: String| {
         answer(
             None,
             vec![("bash", json!({ "command": command }))],
@@ -192,18 +192,18 @@ fn someone_else_s_commands_share_no_cache_with_the_person_s() {
         )
     };
     let answers = vec![
-        bash(format!(
+        runs(format!(
             "mkdir -p \"$XDG_CACHE_HOME\" && echo fetched > \"$XDG_CACHE_HOME/kept\" && \
              [ \"$XDG_CACHE_HOME\" = '{kept}' ] && echo kept-there"
         )),
         answer(Some("Kept."), vec![], StopReason::EndTurn),
-        bash(format!(
+        runs(format!(
             "cat '{kept}/kept' 2>/dev/null || echo read-nothing; \
              mkdir -p \"$XDG_CACHE_HOME\" && echo planted > \"$XDG_CACHE_HOME/tool\"; \
              echo planted > '{kept}/tool' 2>/dev/null || echo wrote-nothing"
         )),
         answer(Some("Tried."), vec![], StopReason::EndTurn),
-        bash(format!(
+        runs(format!(
             "cat '{kept}/tool' 2>/dev/null || echo found-nothing"
         )),
         answer(Some("Looked."), vec![], StopReason::EndTurn),
