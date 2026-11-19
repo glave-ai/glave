@@ -1,6 +1,7 @@
 import type { Money, Outcome, RawEvent, ThreadSummary, TurnResult } from '@glave/client';
 
 import { NO_THOUGHT, type ThreadItem, byGlave, threadItems } from './conversation';
+import { madeLeftOf, madeOf } from './made';
 
 const OUTCOMES: readonly string[] = [
   'completed',
@@ -84,6 +85,8 @@ function resultOf(data: Data): TurnResult | null {
     estimated: data['estimated'] === true,
     via: texts(data['via']),
     changed: texts(data['changed']),
+    made: madeOf(data['made']),
+    made_left: madeLeftOf(data['made_left']),
   };
 }
 

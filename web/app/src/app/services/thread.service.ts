@@ -129,6 +129,8 @@ export class ThreadService {
   readonly sourcing = this.history.sourcing;
   /** What its plan is read again on (`History.planning`). */
   readonly planning = this.history.planning;
+  /** What its turns made, as its log says (`History.made`). */
+  readonly made = this.history.made;
   readonly reply = this.draft.asReadonly();
   /** The step the running turn takes now, in the server's words, while one runs and it said so. */
   readonly step = computed(() => this.doing().at(-1) ?? null);

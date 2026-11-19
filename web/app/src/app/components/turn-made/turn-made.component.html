@@ -1,0 +1,12 @@
+@for (card of files(); track card.key) {
+  <app-made-file [file]="card.file" />
+}
+@for (card of room(); track card.key) {
+  <!-- Until the server describes it, the card's room, unseen. -->
+  <app-made-file class="room" [file]="card.file" />
+}
+@if (note(); as note) {
+  <div class="notes">
+    <p class="note" data-testid="turn-made-note" [class.room]="noteRoom()">{{ note }}</p>
+  </div>
+}

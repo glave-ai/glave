@@ -1,14 +1,39 @@
-import { DestroyRef, Service, type Signal, effect, inject, signal, untracked } from '@angular/core';
+import {
+  DOCUMENT,
+  DestroyRef,
+  Service,
+  type Signal,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import type { FilePiece } from '@glave/client';
 
+import { UnreadableFile } from '../lib/files';
 import { fromBase64url } from '../lib/passkeys';
 import { SessionService } from './session.service';
 
 /** The most files kept as addresses that nothing draws: past it, the one let go of first goes. */
 const MOST_UNUSED = 48;
 
+/**
+ * The most bytes of files kept as addresses that nothing draws: a document a chat made is up to
+ * 10 MB, so a few of them, not 48, are kept for when they are opened again.
+ */
+const MOST_UNUSED_BYTES = 32 * 1024 * 1024;
+
+/** The most files opened in tabs of their own kept as addresses, the oldest let go of first. */
+const MOST_IN_TABS = 4;
+
 /** The most of a file read back, in bytes: more than any file glave keeps (10 MB). */
 const MOST_BYTES = 32 * 1024 * 1024;
+
+/**
+ * How long a download's address is kept once the download has started, in milliseconds: a
+ * phone's browser asks where to save it after the click, and reads it only then.
+ */
+const KEPT_FOR_SAVING = 60_000;
 
 /** The most files read at once: past it, a read waits for one to end, the first asked first. */
 const MOST_READING = 4;
@@ -70,10 +95,17 @@ export function drawn(hold: () => HeldFile | null): DrawnFile {
 /** The piece of a file that starts at `offset`, as the server answers it. */
 type ReadPiece = (offset: number) => Promise<{ readonly piece: FilePiece }>;
 
-/** A file kept as an address, and how many hold it. */
+/** A file read back: its address, and its size. */
+interface Read {
+  readonly url: string;
+  readonly bytes: number;
+}
+
+/** A file kept as an address, how many hold it, and its size once read (0 until then). */
 interface Kept {
-  readonly url: Promise<string>;
+  readonly read: Promise<Read>;
   readonly users: number;
+  readonly bytes: number;
 }
 
 /**
@@ -83,13 +115,18 @@ interface Kept {
  * and saved, from one read. At most `MOST_READING` are read at once, so a page of many pictures
  * reads them a few at a time, and one whose turn comes once nothing holds it any more is not
  * read at all, so pictures scrolled past never keep those in view waiting. An address is kept
- * while anything holds it; of those nothing holds, at most `MOST_UNUSED` are kept for when
- * they are drawn again, the one let go of first going first. One that could not be read is
- * read again when next asked for.
+ * while anything holds it; of those nothing holds, at most `MOST_UNUSED`, and
+ * `MOST_UNUSED_BYTES` in all, are kept for when they are drawn again, the one let go of first
+ * going first. One that could not be read is read again when next asked for. A download, a
+ * share and a file opened in a tab of its own each read a thread's file apart, and let go of its
+ * address as soon as it is no longer needed.
  */
 @Service()
 export class FilesService {
   private readonly session = inject(SessionService);
+  private readonly document = inject(DOCUMENT);
+  /** The addresses of the files opened in tabs of their own, the oldest first. */
+  private readonly inTabs: string[] = [];
   /**
    * Each file's address, by its thread and hash or its Library item, the one held or let go of
    * longest ago first.
@@ -99,21 +136,85 @@ export class FilesService {
   private reading = 0;
   /** The reads waiting their turn, the first asked for first. */
   private readonly waiting: (() => void)[] = [];
+  /** Each download's address, with what lets go of it a minute after the download started. */
+  private readonly saving = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
-      for (const { url } of this.kept.values()) {
-        revoke(url);
+      for (const { read } of this.kept.values()) {
+        revoke(read);
       }
       this.kept.clear();
+      for (const url of this.inTabs.splice(0)) {
+        URL.revokeObjectURL(url);
+      }
+      for (const [url, letGo] of this.saving) {
+        clearTimeout(letGo);
+        URL.revokeObjectURL(url);
+      }
+      this.saving.clear();
     });
   }
 
   /** The file `sha256` that `thread` holds, of `mediaType`, held as an address until released. */
   hold(thread: string, sha256: string, mediaType: string): HeldFile {
-    return this.holdAs(`${thread}/${sha256}`, mediaType, (offset) =>
-      this.session.call('file/read', { thread, sha256, ...(offset === 0 ? {} : { offset }) }),
-    );
+    return this.holdAs(`${thread}/${sha256}`, mediaType, this.fileRead(thread, sha256));
+  }
+
+  /** The file `sha256` that `thread` holds, of `mediaType`, read whole. */
+  async blob(thread: string, sha256: string, mediaType: string): Promise<Blob> {
+    return read(this.fileRead(thread, sha256), mediaType);
+  }
+
+  /**
+   * Saves the file `sha256` that `thread` holds, of `mediaType`, to the person's drive under
+   * `name`, as the browser saves a download, and lets go of its address a minute after the
+   * download started; rejects, saying why, when it can't be read.
+   */
+  async save(thread: string, sha256: string, mediaType: string, name: string): Promise<void> {
+    const url = URL.createObjectURL(await this.blob(thread, sha256, mediaType));
+    const link = this.document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.click();
+    const letGo = setTimeout(() => {
+      this.saving.delete(url);
+      URL.revokeObjectURL(url);
+    }, KEPT_FOR_SAVING);
+    this.saving.set(url, letGo);
+  }
+
+  /**
+   * Opens the file `sha256` that `thread` holds, of `mediaType`, in a tab of its own, where the
+   * browser's own viewer draws it (a PDF pages through there). The tab opens as the person
+   * asks, so the browser lets it, can't reach back to this page, and shows the file once it is
+   * read; at most `MOST_IN_TABS` addresses are kept for such tabs. A browser that opens no tab
+   * saves the file under `name` instead. Rejects, saying why, when it can't be read.
+   */
+  async openInTab(thread: string, sha256: string, mediaType: string, name: string): Promise<void> {
+    const tab = this.document.defaultView?.open('', '_blank') ?? null;
+    if (tab === null) {
+      await this.save(thread, sha256, mediaType, name);
+      return;
+    }
+    tab.opener = null;
+    try {
+      const url = URL.createObjectURL(await this.blob(thread, sha256, mediaType));
+      this.inTabs.push(url);
+      while (this.inTabs.length > MOST_IN_TABS) {
+        URL.revokeObjectURL(this.inTabs.shift() ?? '');
+      }
+      tab.location.href = url;
+    } catch (error: unknown) {
+      tab.close();
+      throw error;
+    }
+  }
+
+  /** How the file `sha256` that `thread` holds is read, a piece at a time. */
+  private fileRead(thread: string, sha256: string): ReadPiece {
+    return (offset) =>
+      this.session.call('file/read', { thread, sha256, ...(offset === 0 ? {} : { offset }) });
   }
 
   /**
@@ -129,37 +230,46 @@ export class FilesService {
   /** The file kept as `key`, read with `readPiece` the first time, held until released. */
   private holdAs(key: string, mediaType: string, readPiece: ReadPiece): HeldFile {
     const found = this.kept.get(key);
-    const url: Promise<string> =
-      found?.url ??
+    const reading: Promise<Read> =
+      found?.read ??
       this.inTurn(
-        () => this.holds(key, url),
-        () => read(readPiece, mediaType),
+        () => this.holds(key, reading),
+        () => addressed(readPiece, mediaType),
       );
     this.kept.delete(key);
-    this.kept.set(key, { url, users: (found?.users ?? 0) + 1 });
+    const users = (found?.users ?? 0) + 1;
+    this.kept.set(key, { read: reading, users, bytes: found?.bytes ?? 0 });
     if (found === undefined) {
-      url.catch(() => {
-        if (this.kept.get(key)?.url === url) {
-          this.kept.delete(key);
-        }
-      });
+      reading.then(
+        ({ bytes }) => {
+          const now = this.kept.get(key);
+          if (now?.read === reading) {
+            this.kept.set(key, { ...now, bytes });
+          }
+        },
+        () => {
+          if (this.kept.get(key)?.read === reading) {
+            this.kept.delete(key);
+          }
+        },
+      );
     }
     let held = true;
     return {
-      url,
+      url: reading.then(({ url }) => url),
       release: () => {
         if (held) {
           held = false;
-          this.letGo(key, url);
+          this.letGo(key, reading);
         }
       },
     };
   }
 
-  /** Whether something holds the file kept as `key`, read as `url`, now. */
-  private holds(key: string, url: Promise<string>): boolean {
+  /** Whether something holds the file kept as `key`, read as `reading`, now. */
+  private holds(key: string, reading: Promise<Read>): boolean {
     const kept = this.kept.get(key);
-    return kept?.url === url && kept.users > 0;
+    return kept?.read === reading && kept.users > 0;
   }
 
   /**
@@ -196,35 +306,47 @@ export class FilesService {
     }
   }
 
-  /** One holder of `url`, kept as `key`, lets go of it; past `MOST_UNUSED` unheld, one goes. */
-  private letGo(key: string, url: Promise<string>): void {
+  /**
+   * One holder of `reading`, kept as `key`, lets go of it; past `MOST_UNUSED` or
+   * `MOST_UNUSED_BYTES` unheld, the one let go of longest ago goes, and so on.
+   */
+  private letGo(key: string, reading: Promise<Read>): void {
     const found = this.kept.get(key);
-    if (found?.url !== url) {
+    if (found?.read !== reading) {
       return;
     }
     this.kept.delete(key);
-    this.kept.set(key, { url, users: found.users - 1 });
-    let unused = Array.from(this.kept.values()).filter(({ users }) => users === 0).length;
+    this.kept.set(key, { ...found, users: found.users - 1 });
+    const unused = Array.from(this.kept.values()).filter(({ users }) => users === 0);
+    let count = unused.length;
+    let bytes = unused.reduce((sum, kept) => sum + kept.bytes, 0);
     for (const [oldest, kept] of this.kept) {
-      if (unused <= MOST_UNUSED) {
+      if (count <= MOST_UNUSED && bytes <= MOST_UNUSED_BYTES) {
         break;
       }
       if (kept.users === 0) {
         this.kept.delete(oldest);
-        revoke(kept.url);
-        unused -= 1;
+        revoke(kept.read);
+        count -= 1;
+        bytes -= kept.bytes;
       }
     }
   }
 }
 
+/** The file `readPiece` reads, as an address the page made, with its size. */
+async function addressed(readPiece: ReadPiece, mediaType: string): Promise<Read> {
+  const blob = await read(readPiece, mediaType);
+  return { url: URL.createObjectURL(blob), bytes: blob.size };
+}
+
 /**
- * The file `readPiece` reads, read whole a piece at a time, as an address the page made. A piece
- * that does not end where the next starts, or a file larger than `MOST_BYTES`, is not read on.
+ * The file `readPiece` reads, read whole a piece at a time. A piece that does not end where the
+ * next starts, or a file larger than `MOST_BYTES`, is not read on.
  */
-async function read(readPiece: ReadPiece, mediaType: string): Promise<string> {
+async function read(readPiece: ReadPiece, mediaType: string): Promise<Blob> {
   const unreadable = (): Error =>
-    new Error($localize`:@@files.unreadable:This file could not be read`);
+    new UnreadableFile($localize`:@@files.unreadable:This file could not be read`);
   const pieces: Uint8Array<ArrayBuffer>[] = [];
   let offset: number | null = 0;
   while (offset !== null) {
@@ -239,14 +361,14 @@ async function read(readPiece: ReadPiece, mediaType: string): Promise<string> {
     pieces.push(bytes);
     offset = next;
   }
-  return URL.createObjectURL(new Blob(pieces, { type: mediaType }));
+  return new Blob(pieces, { type: mediaType });
 }
 
-/** Lets go of the address `url` will be, once it is made. */
-function revoke(url: Promise<string>): void {
-  url.then(
-    (made) => {
-      URL.revokeObjectURL(made);
+/** Lets go of the address `reading` will make, once it is made. */
+function revoke(reading: Promise<Read>): void {
+  reading.then(
+    ({ url }) => {
+      URL.revokeObjectURL(url);
     },
     () => undefined,
   );
