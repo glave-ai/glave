@@ -18,16 +18,16 @@ use crate::payload::{
     MessageAdded, ModelChosen, ModelResponded, OrganizationMade, PasskeyAdded, PasskeyRemoved,
     PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated,
     ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, PushClaimed, PushKeyMade,
-    PushSubscribed, PushUnsubscribed, RoleSet, ScheduleCreated, ScheduleDeleted, ScheduleSkipped,
-    SearchSet, SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked, SignupFinished,
-    SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted,
-    ThreadForked, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
-    ToolCallRequested, ToolCallStarted, TrustDecided, TurnResult, TurnStarted, WorkspaceBound,
-    WorkspaceRemoved, ZoneSet, appearance, approval, awake, browser, catalog, certificate, chosen,
-    command, connection, connector, credential, credits, filters, fork, grouping, hook,
-    instructions, language, library, memory, message, model, passkey, people, plan, project,
-    provider, push, remembering, search, secrets, service, signup, standing, task, thread, tool,
-    trust, turn, workspace, zone,
+    PushSubscribed, PushUnsubscribed, RoleSet, ScheduleCreated, ScheduleDeleted, SchedulePaused,
+    ScheduleSkipped, SearchSet, SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked,
+    SignupFinished, SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
+    ThreadDeleted, ThreadForked, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
+    ToolCallRequested, ToolCallStarted, TrustDecided, TurnMade, TurnResult, TurnStarted,
+    WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance, approval, awake, browser, catalog,
+    certificate, chosen, command, connection, connector, credential, credits, filters, fork,
+    grouping, hook, instructions, language, library, made, memory, message, model, passkey, people,
+    plan, project, provider, push, remembering, search, secrets, service, signup, standing, task,
+    thread, tool, trust, turn, workspace, zone,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -59,6 +59,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (chosen::PERMISSIONS, 1),
     (chosen::EFFORT, 1),
     (turn::ENDED, 1),
+    (turn::ENDED, 2),
     (approval::REQUESTED, 1),
     (approval::DECIDED, 1),
     (service::ASKED, 1),
@@ -79,6 +80,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (task::DELETED, 1),
     (task::SKIPPED, 1),
     (task::SKIPPED, 2),
+    (task::PAUSED, 1),
     (memory::SAVED, 1),
     (memory::EDITED, 1),
     (memory::FORGOTTEN, 1),
@@ -121,6 +123,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (people::ROLE_SET, 1),
     (people::REMOVED, 1),
     (people::INVITE_CREATED, 1),
+    (people::INVITE_CREATED, 2),
     (people::INVITE_ACCEPTED, 1),
     (people::INVITE_REVOKED, 1),
     (people::MADE, 1),
@@ -140,6 +143,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (push::CLAIMED, 1),
     (library::KEPT, 1),
     (library::REMOVED, 1),
+    (made::TURN_MADE, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -185,6 +189,7 @@ pub enum Body {
     ScheduleCreated(ScheduleCreated),
     ScheduleDeleted(ScheduleDeleted),
     ScheduleSkipped(ScheduleSkipped),
+    SchedulePaused(SchedulePaused),
     MemorySaved(MemorySaved),
     MemoryEdited(MemoryEdited),
     MemoryForgotten(MemoryForgotten),
@@ -228,6 +233,7 @@ pub enum Body {
     PushClaimed(PushClaimed),
     LibraryKept(LibraryKept),
     LibraryRemoved(LibraryRemoved),
+    TurnMade(TurnMade),
     PersonJoined(PersonJoined),
     RoleSet(RoleSet),
     OrganizationMade(OrganizationMade),
@@ -343,6 +349,7 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         task::CREATED => task::decode_created(version, data).map(|r| r.map(Body::ScheduleCreated)),
         task::DELETED => task::decode_deleted(version, data).map(|r| r.map(Body::ScheduleDeleted)),
         task::SKIPPED => task::decode_skipped(version, data).map(|r| r.map(Body::ScheduleSkipped)),
+        task::PAUSED => task::decode_paused(version, data).map(|r| r.map(Body::SchedulePaused)),
         other => decode_others(other, version, data),
     };
     let body = match known {
@@ -407,6 +414,7 @@ impl Event {
             Body::ScheduleCreated(payload) => encode(header, payload),
             Body::ScheduleDeleted(payload) => encode(header, payload),
             Body::ScheduleSkipped(payload) => encode(header, payload),
+            Body::SchedulePaused(payload) => encode(header, payload),
             Body::MemorySaved(payload) => encode(header, payload),
             Body::MemoryEdited(payload) => encode(header, payload),
             Body::MemoryForgotten(payload) => encode(header, payload),
@@ -450,6 +458,7 @@ impl Event {
             Body::PushClaimed(payload) => encode(header, payload),
             Body::LibraryKept(payload) => encode(header, payload),
             Body::LibraryRemoved(payload) => encode(header, payload),
+            Body::TurnMade(payload) => encode(header, payload),
             Body::PersonJoined(payload) => encode(header, payload),
             Body::RoleSet(payload) => encode(header, payload),
             Body::OrganizationMade(payload) => encode(header, payload),
@@ -595,7 +604,7 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
 type Decoder = fn(&str, u32, &RawValue) -> Option<serde_json::Result<Body>>;
 
 /// The decoders of the ledgers whose events are not named one by one above.
-const LEDGERS: [Decoder; 7] = [
+const LEDGERS: [Decoder; 8] = [
     people::decode,
     signup::decode,
     credits::decode,
@@ -603,6 +612,7 @@ const LEDGERS: [Decoder; 7] = [
     secrets::decode,
     push::decode,
     library::decode,
+    made::decode,
 ];
 
 /// Parses a payload's bytes as one specific version of one type.
@@ -629,7 +639,11 @@ mod tests {
 
     fn line(kind: &str, v: u32, data: &str) -> String {
         let raw = encode(header(), &TurnResult::begun()).unwrap();
-        let ended = format!(r#""type":"turn.ended","v":1,"data":{}"#, raw.data.get());
+        let ended = format!(
+            r#""type":"turn.ended","v":{},"data":{}"#,
+            TurnResult::VERSION,
+            raw.data.get()
+        );
         raw.to_json()
             .unwrap()
             .replace(&ended, &format!(r#""type":"{kind}","v":{v},"data":{data}"#))
@@ -670,7 +684,7 @@ mod tests {
     #[test]
     fn newer_versions_of_known_types_pass_through() {
         let raw =
-            RawEvent::from_json(&line("turn.ended", 2, r#"{"outcome":"done","why":"x"}"#)).unwrap();
+            RawEvent::from_json(&line("turn.ended", 3, r#"{"outcome":"done","why":"x"}"#)).unwrap();
         assert!(matches!(decode(raw).unwrap().body, Body::Unknown(_)));
     }
 

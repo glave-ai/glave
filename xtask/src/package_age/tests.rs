@@ -77,6 +77,22 @@ fn a_version_under_seven_days_old_is_refused_with_when_it_may_come_in() {
     assert_eq!(verdict.early, 0);
 }
 
+/// An entry letting `name` `version` in early, published at `published`.
+fn entry(
+    registry: Registry,
+    name: &'static str,
+    version: &'static str,
+    published: &'static str,
+) -> Entry {
+    Entry {
+        registry,
+        name,
+        version,
+        published,
+        why: "RUSTSEC-2026-0001: a fix that can't wait",
+    }
+}
+
 #[test]
 fn an_allowed_version_comes_in_early_from_its_own_registry_only() {
     let new = [
@@ -90,14 +106,15 @@ fn an_allowed_version_comes_in_early_from_its_own_registry_only() {
         ),
         ((Registry::Npm, package("semver", "1.0.27")), hours_ago(3)),
     ]);
-    let allowed = [(
+    let allowed = [entry(
         Registry::Crates,
         "semver",
         "1.0.27",
-        "RUSTSEC-2026-0001: fixed here",
+        "2026-10-26T09:00:00Z",
     )];
     let verdict = judged(&new, &allowed, &published, now());
     assert_eq!(verdict.early, 1);
+    assert!(verdict.misdated.is_empty(), "{:?}", verdict.misdated);
     assert_eq!(verdict.too_new.len(), 1, "{:?}", verdict.too_new);
     assert!(
         verdict.too_new.iter().all(|problem| problem
@@ -108,36 +125,14 @@ fn an_allowed_version_comes_in_early_from_its_own_registry_only() {
 }
 
 #[test]
-fn an_allowed_version_old_enough_now_fails_until_its_entry_goes() {
-    let published = BTreeMap::from([
-        (
-            (Registry::Crates, package("tokio", "1.48.1")),
-            hours_ago(9 * 24),
-        ),
-        ((Registry::Npm, package("marked", "18.0.15")), hours_ago(24)),
-    ]);
+fn an_allowed_version_old_enough_by_its_own_date_fails_with_no_registry_asked() {
     let allowed = [
-        (
-            Registry::Crates,
-            "tokio",
-            "1.48.1",
-            "RUSTSEC-2026-0002: a fix that can't wait",
-        ),
-        (
-            Registry::Npm,
-            "marked",
-            "18.0.15",
-            "GHSA-xxxx: a fix that can't wait, still young",
-        ),
-        // Not dated: why is a problem of its own, said where it was asked.
-        (
-            Registry::Npm,
-            "gone",
-            "1.0.0",
-            "a version the registry no longer lists",
-        ),
+        entry(Registry::Crates, "tokio", "1.48.1", "2026-10-17T12:00:00Z"),
+        entry(Registry::Npm, "marked", "18.0.15", "2026-10-25T12:00:00Z"),
     ];
-    let verdict = judged(&[], &allowed, &published, now());
+    // Nothing new, so nothing is asked about and nothing is dated by a registry.
+    assert!(wanted(&[]).is_empty());
+    let verdict = judged(&[], &allowed, &BTreeMap::new(), now());
     assert_eq!(
         verdict.stale,
         ["tokio 1.48.1 from crates.io, published 9 days ago, at 2026-10-17 12:00 UTC"]
@@ -152,6 +147,48 @@ fn an_allowed_version_old_enough_now_fails_until_its_entry_goes() {
 }
 
 #[test]
+fn an_allowed_version_a_change_brings_in_must_say_the_time_its_registry_says() {
+    let new = [new(Registry::Crates, "lettre", "0.11.24", &["0.11.23"])];
+    let published = BTreeMap::from([(
+        (Registry::Crates, package("lettre", "0.11.24")),
+        "2026-10-25T16:58:40.930952Z".parse().unwrap(),
+    )]);
+    let right = [entry(
+        Registry::Crates,
+        "lettre",
+        "0.11.24",
+        "2026-10-25T16:58:40.930952Z",
+    )];
+    let verdict = judged(&new, &right, &published, now());
+    assert_eq!((verdict.early, verdict.misdated.len()), (1, 0));
+    let wrong = [
+        entry(
+            Registry::Crates,
+            "lettre",
+            "0.11.24",
+            "2026-10-25T00:00:00Z",
+        ),
+        entry(Registry::Crates, "gone", "1.0.0", "last Tuesday"),
+    ];
+    let verdict = judged(&new, &wrong, &published, now());
+    assert_eq!(
+        verdict.misdated,
+        [
+            "lettre 0.11.24: crates.io says it was published at 2026-10-25T16:58:40.930952Z, \
+             not 2026-10-25T00:00:00Z",
+            "gone 1.0.0: `last Tuesday` is not a time",
+        ]
+    );
+    assert_eq!(verdict.early, 1, "still let in early");
+    assert!(
+        verdict.refusal(&[]).unwrap().starts_with(&format!(
+            "{ALLOW_LIST} says the wrong time of publication for 2 versions:"
+        )),
+        "{verdict:?}"
+    );
+}
+
+#[test]
 fn a_refusal_says_what_is_wrong_and_what_to_do_and_a_pass_says_nothing() {
     assert_eq!(Verdict::default().refusal(&[]), None);
     let verdict = Verdict {
@@ -160,6 +197,7 @@ fn a_refusal_says_what_is_wrong_and_what_to_do_and_a_pass_says_nothing() {
             "a 1.0.0 from crates.io".to_owned(),
             "b 2.0.0 from crates.io".to_owned(),
         ],
+        misdated: vec![],
         early: 0,
     };
     let refusal = verdict
@@ -193,19 +231,13 @@ fn a_version_not_dated_is_passed_over_as_its_own_problem_says_why() {
 }
 
 #[test]
-fn every_version_new_or_allowed_is_asked_about_once_per_package() {
+fn only_versions_a_change_brings_in_are_asked_about_once_per_package() {
     let new = [
         new(Registry::Npm, "rxjs", "7.8.2", &[]),
         new(Registry::Npm, "rxjs", "8.0.0", &[]),
         new(Registry::Crates, "rxjs", "0.1.0", &[]),
     ];
-    let allowed = [(
-        Registry::Npm,
-        "rxjs",
-        "8.0.1",
-        "a fix that can't wait for its week",
-    )];
-    let wanted = wanted(&new, &allowed);
+    let wanted = wanted(&new);
     let versions = |registry, name: &str| {
         wanted
             .get(&(registry, name.to_owned()))
@@ -213,7 +245,7 @@ fn every_version_new_or_allowed_is_asked_about_once_per_package() {
     };
     assert_eq!(
         versions(Registry::Npm, "rxjs"),
-        Some(vec!["7.8.2", "8.0.0", "8.0.1"])
+        Some(vec!["7.8.2", "8.0.0"])
     );
     assert_eq!(versions(Registry::Crates, "rxjs"), Some(vec!["0.1.0"]));
     assert_eq!(wanted.len(), 2);

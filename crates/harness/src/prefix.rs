@@ -62,10 +62,12 @@ impl Prefix {
 }
 
 /// The note that opens `offer`'s turn's message, if anything changed since the model was told,
-/// with `also`, what else happened since that it is told in the same one note.
-pub(crate) fn news(offer: &ToolSet, also: Option<String>) -> Option<Part> {
+/// with `also`, what else happened since, and `reminder`, what whoever started the turn has it
+/// told, in the same one note.
+pub(crate) fn news(offer: &ToolSet, also: Option<String>, reminder: Option<&str>) -> Option<Part> {
     let told = offer.news.as_deref().map(|(text, _)| text.clone());
-    let notes: Vec<String> = told.into_iter().chain(also).collect();
+    let reminder = reminder.map(str::to_owned);
+    let notes: Vec<String> = told.into_iter().chain(also).chain(reminder).collect();
     (!notes.is_empty()).then(|| Part::Text {
         text: format!(
             "<system-reminder>\n{}\n</system-reminder>",
@@ -74,8 +76,10 @@ pub(crate) fn news(offer: &ToolSet, also: Option<String>) -> Option<Part> {
     })
 }
 
-/// Remembers that `thread`'s model was told what `offer`'s news says, once it is recorded.
+/// Remembers that `thread`'s model was told what `offer`'s news says, and its reminder, once
+/// they are recorded.
 pub(crate) fn heard(thread: &mut Thread, offer: &ToolSet) {
+    thread.reminder = None;
     if let (Prefixed::Made(prefix), Some((_, told))) = (&mut thread.prefix, offer.news.as_deref()) {
         prefix.told = told.clone();
     }

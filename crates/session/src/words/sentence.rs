@@ -455,6 +455,10 @@ sentences! {
         "{ $kept } schedules are kept, the most policy allows ([tasks] max_schedules = { $most }); delete one first",
     ScheduleNotKept = "schedule-not-kept" "the schedule was not kept",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
+    ScheduleNoChatToResume = "schedule-no-chat-to-resume"
+        "this schedule was made before schedules had chats of their own, so it can't run again: set it up again",
+    ScheduleChatArchived = "schedule-chat-archived"
+        "this schedule's chat is archived: unarchive the chat first, then resume the schedule",
     ScheduleNoChat = "schedule-no-chat"
         "Made before schedules had chats of their own, so it runs no more: set it up again to run it",
     RunRunning = "run-running" "Running",
@@ -468,6 +472,11 @@ sentences! {
     RunRefused { reason: String } = "run-refused"
         "Couldn't start: { $reason ->\n    [ARCHIVED] its chat is archived\n    [NO_THREAD] its chat is gone\n    [NOT_ALLOWED] it may not run here\n    [LIMIT] a limit was reached\n    [WORKSPACE] its chat's folder couldn't be opened\n    [NO_FOLDER] its project's folder isn't there anymore\n    [PROMPT_BLOCKED] a check set to run before each prompt stopped it\n    [NO_MODEL] its model isn't available here\n    [NO_PROVIDER] the model account it uses is gone\n    [PROVIDER] the model's provider failed\n    [NOT_AVAILABLE] the computer it works on can't run it now\n   *[other] something went wrong\n }",
     RunStarted = "run-started" "Started",
+    RunMissed = "run-missed" "Missed: it was paused at its time",
+    // Told to a schedule's run whose copy of its project was left as it was: `why` is
+    // `changed`, `diverged` or `failed`.
+    RunCopyLeft { why: String } = "run-copy-left"
+        "{ $why ->\n    [changed] This chat's copy of the project has changes of its own not yet committed, so glave left it as it was rather than bringing it up to the project's latest version.\n    [diverged] This chat's copy of the project has commits of its own, and the project has moved on since, so glave left it as it was rather than bringing it up to the project's latest version.\n   *[failed] glave couldn't bring this chat's copy of the project up to the project's latest version, so it may be behind.\n }",
     NoZone { zone: String } = "no-zone"
         "glave doesn't know the time zone \"{ $zone }\": name one as the world's time zone list does, such as Europe/Lisbon",
 
@@ -502,6 +511,23 @@ sentences! {
     // What replies drew on.
     Sources { pages: u64 } = "sources"
         "Sources: { $pages ->\n    [1] 1 page\n   *[other] { $pages } pages\n }",
+
+    // The files a thread made: where each is kept, or why not, and what was made in a line.
+    // `kind` is `document`, `spreadsheet`, `deck`, `pdf` or `other`.
+    KeptWithChat = "kept-with-chat" "Kept with this chat",
+    LeftTooLarge { megabytes: u64 } = "left-too-large"
+        "Not kept: larger than { $megabytes } MB, so it stays on the computer",
+    LeftSecret = "left-secret"
+        "Not kept: it holds one of your secrets, so it stays on the computer",
+    MadeLine { kind: String, name: String } = "made-line"
+        "Made { $kind ->\n    [document] a document\n    [spreadsheet] a spreadsheet\n    [deck] a deck\n    [pdf] a PDF\n   *[other] a file\n }: { $name }",
+    LeftUnchecked = "left-unchecked"
+        "Not kept: it unpacks too large to check for your secrets, so it stays on the computer",
+    // What the files a turn made leave out.
+    MadeMore { files: u64 } = "made-more"
+        "{ $files ->\n    [1] 1 more file was made than a chat keeps: it stays on the computer\n   *[other] { $files } more files were made than a chat keeps: they stay on the computer\n }",
+    MadeTooMany = "made-too-many"
+        "This folder has too many files to look over, so what was made isn't shown",
 
     // What a thread changed in files.
     ChangesLeftOut = "changes-left-out"
@@ -621,6 +647,8 @@ sentences! {
 
     // Notifications on the person's devices.
     NoPush = "no-push" "This server sends no notifications.",
+    PushNotReady = "push-not-ready"
+        "This server isn't ready to send notifications yet: try again in a moment.",
     PushServiceRefused = "push-service-refused"
         "this browser's notifications can't be turned on: glave pushes only to the browsers' own push services",
     PushKeysRefused = "push-keys-refused"

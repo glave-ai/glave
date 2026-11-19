@@ -173,12 +173,12 @@ methods! {
     /// Owner removes an Owner, and never the last.
     "person/remove" => PersonRemove { person: PrincipalId } -> [Done],
     /// Makes an invite to the organization giving `role`, good once and for 7 days: answered
-    /// with its code, this once, for a link (`<origin>/#invite=<code>`). Only for those whose
-    /// role permits inviting, and only an Owner invites an Owner.
+    /// with its code, this once, for a link (`<origin>/#invite=<code>`), unless it was emailed.
+    /// Only for those whose role permits inviting, and only an Owner invites an Owner.
     "invite/create" => InviteCreate {
         role: OrgRole,
-        /// Whom to email its link to, where the server sends email; else it is the caller's to
-        /// share. The address is not kept.
+        /// Whom to email its link to, where the server sends email: sent there alone, and its
+        /// code not answered. Without it, the link is the caller's to share.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         email: Option<String>,
     } -> [Invited],
@@ -330,6 +330,9 @@ methods! {
     /// changes with its own, read from the logs: each file with the lines added and taken out
     /// and each change, for the thread and for each turn that changed any.
     "thread/changes" => ThreadChanges { thread: ThreadId } -> [Changes],
+    /// The files a thread's turns made for the person, read from its log, by turn: each with
+    /// its kind, name and size, and whether it was kept.
+    "thread/files" => ThreadFiles { thread: ThreadId } -> [Files],
     /// A thread's turns in steps, read from its log: each run of tool calls with nothing said
     /// between them, its calls and what they did in a line, and which message is each turn's
     /// reply.
@@ -543,6 +546,9 @@ methods! {
     } -> [Schedule],
     /// The schedules of every project the caller owns.
     "schedule/list" => ScheduleList {} -> [Schedules],
+    /// Pauses a schedule (`paused`), so it starts no runs, or resumes it, its runs counting from
+    /// then, none for the time it was paused.
+    "schedule/pause" => SchedulePause { schedule: ScheduleId, paused: bool } -> [Schedule],
     "schedule/delete" => ScheduleDelete { schedule: ScheduleId } -> [Done],
     /// The projects the caller owns.
     "project/list" => ProjectList {
@@ -574,8 +580,9 @@ methods! {
         /// The folder's full path.
         path: String,
     } -> [Project],
-    /// Removes a project: its threads go to the archive, their history kept, and it is listed
-    /// no more until it is given a folder again. Only the person on this computer.
+    /// Removes a project: its schedules are deleted, its threads go to the archive, their
+    /// history kept, and it is listed no more until it is given a folder again. Only the person
+    /// on this computer.
     "project/remove" => ProjectRemove { project: ProjectId } -> [Done],
     /// The folders inside a folder on this computer, by name, to choose a project's folder
     /// from: the home folder when `path` is absent. Only the person on this computer.

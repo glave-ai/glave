@@ -40,7 +40,7 @@ use glave_ports::computer::{
     WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::secrets::without_secrets;
-use glave_ports::{BoxFuture, Cancellation};
+use glave_ports::{BoxFuture, Cancellation, NeverCancelled};
 use glave_process::{Owner, Processes};
 
 use background::Backgrounds;
@@ -52,7 +52,7 @@ use crate::disk::Largest;
 pub use git::ask_repository;
 pub use on_path::glave_on_path;
 pub(crate) use sandbox::CACHE_FOLDER;
-pub use sandbox::{sandbox_available, sandbox_helper};
+pub use sandbox::{SANDBOX_HELPER_FAILED, sandbox_available, sandbox_helper};
 use terminal::Terminals;
 pub use terminal::terminal_helper;
 
@@ -346,7 +346,7 @@ impl LocalComputers {
         self.background.room(workspace)?;
         let id = CommandId::from_uuid(new_id()?);
         let helper = self.helper.as_deref();
-        let spawned = command::spawn(&opened, command, helper, None).await?;
+        let spawned = command::spawn(&opened, command, helper, None, &NeverCancelled).await?;
         let limit = command.timeout_secs.map(Duration::from_secs);
         let named = (id, command.script.clone());
         let at = (opened.computer, workspace);

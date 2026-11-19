@@ -6,8 +6,11 @@
 //! What is new is what the lockfiles name that they didn't at the change's base
 //! (`crate::base`), and its registry says when it was published (`registry.rs`). A version
 //! from a path, the workspace or git has no registry to say, and is named and skipped. A
-//! security fix that can't wait is listed in `allowed.rs` with its reason, and its entry fails
-//! the check once the version is old enough, so the list doesn't rot. A registry's bad moment
+//! security fix that can't wait is listed in `allowed.rs` with its reason and when it was
+//! published, and its entry fails the check once the version is old enough, so the list
+//! doesn't rot. Only what a change brings in is asked about, so a registry's rate limit can't
+//! fail a change for a version it didn't touch; one it brings in that is listed must be listed
+//! with the time its registry says (#1566). A registry's bad moment
 //! is tried again a few times. When it still can't be reached, CI fails; elsewhere the check
 //! warns and passes, as CI runs it again.
 //!
@@ -58,6 +61,8 @@ struct Verdict {
     too_new: Vec<String>,
     /// Each version the allow-list lets in that is old enough now, whose entry can go.
     stale: Vec<String>,
+    /// Each entry whose time of publication is not a time, or not the one its registry says.
+    misdated: Vec<String>,
     /// How many new versions the allow-list lets in early.
     early: usize,
 }
@@ -101,6 +106,13 @@ impl Verdict {
                 self.stale.join("\n  ")
             ));
         }
+        if !self.misdated.is_empty() {
+            said.push(format!(
+                "{ALLOW_LIST} says the wrong time of publication for {}:\n  {}",
+                counted(self.misdated.len(), "version", "versions"),
+                self.misdated.join("\n  ")
+            ));
+        }
         (!said.is_empty()).then(|| said.join("\n"))
     }
 }
@@ -120,7 +132,7 @@ pub(crate) fn check() -> Result<(), String> {
     let mut registries = Registries::default();
     let mut published = BTreeMap::new();
     let mut undated = Vec::new();
-    for ((registry, name), versions) in wanted(&new, ALLOWED) {
+    for ((registry, name), versions) in wanted(&new) {
         match registries.published(registry, &name, &versions) {
             Ok(dates) => published.extend(dates.into_iter().map(|(version, at)| {
                 let package = Pinned {
@@ -186,32 +198,21 @@ fn brought_in(base: &Base) -> Result<BroughtIn, String> {
 }
 
 /// Each package to ask its registry about, with its versions: each version `new` brings in,
-/// and each `allowed` names, to see whether it is old enough now.
-fn wanted(new: &[New], allowed: &[Entry]) -> BTreeMap<(Registry, String), BTreeSet<String>> {
+/// and nothing else, so a run that brings in nothing asks no registry.
+fn wanted(new: &[New]) -> BTreeMap<(Registry, String), BTreeSet<String>> {
     let mut wanted: BTreeMap<_, BTreeSet<String>> = BTreeMap::new();
-    let added = new.iter().map(|new| {
-        let package = &new.added.package;
-        (
-            new.registry,
-            package.name.as_str(),
-            package.version.as_str(),
-        )
-    });
-    let allowed = allowed
-        .iter()
-        .map(|(registry, name, version, _)| (*registry, *name, *version));
-    for (registry, name, version) in added.chain(allowed) {
+    for New { registry, added } in new {
         wanted
-            .entry((registry, name.to_owned()))
+            .entry((*registry, added.package.name.clone()))
             .or_default()
-            .insert(version.to_owned());
+            .insert(added.package.version.clone());
     }
     wanted
 }
 
-/// The age rule at `now`, for the versions `new` brings in and those `allowed` lets in early,
-/// with `published` saying when each was published. One not dated is passed over: why it
-/// isn't is a problem of its own.
+/// The age rule at `now`, for the versions `new` brings in, with `published` saying when each
+/// was published, and those `allowed` lets in early, each by the time its entry says. One not
+/// dated is passed over: why it isn't is a problem of its own.
 fn judged(
     new: &[New],
     allowed: &[Entry],
@@ -220,8 +221,9 @@ fn judged(
 ) -> Verdict {
     let mut verdict = Verdict::default();
     let is_allowed = |registry: Registry, package: &Pinned| {
-        allowed.iter().any(|(r, name, version, _)| {
-            (*r, *name, *version) == (registry, &package.name, &package.version)
+        allowed.iter().any(|entry| {
+            (entry.registry, entry.name, entry.version)
+                == (registry, &package.name, &package.version)
         })
     };
     for New { registry, added } in new {
@@ -251,24 +253,53 @@ fn judged(
             when(at.checked_add(OLD_ENOUGH).unwrap_or(at)),
         ));
     }
-    for (registry, name, version, _) in allowed {
-        let package = Pinned {
-            name: (*name).to_owned(),
-            version: (*version).to_owned(),
-        };
-        let Some(&at) = published.get(&(*registry, package)) else {
-            continue;
-        };
-        if now.duration_since(at) >= OLD_ENOUGH {
-            verdict.stale.push(format!(
-                "{name} {version} from {}, published {}, at {}",
-                registry.name(),
-                ago(now.duration_since(at)),
-                when(at),
-            ));
-        }
+    for entry in allowed {
+        stale_or_misdated(entry, published, now, &mut verdict);
     }
     verdict
+}
+
+/// Whether `entry` is old enough now by the time it says, which asks no registry, and, when
+/// `published` dates its version, whether that time is the registry's.
+fn stale_or_misdated(
+    entry: &Entry,
+    published: &BTreeMap<(Registry, Pinned), Timestamp>,
+    now: Timestamp,
+    verdict: &mut Verdict,
+) {
+    let Entry {
+        registry,
+        name,
+        version,
+        published: said,
+        ..
+    } = *entry;
+    let Ok(at) = said.parse::<Timestamp>() else {
+        verdict
+            .misdated
+            .push(format!("{name} {version}: `{said}` is not a time"));
+        return;
+    };
+    let package = Pinned {
+        name: name.to_owned(),
+        version: version.to_owned(),
+    };
+    if let Some(&dated) = published.get(&(registry, package))
+        && dated != at
+    {
+        verdict.misdated.push(format!(
+            "{name} {version}: {} says it was published at {dated}, not {said}",
+            registry.name()
+        ));
+    }
+    if now.duration_since(at) >= OLD_ENOUGH {
+        verdict.stale.push(format!(
+            "{name} {version} from {}, published {}, at {}",
+            registry.name(),
+            ago(now.duration_since(at)),
+            when(at),
+        ));
+    }
 }
 
 /// Says that `why`, a registry not answering, kept the ages from being checked: a failure on

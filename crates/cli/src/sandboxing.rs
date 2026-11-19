@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use glave_computer::LocalComputers;
 use glave_config::policy::Choices;
 use glave_harness::{Permissions, Workspace};
-use glave_ports::computer::{Sandbox, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel, SandboxNetwork};
 use glave_process::Processes;
 
 use crate::setup::Setup;
@@ -52,7 +52,7 @@ pub(crate) async fn workspace(
             setup.sandbox = Some(project);
             return Ok(workspace);
         }
-        Err(error) => error.to_string(),
+        Err(error) => plainly(&error),
     };
     // Where people have computers of their own, their commands run there, in its sandbox.
     let elsewhere = setup.choices.computers.is_some();
@@ -86,6 +86,23 @@ pub(crate) async fn workspace(
         setup.said.warn(&unsandboxed_notice(&why));
     }
     Ok(workspace)
+}
+
+/// Why the sandbox cannot run here, as the person is told: what to do where there is something
+/// to do (install bubblewrap, remove what a project protects through a link); else, for a
+/// sandbox that was tried and did not start a command, only that, what it said going to the log
+/// (#1533).
+fn plainly(error: &ComputerError) -> String {
+    match error {
+        ComputerError::Failed(said) => {
+            tracing::warn!(
+                said,
+                "the sandbox could not start a command at glave's start"
+            );
+            "it could not start a command".to_owned()
+        }
+        other => other.to_string(),
+    }
 }
 
 /// The workspace in `folder` on this computer, without a sandbox yet, its commands asking for

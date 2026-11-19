@@ -290,6 +290,7 @@ where
             Request::ThreadTurns { thread, before } => boxed(|| self.turns(thread, before)).await,
             Request::ThreadSources { thread } => boxed(|| self.sources(thread)).await,
             Request::ThreadChanges { thread } => boxed(|| self.changes(thread)).await,
+            Request::ThreadFiles { thread } => boxed(|| self.made_files(thread)).await,
             Request::ThreadSteps { thread } => boxed(|| self.steps(thread)).await,
             Request::ThreadPlan { thread } => boxed(|| self.plan(thread)).await,
             Request::PlanEdit { thread, steps } => {
@@ -351,6 +352,7 @@ where
                     },
                     queue: true,
                     unattended,
+                    scheduled: None,
                 };
                 let sent = boxed(|| self.start_turn_with(traced, thread, message, key)).await;
                 return match sent {
@@ -485,6 +487,9 @@ where
             Request::ScheduleList {} => {
                 let listed = boxed(|| self.list_schedules(caller)).await;
                 listed.map(|schedules| Reply::Schedules { schedules })
+            }
+            Request::SchedulePause { schedule, paused } => {
+                boxed(|| self.pause_schedule(caller, schedule, paused)).await
             }
             Request::ScheduleDelete { schedule } => {
                 boxed(|| self.delete_schedule(caller, schedule)).await

@@ -16,7 +16,7 @@ use super::{
     Grouping, InviteInfo, LibraryItem, Logo, ModelInfo, OrganizationInfo, OrganizationLook,
     PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, PushInfo,
     ReplySources, ScheduleInfo, SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay,
-    SpaceCredits, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, WatchEnd,
+    SpaceCredits, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, TurnFiles, WatchEnd,
 };
 
 mod listening;
@@ -572,6 +572,9 @@ pub enum Reply {
     /// What a thread changed in files.
     #[schemars(title = "Changes")]
     Changes { changes: ThreadChanges },
+    /// The files a thread's turns made for the person.
+    #[schemars(title = "Files")]
+    Files { made: Vec<TurnFiles> },
     /// A thread's turns in steps.
     #[schemars(title = "Steps")]
     Steps { steps: ThreadSteps },
@@ -581,12 +584,18 @@ pub enum Reply {
     /// A person, as they are now.
     #[schemars(title = "Person")]
     Person { person: PersonInfo },
-    /// An invite just made, and its code, sent this once.
+    /// An invite just made, and its code, sent this once when it is the caller's to share.
     #[schemars(title = "Invited")]
     Invited {
         invite: InviteInfo,
-        #[serde(serialize_with = "glave_event::serialize_exposed")]
-        code: Secret,
+        /// None when its link was emailed to its address alone (`invite.email`): sent there,
+        /// never back to whoever made it, so whoever opens it holds that mailbox.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            serialize_with = "glave_event::serialize_exposed_some"
+        )]
+        code: Option<Secret>,
     },
     /// A sign-up link whoever runs the server made, sent this once, and when it stops working.
     #[schemars(title = "SignupLinked")]

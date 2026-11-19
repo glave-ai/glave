@@ -4,7 +4,7 @@
 //! thread idle, so a message lands either in the running work or in a turn of its own after
 //! it, never in between.
 
-use glave_event::{EventId, ThreadId};
+use glave_event::{At, EventId, ThreadId};
 use glave_harness::{Inbox, NotQueued, Queued, Said};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
@@ -26,6 +26,9 @@ pub(crate) struct Message<'a> {
     pub(crate) queue: bool,
     /// Whether no one answers the turn it starts.
     pub(crate) unattended: bool,
+    /// When the schedule's run it starts was due, when it starts one: its chat's copy of the
+    /// project is brought up to date first.
+    pub(crate) scheduled: Option<At>,
 }
 
 /// What sending a message did, for whoever follows the turns they start: it started a turn,
@@ -66,7 +69,8 @@ where
     /// Queues what `caller` `said` to the work running in `thread`, when that work takes
     /// messages. A message chooses no model or mode: those are for a turn to start
     /// with. Refused when as many messages wait as a turn takes (`-32028`), or while work that
-    /// takes none runs (`-32002`).
+    /// takes none runs (`-32002`), but for work that only manages the thread, such as a look
+    /// over what a command made once it ended, which it starts a turn after.
     pub(crate) fn queue(
         &self,
         caller: &Caller,
@@ -86,11 +90,15 @@ where
             cancel,
             finished,
             inbox,
+            manages,
             ..
         }) = threads.get(&thread)
         else {
             return Ok(Queue::Idle);
         };
+        if *manages {
+            return Ok(Queue::Ending(finished.clone()));
+        }
         let Some(inbox) = inbox else {
             return Err(busy(thread));
         };

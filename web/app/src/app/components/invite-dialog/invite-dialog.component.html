@@ -46,12 +46,14 @@
 <glz-dialog testId="invite-ready" [heading]="copy.ready" [(open)]="showing">
   <div class="glz-stack glz-gap-4">
     <p data-testid="invite-told">{{ told() }}</p>
-    <div class="link">
-      <glz-form-field [label]="copy.link">
-        <input glzInput readonly data-testid="invite-link" [value]="link()" />
-      </glz-form-field>
-      <glz-copy-button testId="invite-copy" [label]="copy.copyLink" [text]="link()" />
-    </div>
+    @if (link(); as link) {
+      <div class="link">
+        <glz-form-field [label]="copy.link">
+          <input glzInput readonly data-testid="invite-link" [value]="link" />
+        </glz-form-field>
+        <glz-copy-button testId="invite-copy" [label]="copy.copyLink" [text]="link" />
+      </div>
+    }
   </div>
   <div glzDialogActions class="glz-row glz-gap-2">
     <button glzButton variant="primary" data-testid="invite-done" (click)="done()">
