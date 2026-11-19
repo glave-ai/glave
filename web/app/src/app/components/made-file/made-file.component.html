@@ -1,10 +1,22 @@
-<div class="file" data-testid="made-file">
+<div class="file" data-testid="made-file" [class.selected]="selected()">
   <glz-icon class="mark" [icon]="mark()" />
   <span class="text">
     <span class="title" dir="auto" data-testid="made-file-title">{{ file().name }}</span>
     <span class="line" data-testid="made-file-line" [class.reason]="reason()">{{ line() }}</span>
   </span>
   <span class="actions">
+    @if (opens()) {
+      <button
+        glzButton
+        size="sm"
+        class="open"
+        data-testid="made-file-open"
+        [attr.aria-label]="openLabel()"
+        (click)="open()"
+      >
+        {{ copy.open }}
+      </button>
+    }
     @if (kept()) {
       <button
         glzIconButton

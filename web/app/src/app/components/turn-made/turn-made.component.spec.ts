@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { MadeFile } from '@glave/client';
@@ -5,6 +6,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 import { settle } from '@glave/glaze/testing/settle';
 
 import { type MadeShown, NO_MADE, madeCards } from '../../lib/made';
+import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { TurnMadeComponent } from './turn-made.component';
@@ -24,8 +26,15 @@ const PLAN: MadeFile = {
 
 /** What a turn shows of the files it made, drawn. */
 async function render(made: MadeShown): Promise<HTMLElement> {
+  // The chat's panel as the cards see it: nothing open in it.
+  const panel = { file: signal(null), visible: signal(false), openFile: () => undefined };
   TestBed.configureTestingModule({
-    providers: [provideRouter([]), ...provideFakeSession(new FakeSession()), ThreadService],
+    providers: [
+      provideRouter([]),
+      ...provideFakeSession(new FakeSession()),
+      ThreadService,
+      { provide: ThreadPanelService, useValue: panel },
+    ],
   });
   const fixture = TestBed.createComponent(TurnMadeComponent);
   fixture.componentRef.setInput('made', made);
