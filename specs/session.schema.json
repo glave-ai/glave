@@ -3254,6 +3254,10 @@
         "name": {
           "description": "What the person knows it as: \"Safari on iPhone\".",
           "type": "string"
+        },
+        "renew": {
+          "description": "The browser that asked should subscribe again now (`push/subscribe`), which keeps it 30\ndays more: less than half of that is left. A browser not subscribed again in time is\nforgotten.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -3565,6 +3569,11 @@
           "const": "started",
           "description": "Started; how it ended is no longer kept here.",
           "type": "string"
+        },
+        {
+          "const": "missed",
+          "description": "A one-off whose time came while it was paused: it runs no more.",
+          "type": "string"
         }
       ]
     },
@@ -3619,7 +3628,7 @@
               "type": "null"
             }
           ],
-          "description": "When it runs next; absent once a one-off has run, and when it runs no more."
+          "description": "When it runs next; absent while it is paused, once a one-off has run, and when it runs\nno more."
         },
         "note": {
           "description": "What the person should know of it beyond that, in the server's words, such as that it\nruns no more.",
@@ -3627,6 +3636,10 @@
             "string",
             "null"
           ]
+        },
+        "paused": {
+          "description": "Whether it is paused: no runs start until it is resumed.",
+          "type": "boolean"
         },
         "project": {
           "$ref": "#/$defs/ProjectId",
@@ -3670,7 +3683,8 @@
         "repeats",
         "prompt",
         "budget",
-        "created_at"
+        "created_at",
+        "paused"
       ],
       "type": "object"
     },
@@ -6815,7 +6829,7 @@
       "params": {
         "properties": {
           "email": {
-            "description": "Whom to email its link to, where the server sends email; else it is the caller's to\nshare. The address is not kept.",
+            "description": "Whom to email its link to, where the server sends email: sent there alone, and its\ncode not answered. Without it, the link is the caller's to share.",
             "type": [
               "string",
               "null"
@@ -6831,18 +6845,25 @@
         "type": "object"
       },
       "result": {
-        "description": "An invite just made, and its code, sent this once.",
+        "description": "An invite just made, and its code, sent this once when it is the caller's to share.",
         "properties": {
           "code": {
-            "$ref": "#/$defs/Secret"
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Secret"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None when its link was emailed to its address alone (`invite.email`): sent there,\nnever back to whoever made it, so whoever opens it holds that mailbox."
           },
           "invite": {
             "$ref": "#/$defs/InviteInfo"
           }
         },
         "required": [
-          "invite",
-          "code"
+          "invite"
         ],
         "type": "object"
       },
@@ -8494,6 +8515,35 @@
         },
         "required": [
           "schedules"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "schedule/pause": {
+      "params": {
+        "properties": {
+          "paused": {
+            "type": "boolean"
+          },
+          "schedule": {
+            "$ref": "#/$defs/ScheduleId"
+          }
+        },
+        "required": [
+          "schedule",
+          "paused"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "schedule": {
+            "$ref": "#/$defs/ScheduleInfo"
+          }
+        },
+        "required": [
+          "schedule"
         ],
         "type": "object"
       },

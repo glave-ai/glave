@@ -1,6 +1,7 @@
-//! What every store of the directory must do: link an identity to one person for good, find
-//! it again, keep identities apart, and keep each person's organizations in the order they
-//! joined, once each, apart from anyone else's.
+//! What every store of the directory must do: link an identity to one person, letting a
+//! person's identities go only while they belong to no organization, find it again, keep
+//! identities apart, and keep each person's organizations in the order they joined, once each,
+//! apart from anyone else's.
 
 use glave_event::PrincipalId;
 
@@ -25,8 +26,61 @@ fn org(n: u64) -> OrgId {
 /// Every [`Directory`] must link identities once and keep memberships in order.
 pub async fn directory<D: Directory + ?Sized>(directory: &D) -> Verdict {
     linking(directory).await?;
+    unlinking(directory).await?;
     joining(directory).await?;
     racing(directory).await
+}
+
+/// A person's identities, every one an email address today, are unlinked only while they
+/// belong to no organization; then anyone may link them. Once another kind is linked,
+/// [`Directory::unlink_email_if_alone`] says this case must show it is never unlinked.
+async fn unlinking<D: Directory + ?Sized>(directory: &D) -> Verdict {
+    let (grace, linus) = (person(5)?, person(6)?);
+    let (hers, also, his) = (key(5)?, key(6)?, key(7)?);
+    for (email, whose) in [(&hers, grace), (&also, grace), (&his, linus)] {
+        directory
+            .link(email, whose)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    directory
+        .join(grace, org(5))
+        .await
+        .map_err(|e| e.to_string())?;
+    directory
+        .unlink_email_if_alone(grace)
+        .await
+        .map_err(|e| e.to_string())?;
+    let kept = directory.find(&hers).await.map_err(|e| e.to_string())?;
+    ensure(
+        kept == Some(grace),
+        "someone still in an organization keeps their emails",
+    )?;
+    directory
+        .leave(grace, org(5))
+        .await
+        .map_err(|e| e.to_string())?;
+    directory
+        .unlink_email_if_alone(grace)
+        .await
+        .map_err(|e| e.to_string())?;
+    for email in [&hers, &also] {
+        let freed = directory.find(email).await.map_err(|e| e.to_string())?;
+        ensure(
+            freed.is_none(),
+            "the emails of someone in no organization lead to no one",
+        )?;
+    }
+    let theirs = directory.find(&his).await.map_err(|e| e.to_string())?;
+    ensure(theirs == Some(linus), "another person's email stays theirs")?;
+    let relinked = directory
+        .link(&hers, linus)
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        relinked == linus,
+        "a freed email may be linked to someone else",
+    )
 }
 
 async fn linking<D: Directory + ?Sized>(directory: &D) -> Verdict {

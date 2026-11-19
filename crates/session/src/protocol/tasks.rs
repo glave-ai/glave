@@ -78,10 +78,13 @@ pub struct ScheduleInfo {
     pub prompt: String,
     pub budget: u64,
     pub created_at: At,
+    /// Whether it is paused: no runs start until it is resumed.
+    pub paused: bool,
     /// Its latest run, once one was due.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last: Option<LastRun>,
-    /// When it runs next; absent once a one-off has run, and when it runs no more.
+    /// When it runs next; absent while it is paused, once a one-off has run, and when it runs
+    /// no more.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<At>,
     /// What the person should know of it beyond that, in the server's words, such as that it
@@ -116,4 +119,6 @@ pub enum RunStatus {
     Refused,
     /// Started; how it ended is no longer kept here.
     Started,
+    /// A one-off whose time came while it was paused: it runs no more.
+    Missed,
 }

@@ -7,14 +7,17 @@ import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { SERVER } from '../../testing/fixtures';
 import { InviteDialogComponent } from './invite-dialog.component';
 
-const MADE: InviteInfo = {
+/** An invite whose link is the inviter's to send. */
+const SHARED: InviteInfo = {
   id: 'i1',
   role: 'admin',
   by: { kind: 'person', id: 'p-dana' },
   made: '2026-10-29T09:00:00.000Z',
   expires: '2026-11-05T09:00:00.000Z',
-  email: 'alex@example.com',
 };
+
+/** An invite glave emailed to its address alone. */
+const EMAILED: InviteInfo = { ...SHARED, email: 'alex@example.com' };
 
 /** What the server says of an organization it shows its Owner, the caller. */
 const SHOWN = { exists: { organization: true }, role: 'owner' } as const;
@@ -49,8 +52,8 @@ async function opened(fake: FakeSession): Promise<ComponentFixture<InviteDialogC
 }
 
 describe('InviteDialogComponent', () => {
-  it('makes an invite for an email and role, then shows its link and that it was emailed', async () => {
-    const fake = fakeServer().answer('invite/create', { invite: MADE, code: 'c0de' });
+  it('makes an invite for an email and role, then says it was sent there, showing no link', async () => {
+    const fake = fakeServer().answer('invite/create', { invite: EMAILED });
     const fixture = await opened(fake);
     await expectAccessible(document.body);
     const email = byTestId<HTMLInputElement>('invite-email');
@@ -66,22 +69,27 @@ describe('InviteDialogComponent', () => {
     byTestId('invite-make')?.click();
     await settle(fixture);
     expect(fake.paramsOf('invite/create')).toEqual([{ role: 'admin', email: 'alex@example.com' }]);
-    expect(byTestId<HTMLInputElement>('invite-link')?.value).toBe(
-      'https://glave.example/#invite=c0de',
+    expect(byTestId('invite-told')?.textContent).toContain(
+      'We sent the invite to alex@example.com',
     );
-    expect(byTestId('invite-told')?.textContent).toContain('We emailed it to alex@example.com');
     expect(byTestId('invite-told')?.textContent).toContain('for 7 days');
+    expect(byTestId('invite-link')).toBeNull();
+    expect(byTestId('invite-copy')).toBeNull();
     expect(fake.paramsOf('server/discover')).toHaveLength(2);
     await expectAccessible(document.body);
   });
 
-  it('asks nothing of a role while no organization is shown yet, and invites a Member', async () => {
-    const fake = fakeServer(true).answer('invite/create', { invite: MADE, code: 'c0de' });
+  it('asks nothing of a role while no organization is shown yet, invites a Member and shows the link to send', async () => {
+    const fake = fakeServer(true).answer('invite/create', { invite: SHARED, code: 'c0de' });
     const fixture = await opened(fake);
     expect(byTestId('invite-role')).toBeNull();
     byTestId('invite-make')?.click();
     await settle(fixture);
     expect(fake.paramsOf('invite/create')).toEqual([{ role: 'member' }]);
+    expect(byTestId<HTMLInputElement>('invite-link')?.value).toBe(
+      'https://glave.example/#invite=c0de',
+    );
+    expect(byTestId('invite-told')?.textContent).toContain('Send the link yourself');
     await expectAccessible(document.body);
   });
 

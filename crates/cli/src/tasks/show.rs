@@ -38,9 +38,11 @@ pub(super) fn schedule_line(schedule: &ScheduleInfo) -> String {
         When::Cron(cron) => format!("{} (cron {cron:?}, {})", schedule.repeats, schedule.zone),
         When::At(at) => format!("once at {at}"),
     };
-    let next = schedule
-        .next
-        .map_or_else(|| "no more runs".to_owned(), |next| format!("next {next}"));
+    let next = match (schedule.paused, schedule.next) {
+        (true, _) => "paused".to_owned(),
+        (false, Some(next)) => format!("next {next}"),
+        (false, None) => "no more runs".to_owned(),
+    };
     let last = (schedule.last.as_ref())
         .map(|last| format!("  last {}: {}", last.due, last.said))
         .unwrap_or_default();
