@@ -43,8 +43,7 @@ jobs:
       matrix:
         include:
           - libc: glibc
-            # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           # On the runner the release builds x86-64 Linux on (dist's plan), so with its C
           # compiler and musl, as budgets.yml builds it too.
           - libc: musl
