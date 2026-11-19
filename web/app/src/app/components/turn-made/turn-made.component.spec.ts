@@ -73,4 +73,65 @@ describe('TurnMadeComponent', () => {
     const root = await render({ ...NO_MADE, files: madeCards([PLAN]) });
     expect(root.querySelector('[data-testid="turn-made-note"]')).toBeNull();
   });
+
+  it('shows 3 files whole, with no row to fold them', async () => {
+    const root = await render({ ...NO_MADE, files: madeCards(plans(3)) });
+    expect(root.querySelectorAll('[data-testid="made-file"]')).toHaveLength(3);
+    expect(root.querySelector('[data-testid="turn-made-fold"]')).toBeNull();
+  });
+
+  it('shows the first 3 of 4 or more, then a row that unfolds the rest and folds them back', async () => {
+    const root = await render({ ...NO_MADE, files: madeCards(plans(5)) });
+    const fold = root.querySelector<HTMLButtonElement>('[data-testid="turn-made-fold"]');
+    const titles = (): readonly string[] =>
+      [...root.querySelectorAll('[data-testid="made-file-title"]')].map(
+        (title) => title.textContent,
+      );
+    expect(titles()).toEqual(['Plan 1', 'Plan 2', 'Plan 3']);
+    expect(fold?.textContent.trim()).toBe('2 more files');
+    expect(fold?.getAttribute('aria-expanded')).toBe('false');
+    await expectAccessible(root);
+
+    fold?.click();
+    await settle();
+    expect(titles()).toEqual(['Plan 1', 'Plan 2', 'Plan 3', 'Plan 4', 'Plan 5']);
+    expect(fold?.textContent.trim()).toBe('Show fewer');
+    expect(fold?.getAttribute('aria-expanded')).toBe('true');
+    await expectAccessible(root);
+
+    fold?.click();
+    await settle();
+    expect(titles()).toEqual(['Plan 1', 'Plan 2', 'Plan 3']);
+    expect(fold?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('says one more file in the singular, and counts the cards not described yet', async () => {
+    const [first, ...rest] = plans(4);
+    const root = await render({
+      ...NO_MADE,
+      files: madeCards(first === undefined ? [] : [first]),
+      room: madeCards(rest),
+    });
+    const fold = root.querySelector('[data-testid="turn-made-fold"]');
+    expect(fold?.textContent.trim()).toBe('1 more file');
+    expect(root.querySelectorAll('app-made-file')).toHaveLength(3);
+  });
+
+  it('keeps the row’s room, unseen, until the server describes a file', async () => {
+    const root = await render({ ...NO_MADE, room: madeCards(plans(4)) });
+    const fold = root.querySelector('[data-testid="turn-made-fold"]');
+    expect(fold?.classList.contains('room')).toBe(true);
+  });
 });
+
+/** `count` PDFs a turn made, each named for its place: Plan 1, Plan 2, … */
+function plans(count: number): MadeFile[] {
+  return Array.from({ length: count }, (_, at) => ({
+    ...PLAN,
+    name: `Plan ${String(at + 1)}`,
+    file_name: `plan-${String(at + 1)}.pdf`,
+    sha256: String(at + 1)
+      .repeat(64)
+      .slice(0, 64),
+  }));
+}
