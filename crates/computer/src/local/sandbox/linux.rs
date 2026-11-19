@@ -90,11 +90,7 @@ impl Enforcer {
             cache: reached.cache.map(Path::to_path_buf),
             glave_on_path: resolved(reached.glave_on_path).await,
             runtime: resolved(Some(runtime_folder().as_path())).await,
-            daemons: mounts::daemons(
-                Some(&runtime_folder()),
-                rustix::process::getuid().as_raw(),
-                ssh_agent().as_deref(),
-            ),
+            daemons: mounts::daemons(Some(&runtime_folder()), ssh_agent().as_deref()),
             git_common,
         };
         let temps = Temps {

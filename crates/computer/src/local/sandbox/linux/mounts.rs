@@ -18,7 +18,7 @@
 //! every namespace's mount on it, leaving that command to reach what listens there next.
 
 use std::collections::HashMap;
-use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -318,32 +318,46 @@ impl Protect<'_> {
 }
 
 /// Where the person's daemons listen, which a command that may make Unix sockets, as one with
-/// the network may under bubblewrap, could otherwise reach (`seccomp.rs`): [`DAEMONS`], tmux's
-/// servers (`/tmp/tmux-<uid>`), Zellij's sessions and Emacs's server where they are kept in
-/// `/tmp` (each runs what it is sent outside the sandbox), the ssh agent `agent` names, and
-/// the user's runtime folder whole, which holds the session bus (through which systemd starts
+/// the network may under bubblewrap, could otherwise reach (`seccomp.rs`): [`DAEMONS`], the
+/// ssh agent `agent` names, and the user's runtime folder whole, which holds the session bus (through which systemd starts
 /// anything outside the sandbox), the keyring's and gpg's agents, rootless Docker's and
 /// Podman's sockets and editors' servers. Hidden whether the network is on or not: one view of
-/// the machine. What listens in `/tmp` under a name made as it starts is found before each
-/// command instead (`in_tmp.rs`).
-pub(super) fn daemons(runtime: Option<&Path>, uid: u32, agent: Option<&Path>) -> Vec<PathBuf> {
+/// the machine. The sessions' folders in `/tmp` are [`sessions`]; what listens in `/tmp` under a
+/// name made as it starts is found before each command instead (`in_tmp.rs`).
+pub(super) fn daemons(runtime: Option<&Path>, agent: Option<&Path>) -> Vec<PathBuf> {
     DAEMONS
         .iter()
         .map(PathBuf::from)
-        .chain([
-            PathBuf::from(format!("/tmp/tmux-{uid}")),
-            PathBuf::from(format!("/tmp/zellij-{uid}")),
-            PathBuf::from(format!("/tmp/emacs{uid}")),
-        ])
         .chain(agent.map(Path::to_path_buf))
         .chain(runtime.map(Path::to_path_buf))
         .collect()
 }
 
-/// The real paths of the daemons' places that exist, and of what listens in `/tmp` for the
-/// person's other programs just now (`in_tmp.rs`), except one that holds a place commands
-/// use: the workspace, the home folder, `/tmp` or the sandbox's own folders. An error saying
-/// why where more listens in `/tmp` than the mounts hide.
+/// The folders in `tmp` where the user `uid`'s tmux servers, Zellij sessions and Emacs server
+/// listen, by names fixed ahead: each runs what it is sent outside the sandbox.
+pub(super) fn sessions(tmp: &Path, uid: u32) -> [PathBuf; 3] {
+    [
+        format!("tmux-{uid}"),
+        format!("zellij-{uid}"),
+        format!("emacs{uid}"),
+    ]
+    .map(|name| tmp.join(name))
+}
+
+/// `folder`, made first if it is not there, private, as tmux, Zellij and Emacs make their own
+/// and start in: hidden only where it is, a session's folder missing when a command's mounts
+/// are planned would show the command the server the person starts there while it runs (#1572).
+/// Blocking.
+fn made_private(folder: PathBuf) -> PathBuf {
+    let _ = std::fs::DirBuilder::new().mode(0o700).create(&folder);
+    folder
+}
+
+/// The real paths of the daemons' places that exist, the sessions' folders in the shared `/tmp`
+/// (made if missing), and what listens in `/tmp` for the person's other programs just now
+/// (`in_tmp.rs`), except one that holds a place commands use: the workspace, the home folder,
+/// `/tmp` or the sandbox's own folders. An error saying why where more listens in `/tmp` than
+/// the mounts hide.
 fn daemon_places(layout: &Layout) -> Result<Vec<PathBuf>, String> {
     let used: Vec<&Path> = [&layout.root, &layout.base]
         .into_iter()
@@ -353,11 +367,16 @@ fn daemon_places(layout: &Layout) -> Result<Vec<PathBuf>, String> {
         .chain(layout.git_common.iter())
         .map(PathBuf::as_path)
         .collect();
-    let in_tmp = listeners(Path::new("/tmp"), rustix::process::getuid().as_raw())?;
+    let uid = rustix::process::getuid().as_raw();
+    let in_tmp = listeners(Path::new("/tmp"), uid)?;
+    let sessions = (layout.shared_tmp.iter())
+        .flat_map(|tmp| sessions(tmp, uid))
+        .map(made_private);
     Ok(layout
         .daemons
         .iter()
         .cloned()
+        .chain(sessions)
         .chain(in_tmp)
         .filter_map(|place| std::fs::canonicalize(place).ok())
         .filter(|real| !used.iter().any(|used| used.starts_with(real)))
@@ -414,4 +433,53 @@ fn hide(path: &Path, mounts: &mut Vec<Mount>) -> Option<PathBuf> {
     mounts.push(Mount::HiddenFolder(path.to_owned()));
     // No permission bit for its group or others.
     (meta.mode().trailing_zeros() >= 6).then(|| path.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    use glave_ports::testing::TempDir;
+
+    use super::*;
+
+    /// A session's folder missing from the shared `/tmp` when a command's mounts are planned is
+    /// made, private as tmux makes its own, and hidden like one that was there: a server the
+    /// person starts in it while the command runs is out of the command's reach (#1572).
+    #[test]
+    fn a_session_s_folder_missing_from_tmp_is_made_private_and_hidden() {
+        let dir = TempDir::new("sessions").unwrap();
+        let real = std::fs::canonicalize(dir.path()).unwrap();
+        for folder in ["tmp", "project", "temp"] {
+            std::fs::create_dir(real.join(folder)).unwrap();
+        }
+        let tmp = real.join("tmp");
+        let layout = Layout {
+            root: real.join("project"),
+            level: SandboxLevel::Project,
+            network: true,
+            base: real.join("base"),
+            empty_file: real.join("base/empty"),
+            empty_folder: real.join("base/empty.d"),
+            shared_tmp: Some(tmp.clone()),
+            home: None,
+            also_hidden: Vec::new(),
+            glave_home: None,
+            cache: None,
+            glave_on_path: None,
+            runtime: None,
+            daemons: Vec::new(),
+            git_common: None,
+        };
+        let stand_ins = StandIns::default();
+        let (mounts, _held) = plan(&layout, &real.join("temp"), &stand_ins).unwrap();
+        let uid = rustix::process::getuid().as_raw();
+        for folder in sessions(&tmp, uid) {
+            let shown = folder.display();
+            let mode = std::fs::metadata(&folder).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700, "{shown}");
+            let hidden = Mount::HiddenFolder(folder.clone());
+            assert!(mounts.contains(&hidden), "{shown}: {mounts:?}");
+        }
+    }
 }

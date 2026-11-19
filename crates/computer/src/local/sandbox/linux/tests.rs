@@ -363,8 +363,9 @@ fn bubblewrap_hides_every_place_a_daemon_or_a_session_listens() {
     }
     // Each place there is, a socket or a folder with something in it, shows as neither.
     let tmux = PathBuf::from(format!("/tmp/tmux-{uid}"));
-    let look: Vec<String> = super::mounts::daemons(None, uid, None)
-        .iter()
+    let tmp = Path::new("/tmp");
+    let places = super::mounts::daemons(None, None);
+    let look: Vec<String> = (places.iter().chain(&super::mounts::sessions(tmp, uid)))
         .filter(|place| **place != tmux)
         .map(|place| {
             let place = place.display();
