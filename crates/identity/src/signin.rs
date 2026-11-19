@@ -1,11 +1,12 @@
 //! Sign-in on network transports (`specs/session.md`, "Signing in"): OIDC access tokens,
 //! checked against the identity provider's published keys. A token is signed with RS256 or
 //! ES256 by a key in the issuer's JWKS, names a trusted issuer and this server's audience, and
-//! is within its lifetime. The verified caller is a person whose id comes from the token's
-//! issuer and subject. And local sign-in: a program on the person's own computer presents the
-//! server's local token from there, and is the local person, as is a browser there that traded
-//! a link's code for a browser session, or a browser anywhere signed in with a passkey through
-//! the server's public origin. Which way a request came in is its [`Door`]. A token is never
+//! is within its lifetime, whose end the caller carries (`until`), so what they follow ends
+//! with it. The verified caller is a person whose id comes from the token's issuer and subject.
+//! And local sign-in: a program on the person's own computer presents the server's local token
+//! from there, and is the local person, as is a browser there that traded a link's code for a
+//! browser session, or a browser anywhere signed in with a passkey through the server's public
+//! origin. Which way a request came in is its [`Door`]. A token is never
 //! logged or stored.
 
 mod accounts;
@@ -18,6 +19,7 @@ use std::sync::Arc;
 use glave_event::{Auth, AuthMethod, PrincipalId, Profile};
 use glave_ports::auth::safe_to_send;
 use glave_ports::{Caller, Clock};
+use jiff::{SignedDuration, Timestamp};
 use jsonwebtoken::{Algorithm, Validation, decode, decode_header};
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
@@ -26,7 +28,7 @@ use thiserror::Error;
 pub use self::accounts::Accounts;
 pub use self::browsers::{
     AcceptedPasskeys, BrowserError, Browsers, Ceremony, Checked, Discovered, PasskeyInfo, Proof,
-    Session, UnknownPasskey, kept, one_time_code, same_kept,
+    SESSION_LIFETIME, Session, UnknownPasskey, kept, one_time_code, same_kept,
 };
 use self::browsers::{SESSION_PREFIX, account_of};
 use self::keys::Keys;
@@ -264,6 +266,7 @@ impl SignIn {
             profile: None,
             org: Some(org),
             from: None,
+            until: None,
         })
     }
 
@@ -341,7 +344,10 @@ impl SignIn {
             reason = "seconds since 1970 fit an f64 exactly for millions of years"
         )]
         let seconds = now.as_second() as f64;
-        if seconds > claims.exp + SKEW {
+        let until = taken_until(claims.exp).ok_or_else(|| {
+            SignInError::Invalid(format!("its expiry, {}, is not a time", claims.exp))
+        })?;
+        if now >= until {
             return Err(SignInError::Expired);
         }
         if claims.nbf.is_some_and(|nbf| seconds + SKEW < nbf) {
@@ -363,8 +369,16 @@ impl SignIn {
             trace: None,
             org: None,
             from: None,
+            until: Some(until),
         })
     }
+}
+
+/// When a token whose `exp` is `exp`, in seconds since 1970, stops being taken: [`SKEW`] after
+/// it. `None` for one no timestamp holds.
+fn taken_until(exp: f64) -> Option<Timestamp> {
+    let after = SignedDuration::try_from_secs_f64(exp + SKEW).ok()?;
+    Timestamp::UNIX_EPOCH.checked_add(after).ok()
 }
 
 /// The local person, signed in locally: with the local token, or in the browser `session`.
@@ -381,6 +395,7 @@ fn local_person(session: Option<String>) -> Caller {
         profile: None,
         org: None,
         from: None,
+        until: None,
     }
 }
 
@@ -398,6 +413,5 @@ pub fn person(issuer: &str, subject: &str) -> Result<PrincipalId, SignInError> {
     for (byte, from) in random.iter_mut().zip(digest.iter()) {
         *byte = *from;
     }
-    PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, random)
-        .map_err(|e| SignInError::Invalid(e.to_string()))
+    PrincipalId::new(Timestamp::UNIX_EPOCH, random).map_err(|e| SignInError::Invalid(e.to_string()))
 }

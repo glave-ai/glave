@@ -217,6 +217,61 @@ impl<P, L, B> Wiring<P, L, B> {
     }
 }
 
+/// What a server's wiring gives the harness its threads run in, taken out of the wiring: its
+/// tools, skills, hooks, memory, project folders, reader of the files turns make, and the homes
+/// and git hosts it shares with the server.
+struct Equipment {
+    web: Option<Arc<dyn ToolSource>>,
+    tools: Vec<Arc<dyn ToolSource>>,
+    skills: Option<glave_harness::Skills>,
+    own: glave_harness::OwnTools,
+    hooks: Hooks,
+    memory: Option<Arc<dyn Memory>>,
+    project_folders: Option<Arc<dyn ProjectFolders>>,
+    homes: Option<Arc<dyn Homes>>,
+    credentials_of: Option<glave_harness::CredentialsOf>,
+    reader: Option<ReadMade>,
+}
+
+impl Equipment {
+    /// What `wiring` gives the harness, taken out of it but for the homes and git hosts, which
+    /// the server keeps too.
+    fn taken_from<P, L, B>(wiring: &mut Wiring<P, L, B>) -> Self {
+        Self {
+            web: wiring.web.take(),
+            tools: std::mem::take(&mut wiring.tools),
+            skills: wiring.skills.take(),
+            own: std::mem::take(&mut wiring.own),
+            hooks: std::mem::take(&mut wiring.hooks),
+            memory: wiring.memory.take(),
+            project_folders: wiring.project_folders.take(),
+            homes: wiring.homes.clone(),
+            credentials_of: wiring.git_hosts.clone().map(credentials_of),
+            reader: wiring.reader.take(),
+        }
+    }
+
+    /// `harness`, equipped with this.
+    fn onto<P, L, B>(self, harness: Glave<P, L, B>) -> Glave<P, L, B>
+    where
+        P: ModelProvider + 'static,
+        L: EventLog + 'static,
+        B: BlobStore + 'static,
+    {
+        harness
+            .with_web(self.web)
+            .with_tools(self.tools)
+            .with_skills(self.skills)
+            .with_own_tools(self.own)
+            .with_hooks(self.hooks)
+            .with_memory_if(self.memory)
+            .with_project_folders(self.project_folders)
+            .with_homes(self.homes)
+            .with_credentials_of(self.credentials_of)
+            .with_reader(self.reader)
+    }
+}
+
 /// A session server for the projects of the organizations its callers work in, its own first,
 /// whose threads work in their projects' folders on the computer its workspace is on. Clones
 /// share it.
@@ -236,6 +291,9 @@ pub(crate) type Glave<P, L, B> = Harness<P, Observed<L>, B, Approvals>;
 
 pub(crate) struct Inner<P, L, B> {
     pub(crate) harness: Glave<P, L, B>,
+    /// The clock the harness reads, held here too for what outlives a request: a watch whose
+    /// caller's sign-in is taken until a time (`access.rs`).
+    pub(crate) clock: Arc<dyn Clock>,
     /// The server's own organization: the local person's, and that of everyone the transport
     /// names no other for (`specs/storage.md`, "Many organizations in one store"). A request
     /// works in its caller's ([`Server::org_of`]), never in this alone.
@@ -345,41 +403,36 @@ where
     /// `wiring.workspace` is on: in their projects' folders, or scratch folders. It has no
     /// project of its own: a request that names none acts in the caller's Chats.
     pub fn new(
-        wiring: Wiring<P, L, B>,
+        mut wiring: Wiring<P, L, B>,
         settings: Settings,
         org: OrgId,
         answering: Answering,
     ) -> Self {
+        let equipment = Equipment::taken_from(&mut wiring);
         let hub = Arc::new(Hub::default());
         let approvals = Approvals::new(answering, Arc::clone(&hub));
         let catalog = crate::models::catalog(&settings.model, wiring.models);
         let clock: Arc<dyn Clock> = Arc::from(wiring.clock);
-        let leases = wiring.leases.unwrap_or_else(|| in_memory_leases(&clock));
+        let leases = wiring
+            .leases
+            .take()
+            .unwrap_or_else(|| in_memory_leases(&clock));
         let parts = Parts {
             provider: wiring.provider,
             log: Observed::new(wiring.log, Arc::clone(&hub)),
             blobs: wiring.blobs,
             approver: approvals.clone(),
-            clock: Box::new(clock),
+            clock: Box::new(Arc::clone(&clock)),
             entropy: wiring.entropy,
             workspace: wiring.workspace,
         };
-        let harness = Harness::new(parts, settings)
-            .with_web(wiring.web)
-            .with_tools(wiring.tools)
-            .with_skills(wiring.skills)
-            .with_own_tools(wiring.own)
-            .with_hooks(wiring.hooks)
-            .with_memory_if(wiring.memory)
-            .with_project_folders(wiring.project_folders)
-            .with_homes(wiring.homes.clone())
-            .with_credentials_of(wiring.git_hosts.clone().map(credentials_of))
-            .with_reader(wiring.reader);
+        let harness = equipment.onto(Harness::new(parts, settings));
         harness.set_without_images(crate::models::without_images(&catalog));
         Self {
             inner: Arc::new(Inner {
                 person: harness.settings().person,
                 harness,
+                clock,
                 identity_provider: wiring.identity_provider,
                 models: RwLock::new(catalog),
                 providers: wiring.providers,

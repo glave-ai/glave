@@ -13,13 +13,15 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use glave_event::{OrgRole, PrincipalId, Secret};
 use glave_identity::testing::Authenticator;
 use glave_ports::host::PublicOrigin;
-use glave_ports::{Directory, OrgId};
+use glave_ports::testing::Outbox;
+use glave_ports::{Directory, Mailer, OrgId};
 use glave_session::Answering;
 use glave_session::protocol::{LinkKind, Request, code};
 use glave_session::signin::{Accounts, Browsers, LocalToken, SignIn};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::signups::linked;
 use crate::support::issuer::fixed_clock;
 use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, make_passkey, serve_with};
 use crate::support::*;
@@ -30,12 +32,12 @@ async fn serve(dir: &Path, reached: bool, token: &LocalToken) -> Served {
     serve_keeping(dir, reached, token).await.0
 }
 
-/// [`serve`], with the directory its accounts' organizations are kept in.
+/// [`serve`], with the directory its accounts' organizations are kept in and the mail it sends.
 async fn serve_keeping(
     dir: &Path,
     reached: bool,
     token: &LocalToken,
-) -> (Served, Arc<dyn Directory>) {
+) -> (Served, Arc<dyn Directory>, Arc<Outbox>) {
     let store = sqlite(&dir.join("sign-ins.db")).await;
     let directory: Arc<dyn Directory> = Arc::new(store.directory());
     let server = "0192f5c6-0000-7000-8000-0000000005e8".to_owned();
@@ -51,7 +53,8 @@ async fn serve_keeping(
     );
     let mut setup = Setup::asking(Vec::new(), Answering::Clients);
     setup.browsers = Some(Arc::new(browsers.await.unwrap()));
-    setup.mail = Some(Arc::new(glave_ports::testing::Outbox::default()));
+    let outbox = Arc::new(Outbox::default());
+    setup.mail = Some(Arc::clone(&outbox) as Arc<dyn Mailer>);
     if reached {
         let directory = Arc::clone(&directory);
         let accounts = Accounts::new(store.log(), directory, server, &origin, Arc::new(clock));
@@ -60,7 +63,7 @@ async fn serve_keeping(
     }
     let (server, _) = setup.build(dir).await;
     let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
-    (serve_with(server, signin, None).await, directory)
+    (serve_with(server, signin, None).await, directory, outbox)
 }
 
 /// An invite giving `role`, made by the person on the server's computer: its code.
@@ -377,7 +380,7 @@ fn an_account_an_emailed_invite_makes_has_the_address_it_was_sent_to() {
     block_on!(async {
         let dir = folder("accounts-emailed");
         let token = LocalToken::new([17; 32]);
-        let served = serve(&dir, true, &token).await;
+        let (served, _, outbox) = serve_keeping(&dir, true, &token).await;
         let mut here = Web::new(&served, Some(token.reveal().to_owned()));
         let create = Request::InviteCreate {
             role: OrgRole::Member,
@@ -385,7 +388,7 @@ fn an_account_an_emailed_invite_makes_has_the_address_it_was_sent_to() {
         };
         let invited = asked(&mut here, &create).await;
         assert_eq!(invited["invite"]["email"], json!("grace@example.com"));
-        let code = Secret::new(invited["code"].as_str().unwrap());
+        let code = linked(&outbox, 1, "invite").await.unwrap();
         let mut phone = Authenticator::new(ORIGIN).unwrap();
         let joined = join(&served, code, &mut phone).await;
         assert!(token_of(&joined).is_some(), "{joined}");
@@ -410,7 +413,7 @@ fn an_invites_link_says_what_it_opens_and_someone_signed_in_joins_a_second_organ
     block_on!(async {
         let dir = folder("accounts-second");
         let token = LocalToken::new([18; 32]);
-        let (served, directory) = serve_keeping(&dir, true, &token).await;
+        let (served, directory, _) = serve_keeping(&dir, true, &token).await;
         let mut here = Web::new(&served, Some(token.reveal().to_owned()));
         let mut phone = Authenticator::new(ORIGIN).unwrap();
         let first = invite(&served, &token, OrgRole::Member).await;
@@ -491,7 +494,7 @@ fn someone_in_two_organizations_names_the_one_each_request_works_in() {
     block_on!(async {
         let dir = folder("accounts-two-organizations");
         let token = LocalToken::new([16; 32]);
-        let (served, directory) = serve_keeping(&dir, true, &token).await;
+        let (served, directory, _) = serve_keeping(&dir, true, &token).await;
         let mut phone = Authenticator::new(ORIGIN).unwrap();
         let code = invite(&served, &token, OrgRole::Member).await;
         let joined = join(&served, code, &mut phone).await;
@@ -593,7 +596,7 @@ fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_t
     block_on!(async {
         let dir = folder("accounts-joins-anew");
         let token = LocalToken::new([19; 32]);
-        let (served, directory) = serve_keeping(&dir, true, &token).await;
+        let (served, directory, outbox) = serve_keeping(&dir, true, &token).await;
         let mut here = Web::new(&served, Some(token.reveal().to_owned()));
         let mut tablet = Authenticator::new(ORIGIN).unwrap();
         let linus = join(
@@ -607,8 +610,8 @@ fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_t
             role: OrgRole::Member,
             email: Some("grace@first.example.com".into()),
         };
-        let first = asked(&mut here, &first).await;
-        let first = Secret::new(first["code"].as_str().unwrap());
+        asked(&mut here, &first).await;
+        let first = linked(&outbox, 1, "invite").await.unwrap();
         join(&served, first, &mut phone).await;
         let listed = Request::PeopleList {
             after: None,
@@ -634,8 +637,8 @@ fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_t
             role: OrgRole::Member,
             email: Some("grace@example.com".into()),
         };
-        let invited = asked(&mut here, &create).await;
-        let code = Secret::new(invited["code"].as_str().unwrap());
+        asked(&mut here, &create).await;
+        let code = linked(&outbox, 2, "invite").await.unwrap();
         let show = Request::InviteShow { code: code.clone() };
         assert_eq!(
             asked(&mut signed_in, &show).await["shown"]["joining"],

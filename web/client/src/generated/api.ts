@@ -1166,6 +1166,12 @@ export type PushDevice = {
   readonly id: DeviceId;
   /** What the person knows it as: "Safari on iPhone". */
   readonly name: string;
+  /**
+   * The browser that asked should subscribe again now (`push/subscribe`), which keeps it 30
+   * days more: less than half of that is left. A browser not subscribed again in time is
+   * forgotten.
+   */
+  readonly renew?: boolean;
 };
 
 /** Whether the server tells the person's browsers when glave needs them. */
@@ -1266,7 +1272,7 @@ export type ReplySources = {
 };
 
 /** What came of a schedule's run. */
-export type RunStatus = "running" | "ended" | "skipped" | "refused" | "started";
+export type RunStatus = "running" | "ended" | "skipped" | "refused" | "started" | "missed";
 
 /** Identifies one schedule: a prompt that runs as a task at set times. */
 export type ScheduleId = string;
@@ -1281,13 +1287,18 @@ export type ScheduleInfo = {
   readonly last?: LastRun | null;
   /** What it is called, as its chat is. */
   readonly name: string;
-  /** When it runs next; absent once a one-off has run, and when it runs no more. */
+  /**
+   * When it runs next; absent while it is paused, once a one-off has run, and when it runs
+   * no more.
+   */
   readonly next?: At | null;
   /**
    * What the person should know of it beyond that, in the server's words, such as that it
    * runs no more.
    */
   readonly note?: string | null;
+  /** Whether it is paused: no runs start until it is resumed. */
+  readonly paused: boolean;
   /** The project its chat is in. */
   readonly project: ProjectId;
   readonly prompt: string;
@@ -2370,16 +2381,20 @@ export type InviteAcceptResult = {
 
 export type InviteCreateParams = {
   /**
-   * Whom to email its link to, where the server sends email; else it is the caller's to
-   * share. The address is not kept.
+   * Whom to email its link to, where the server sends email: sent there alone, and its
+   * code not answered. Without it, the link is the caller's to share.
    */
   readonly email?: string | null;
   readonly role: OrgRole;
 };
 
-/** An invite just made, and its code, sent this once. */
+/** An invite just made, and its code, sent this once when it is the caller's to share. */
 export type InviteCreateResult = {
-  readonly code: Secret;
+  /**
+   * None when its link was emailed to its address alone (`invite.email`): sent there,
+   * never back to whoever made it, so whoever opens it holds that mailbox.
+   */
+  readonly code?: Secret | null;
   readonly invite: InviteInfo;
 };
 
@@ -2963,6 +2978,15 @@ export type ScheduleListParams = Readonly<Record<string, never>>;
 
 export type ScheduleListResult = {
   readonly schedules: readonly (ScheduleInfo)[];
+};
+
+export type SchedulePauseParams = {
+  readonly paused: boolean;
+  readonly schedule: ScheduleId;
+};
+
+export type SchedulePauseResult = {
+  readonly schedule: ScheduleInfo;
 };
 
 export type SearchGetParams = {
@@ -3553,6 +3577,7 @@ export interface Methods {
   readonly "schedule/create": { readonly params: ScheduleCreateParams; readonly result: ScheduleCreateResult };
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };
   readonly "schedule/list": { readonly params: ScheduleListParams; readonly result: ScheduleListResult };
+  readonly "schedule/pause": { readonly params: SchedulePauseParams; readonly result: SchedulePauseResult };
   readonly "search/get": { readonly params: SearchGetParams; readonly result: SearchGetResult };
   readonly "search/set": { readonly params: SearchSetParams; readonly result: SearchSetResult };
   readonly "secret/add": { readonly params: SecretAddParams; readonly result: SecretAddResult };
