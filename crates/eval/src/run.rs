@@ -16,7 +16,7 @@ use glave_harness::{
     agents_md, change_standing, find_skills, skill_folders,
 };
 use glave_memory::Tidier;
-use glave_ports::computer::{Sandbox, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork};
 use glave_ports::{Caller, EventLog, OsEntropy, Scope, SystemClock, ToolSource};
 use glave_process::Processes;
 use glave_provider_openai::Config;
@@ -337,6 +337,7 @@ async fn workspace(
         network: SandboxNetwork::when(task.network),
         home: environment.get(&OsString::from("HOME")).map(PathBuf::from),
         glave_home: None,
+        caches: SandboxCaches::Kept,
     };
     match open().await?.with_sandbox(&sandbox).await {
         Ok(workspace) => Ok(workspace),

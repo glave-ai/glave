@@ -8,7 +8,7 @@ use glave_harness::{Approver, Harness, Parts, Settings, Workspace};
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 pub(crate) use glave_ports::block_on;
-use glave_ports::computer::{Sandbox, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork};
 use glave_ports::memories::ProjectMemory;
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
@@ -148,6 +148,7 @@ impl Kit {
             network: SandboxNetwork::Off,
             home: None,
             glave_home: None,
+            caches: SandboxCaches::Kept,
         };
         let workspace = here(dir).await.with_sandbox(&sandbox).await.unwrap();
         Some(self.harness_in(workspace, answers, approver, memory, settings))
