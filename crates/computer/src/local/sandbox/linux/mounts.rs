@@ -18,9 +18,7 @@
 //! every namespace's mount on it, leaving that command to reach what listens there next.
 
 use std::collections::HashMap;
-use std::os::unix::fs::{
-    DirBuilderExt as _, FileTypeExt as _, MetadataExt as _, PermissionsExt as _,
-};
+use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -409,20 +407,21 @@ fn daemon_places(layout: &Layout) -> Result<Vec<PathBuf>, String> {
 }
 
 /// The real path of `place`, to hide. Where anyone may make names (`/tmp`, any folder others may
-/// write), only what is there itself, a folder or socket of this user's or the system's, never
-/// where a link leads: another user could put a link at `/tmp/tmux-<uid>` to `/usr` and have
-/// every command's sandbox hide it (#1575), and in a sticky folder nobody else can swap what
-/// either owns. Elsewhere, where only the system or the person names things, where it leads:
-/// an ssh agent's socket is often a link. Blocking.
+/// write), only what this user or the system made there, a link included (an ssh agent's is
+/// often one the person put in `/tmp`): another user could put a link at `/tmp/tmux-<uid>` to
+/// `/usr` and have every command's sandbox hide it (#1575), but cannot make one that is the
+/// person's, nor, in a sticky folder, swap what they own. In such a folder that is not sticky,
+/// no link is followed. Elsewhere, where only the system or the person names things, wherever
+/// it leads. Blocking.
 fn real_place(place: &Path, uid: u32) -> Option<PathBuf> {
     let parent = place
         .parent()
         .and_then(|parent| std::fs::metadata(parent).ok());
-    if parent.is_some_and(|parent| parent.mode() & 0o002 != 0) {
+    if let Some(parent) = parent.filter(|parent| parent.mode() & 0o002 != 0) {
         let meta = std::fs::symlink_metadata(place).ok()?;
-        let kind = meta.file_type();
         let owned = meta.uid() == uid || meta.uid() == 0;
-        if !owned || !(kind.is_dir() || kind.is_socket()) {
+        let sticky = parent.mode() & 0o1000 != 0;
+        if !owned || (meta.file_type().is_symlink() && !sticky) {
             return None;
         }
     }
@@ -500,9 +499,9 @@ mod tests {
         (dir, real)
     }
 
-    /// The mounts of a command planned in `dir`'s folders, `tmp` as the shared `/tmp` and
-    /// `moved` as the sessions' folders moved out of it.
-    fn planned(dir: &Path, moved: Vec<PathBuf>) -> Vec<Mount> {
+    /// The mounts of a command planned in `dir`'s folders, `tmp` as the shared `/tmp`, `moved`
+    /// as the sessions' folders moved out of it and `daemons` as where daemons listen.
+    fn planned(dir: &Path, moved: Vec<PathBuf>, daemons: Vec<PathBuf>) -> Vec<Mount> {
         let layout = Layout {
             root: dir.join("project"),
             level: SandboxLevel::Project,
@@ -517,7 +516,7 @@ mod tests {
             cache: None,
             glave_on_path: None,
             runtime: None,
-            daemons: Vec::new(),
+            daemons,
             moved_sessions: moved,
             git_common: None,
         };
@@ -540,7 +539,7 @@ mod tests {
     #[test]
     fn a_session_s_folder_missing_from_tmp_is_made_private_and_hidden() {
         let (_dir, real) = folders();
-        let mounts = planned(&real, Vec::new());
+        let mounts = planned(&real, Vec::new(), Vec::new());
         let uid = rustix::process::getuid().as_raw();
         for folder in sessions(&real.join("tmp"), uid) {
             hidden_and_private(&folder, &mounts);
@@ -556,24 +555,40 @@ mod tests {
         let (tmux_in, emacs_in) = (real.join("project"), real.join("temp"));
         let moved = moved_sessions(uid, Some(&tmux_in), Some(&emacs_in));
         assert_eq!(moved.len(), 2);
-        let mounts = planned(&real, moved.clone());
+        let mounts = planned(&real, moved.clone(), Vec::new());
         for folder in &moved {
             hidden_and_private(folder, &mounts);
         }
     }
 
-    /// A link another user put where a session's folder goes, in a folder anyone may write, is
-    /// never followed: what it leads to stays as it is, unhidden, and every command still runs
-    /// (#1575).
+    /// A link the person put in a shared, sticky folder is followed, and what it leads to
+    /// hidden: their ssh agent's, `/tmp/ssh-agent-<user>`, which another user could not make
+    /// nor swap (#1575).
     #[test]
-    fn a_link_where_a_session_s_folder_goes_hides_nothing() {
+    fn the_person_s_link_to_their_ssh_agent_in_tmp_is_followed_and_hidden() {
+        let (dir, real) = folders();
+        let agent = glave_ports::testing::SocketPath::new(&dir, "agent.sock").unwrap();
+        let _listening = std::os::unix::net::UnixListener::bind(&agent).unwrap();
+        let link = real.join("tmp/ssh-agent-glave");
+        std::os::unix::fs::symlink(&agent, &link).unwrap();
+        let mounts = planned(&real, Vec::new(), vec![link]);
+        let socket = std::fs::canonicalize(&agent).unwrap();
+        assert!(mounts.contains(&Mount::HiddenFile(socket)), "{mounts:?}");
+    }
+
+    /// In a folder anyone may write that is not sticky, where another user could swap a link for
+    /// one of theirs, no link is followed: what it leads to is left as it is.
+    #[test]
+    fn a_link_in_a_shared_folder_that_is_not_sticky_is_never_followed() {
         let (_dir, real) = folders();
+        let open = std::fs::Permissions::from_mode(0o777);
+        std::fs::set_permissions(real.join("tmp"), open).unwrap();
         let system = real.join("usr");
         std::fs::create_dir(&system).unwrap();
         let uid = rustix::process::getuid().as_raw();
         let [tmux, ..] = sessions(&real.join("tmp"), uid);
         std::os::unix::fs::symlink(&system, &tmux).unwrap();
-        let mounts = planned(&real, Vec::new());
+        let mounts = planned(&real, Vec::new(), Vec::new());
         let reached = |path: &Path| mounts.iter().any(|mount| mount.path() == path);
         assert!(!reached(&system), "{mounts:?}");
         assert!(!reached(&tmux), "{mounts:?}");
