@@ -146,6 +146,24 @@ describe('FilesService', () => {
     expect(await files.hold('t1', SHA, 'image/png').url).toBe(urls.made[0]);
   });
 
+  it('keeps fewer large files nothing draws: at most 32 MB of them', async () => {
+    const urls = objectUrls();
+    const twelve = btoa('a'.repeat(12 * 1024 * 1024));
+    const whole = { media_type: 'application/pdf', bytes: 12 * 1024 * 1024, offset: 0 };
+    const files = setUp(
+      new FakeSession().answer('file/read', { piece: { ...whole, data: twelve } }),
+    );
+    const held = [1, 2, 3].map((n) => files.hold('t1', nth(n), 'application/pdf'));
+    await Promise.all(held.map(({ url }) => url));
+    await Promise.resolve();
+    for (const each of held) {
+      each.release();
+    }
+    await Promise.resolve();
+    // 36 MB nothing draws: the one let go of first goes.
+    expect(urls.revoked).toEqual(urls.made.slice(0, 1));
+  });
+
   it('saves a file under its name, and lets go of its address a minute after', async () => {
     const urls = objectUrls();
     vi.useFakeTimers({ toFake: ['setTimeout'] });
@@ -165,6 +183,28 @@ describe('FilesService', () => {
     expect(urls.revoked).toEqual([]);
     vi.advanceTimersByTime(1_000);
     expect(urls.revoked).toEqual(urls.made);
+  });
+
+  it('opens a file in a tab that can’t reach back to the page, or saves it where none opens', async () => {
+    const urls = objectUrls();
+    const files = setUp(new FakeSession().answer('file/read', inPieces('ok')));
+    const tab = { location: { href: '' }, opener: {} as unknown, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    onTestFinished(() => {
+      open.mockRestore();
+    });
+    await files.openInTab('t1', SHA, 'application/pdf', 'plan.pdf');
+    expect(tab.opener).toBeNull();
+    expect(tab.location.href).toBe(urls.made[0]);
+    open.mockReturnValue(null);
+    const saved: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      saved.push(this.download);
+    });
+    await files.openInTab('t1', SHA, 'application/pdf', 'plan.pdf');
+    expect(saved).toEqual(['plan.pdf']);
   });
 
   it('lets go of a download’s address as the page goes, before its minute is up', async () => {

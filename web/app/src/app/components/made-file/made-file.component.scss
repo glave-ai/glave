@@ -5,13 +5,14 @@
   container-type: inline-size;
 }
 
-// One row across the column: the kind's mark, the name over its line, then Download, whose row
-// keeps a button's height when it has none, so every card is as tall.
+// One row across the column: the kind's mark, the name over its line, then Open and Download,
+// whose row keeps a button's height when it has none, so every card is as tall.
 .file {
   // The lines a line that gives a reason keeps, wrapped: two in a wide card, three in a narrow
   // one, where the server's reasons take three.
   --app-reason-lines: 2;
 
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--glz-space-3);
@@ -20,6 +21,12 @@
   border-radius: var(--glz-radius-card);
   background: var(--glz-surface-card);
   line-height: var(--glz-leading-tight);
+}
+
+// The file open in the chat's panel.
+.selected {
+  border-color: var(--glz-color-border-strong);
+  background: var(--glz-surface-sunken);
 }
 
 .mark {
@@ -75,9 +82,35 @@
   }
 }
 
-// On a phone the arrow is as large as a thumb needs, and every card keeps its height.
+// On a phone the whole card opens the file: Open's own area covers the card, under the arrow
+// that downloads it, as large as a thumb needs, and its word is heard, not shown. Every card
+// keeps its height.
 @media (width <= 48rem) {
+  .open {
+    position: static;
+    inline-size: 0;
+    min-inline-size: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    color: transparent;
+  }
+
+  .open::after {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--glz-radius-card);
+    content: '';
+  }
+
+  // The whole card is what is focused, so the ring goes round it.
+  .open:focus-visible::after {
+    box-shadow: var(--glz-focus-ring);
+  }
+
   :host .download {
+    position: relative;
+    z-index: 1;
     min-block-size: var(--glz-control-height-touch);
     min-inline-size: var(--glz-control-height-touch);
   }
