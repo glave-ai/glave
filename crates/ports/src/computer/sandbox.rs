@@ -178,6 +178,10 @@ pub enum SandboxCaches {
 }
 
 impl SandboxCaches {
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde's skip_serializing_if hands it a reference"
+    )]
     fn is_kept(&self) -> bool {
         *self == Self::Kept
     }
