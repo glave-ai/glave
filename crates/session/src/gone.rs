@@ -181,7 +181,7 @@ where
         thread: ThreadId,
         change: Change,
     ) -> Result<Reply, ApiError> {
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(folder_gone());
         }
         let scope = self.scope_of(thread)?;
@@ -217,7 +217,7 @@ where
         project: ProjectId,
         does: HereOnly,
     ) -> Result<Project, ApiError> {
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(only_here(match does {
                 HereOnly::SetFolder => Sentence::SetFolderOnlyHere,
                 HereOnly::Remove => Sentence::RemoveOnlyHere,

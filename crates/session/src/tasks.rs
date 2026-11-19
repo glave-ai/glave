@@ -8,6 +8,7 @@
 //! ledger. `tasks/list` and `tasks/stop` show and stop them; `task/finished` tells the thread's
 //! watchers when one ends.
 
+mod acting;
 mod adopted;
 
 use std::collections::HashMap;

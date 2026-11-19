@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use glave_event::{Opened, ThreadId};
 use glave_harness::{Brought, ProjectFolders, Settled};
-use glave_ports::{BoxFuture, Caller, InMemoryLog, ProjectId};
-use glave_session::protocol::{Copies, ModelInfo, NewFolder, Reply, Request};
+use glave_ports::{BoxFuture, Caller, EventLog, ProjectId};
+use glave_session::protocol::{Copies, ModelInfo, Reply, Request};
 use glave_session::signin::person;
 
 use crate::support::*;
@@ -51,7 +51,11 @@ impl ProjectFolders for Chooses {
 }
 
 /// Starts a thread for `caller` in `project`.
-async fn start_as(server: &Tested, caller: &Caller, project: ProjectId) -> ThreadId {
+async fn start_as<L: EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    project: ProjectId,
+) -> ThreadId {
     let started = Request::ThreadStart {
         project: Some(project),
         worktree: None,
@@ -80,8 +84,9 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
         let mut setup = Setup::new(answers);
         setup.project_folders = Some(Arc::new(Chooses));
         setup.models = vec![ModelInfo::new("project-model")];
+        let log = Shared::default();
         let (server, seen, _, dir) = setup
-            .build_in_repository("choices-project", InMemoryLog::new())
+            .build_in_repository("choices-project", log.clone())
             .await;
 
         let here = Caller::default();
@@ -103,25 +108,18 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
         assert_eq!(sent_to(&seen, 0), "project-model");
 
         // Another person, as a host embedding the server may call for her, in a project of her
-        // own whose folder chooses the same: glave's own transports act as the person here, so
-        // this is the guard, kept.
+        // own whose folder here chooses the same: glave's own transports act as the person
+        // here, so this is the guard, kept. Naming a folder on this computer is the person
+        // here's alone, so hers is kept in the store as one is.
+        let grace = person("https://id.example.com", "grace").unwrap();
         let elsewhere = Caller {
-            person: Some(person("https://id.example.com", "grace").unwrap()),
+            person: Some(grace),
             ..Caller::default()
         };
         let garden = dir.join("garden");
         std::fs::create_dir_all(&garden).unwrap();
-        let made = Request::ProjectCreate {
-            name: "Hers".into(),
-            folder: Some(NewFolder::Path {
-                path: garden.to_string_lossy().into_owned(),
-            }),
-        };
-        let Reply::Project { project, .. } = server.request_as(&elsewhere, made).await.unwrap()
-        else {
-            panic!("a project");
-        };
-        let theirs = start_as(&server, &elsewhere, project.id).await;
+        let project = project_at(&server, &log, grace, ("Hers", &garden)).await;
+        let theirs = start_as(&server, &elsewhere, project).await;
         let (place, _) = opened_as(&server, &elsewhere, theirs).await;
         assert!(
             matches!(place, Opened::Folder { .. }),

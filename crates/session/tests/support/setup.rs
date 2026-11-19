@@ -473,23 +473,64 @@ impl Setup {
 /// runs in: at a fixed time with fixed ids, for the same reason as the project itself. A second
 /// server on a shared log finds it there already.
 async fn keep_folder<L: EventLog>(log: &L, home: Scope, info: &WorkspaceInfo) {
-    let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
+    let computer = info.computer.as_uuid();
+    keep_folder_of(log, home, (computer, info.root.clone()), None).await;
+}
+
+/// Keeps the folder at `path` on `computer` as the project `at`'s, set by `by`.
+async fn keep_folder_of<L: EventLog>(
+    log: &L,
+    at: Scope,
+    (computer, path): (uuid::Uuid, String),
+    by: Option<Principal>,
+) {
+    let when = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
     let header = Header {
-        id: EventId::new(at.timestamp(), [9; 10]).unwrap(),
+        id: EventId::new(when.timestamp(), [9; 10]).unwrap(),
         thread: glave_ports::stream::Reserved::Project.id(),
         seq: Seq::FIRST,
-        at,
+        at: when,
     };
     let set = ProjectFolderSet {
         folder: uuid::Uuid::from_u128(3),
         source: FolderSource::Local,
-        checkout: Checkout {
-            computer: info.computer.as_uuid(),
-            path: info.root.clone(),
-        },
-        by: None,
+        checkout: Checkout { computer, path },
+        by,
     };
-    let _ = log.append(&home, &[encode(header, &set).unwrap()]).await;
+    let _ = log.append(&at, &[encode(header, &set).unwrap()]).await;
+}
+
+/// A project of `owner`'s called `name`, its folder `path` on the tests' computer, kept on
+/// `log` as `project/create` keeps one: what someone signed in from elsewhere, who may not name
+/// a folder on the server's computer themselves, has once one of theirs is there.
+pub(crate) async fn project_at<L: EventLog + 'static>(
+    server: &Tested<L>,
+    log: &L,
+    owner: PrincipalId,
+    (name, path): (&str, &Path),
+) -> ProjectId {
+    let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
+    let root = std::fs::canonicalize(path)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let new = Project {
+        id: ProjectId::from_uuid(uuid::Uuid::from_u128(
+            0x0192_f5c0_0000_7000_8000_0000_0000_0f01,
+        )),
+        kind: ProjectKind::Project,
+        name: name.into(),
+        owner: Principal::person(owner),
+        created_at: at,
+        updated_at: at,
+    };
+    let keys = [glave_ports::FolderKey::Path(root.clone())];
+    let org = scope().org();
+    let project = server.projects().folder(org, &keys, &new).await.unwrap();
+    let computer = (uuid::Uuid::from_u128(7), root);
+    let by = Some(Principal::person(owner));
+    keep_folder_of(log, Scope::glaves_own(org, project.id), computer, by).await;
+    project.id
 }
 
 /// This process's variables, with `given` in place of its own of the same names.
