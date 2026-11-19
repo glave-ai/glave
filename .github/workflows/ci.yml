@@ -620,10 +620,11 @@ jobs:
         env:
           GLAVE_REQUIRE_LANDLOCK: "1"
           GLAVE_TEST_SANDBOX_HELPER: ${{ github.workspace }}/target/debug/glave
-        # Not removed with apt, which left it in place on Ubuntu 26.04 (#1561): each bwrap is
-        # moved aside instead, which is all glave looks for, and put back before bubblewrap's
-        # step. What package owns it, and what installed needs it, is said first.
+        # apt left it in place on Ubuntu 26.04 (#1561), so after apt's try, saying why, each
+        # bwrap still there is moved aside, which is all glave looks for, and put back before
+        # bubblewrap's step; what package owns it, and what installed needs it, is said first.
         run: |
+          sudo apt-get remove -y bubblewrap || true
           for bwrap in /usr/bin/bwrap $(which -a bwrap); do
             [ -e "$bwrap" ] || continue
             echo "$bwrap: $(dpkg -S "$bwrap" 2>&1)"
