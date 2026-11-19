@@ -71,11 +71,26 @@ function thanked(seq: number): readonly RawEvent[] {
   ];
 }
 
+/** Two notes the same turn made too, when a test has it make more than a turn shows folded. */
+export const NOTES: readonly MadeFile[] = ['Packing list', 'Restaurants'].map((name, at) => ({
+  kind: 'document',
+  name,
+  file_name: `${name}.docx`,
+  media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  bytes: 4_096,
+  sha256: String(at + 4).repeat(64),
+  parts: '1 page',
+  previews: true,
+  kept: 'Kept with this chat',
+  sentence: `Made a document: ${name} (1 page)`,
+}));
+
 /**
- * The thread's history: its first turn's end says it made the three files, one too large to keep,
- * and left one more on the computer, as the note under them says, and another turn follows it.
+ * The thread's history: its first turn's end says it made the three files and `also`, one too
+ * large to keep, and left one more on the computer, as the note under them says, and another
+ * turn follows it.
  */
-const MADE_HISTORY: readonly RawEvent[] = [
+const madeHistory = (also: readonly MadeFile[]): readonly RawEvent[] => [
   ...HISTORY.map((each) =>
     each.type === 'turn.ended'
       ? {
@@ -86,6 +101,11 @@ const MADE_HISTORY: readonly RawEvent[] = [
               { path: 'out/Trip budget.xlsx', bytes: BUDGET.bytes, ...kept(BUDGET, { sheets: 2 }) },
               { path: 'Lisbon plan.pdf', bytes: PLAN.bytes, ...kept(PLAN, { pages: 1 }) },
               { path: 'All the photos.pptx', bytes: PHOTOS.bytes, kept: 'too_large' },
+              ...also.map((file) => ({
+                path: file.file_name,
+                bytes: file.bytes,
+                ...kept(file, { pages: 1 }),
+              })),
             ],
             made_left: { kind: 'more', files: 1 },
           },
@@ -98,25 +118,26 @@ const MADE_HISTORY: readonly RawEvent[] = [
 /** What the turn's files leave out, in the server's words. */
 export const MORE = '1 more file was made than a chat keeps: it stays on the computer';
 
-/** What the server answers about the files, by the method it is asked. */
-const ANSWERS: Readonly<Record<string, unknown>> = {
-  'thread/events': { events: MADE_HISTORY },
-  'thread/turns': { events: MADE_HISTORY },
-  'thread/files': { made: [{ turn: 3, files: [BUDGET, PLAN, PHOTOS], note: MORE }] },
+/** What the server answers about the files, by the method it is asked, the turn making `also`. */
+const answers = (also: readonly MadeFile[]): Readonly<Record<string, unknown>> => ({
+  'thread/events': { events: madeHistory(also) },
+  'thread/turns': { events: madeHistory(also) },
+  'thread/files': { made: [{ turn: 3, files: [BUDGET, PLAN, PHOTOS, ...also], note: MORE }] },
   'file/preview': { preview: { markdown: PREVIEW } },
   // "%PDF-1.7", as the file's bytes.
   'file/read': {
     piece: { media_type: 'application/pdf', bytes: 9, offset: 0, data: 'JVBERi0xLjcK' },
   },
-};
+});
 
 /**
  * Answers, after `fakeApi`, as the server would for the thread whose turn made a budget and a
- * plan: its history, the files, the budget's preview and the plan's bytes.
+ * plan, and `also`: its history, the files, the budget's preview and the plan's bytes.
  */
-export async function madeTheFiles(page: Page): Promise<void> {
+export async function madeTheFiles(page: Page, also: readonly MadeFile[] = []): Promise<void> {
+  const answered = answers(also);
   await page.route('**/*', async (route: Route) => {
-    const result = ANSWERS[route.request().headers()['glave-method'] ?? ''];
+    const result = answered[route.request().headers()['glave-method'] ?? ''];
     if (result === undefined) {
       await route.fallback();
       return;

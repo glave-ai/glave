@@ -1,5 +1,5 @@
 import { THREAD, fakeApi } from './fake-api';
-import { MORE, madeTheFiles } from './fake-made';
+import { MORE, NOTES, madeTheFiles } from './fake-made';
 import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 
 /**
@@ -75,5 +75,30 @@ test('on a phone the whole card opens a file, and a PDF opens in a tab of its ow
   await expect(byTestId(page, 'file-preview').locator('table')).toContainText('Flights');
   await expect(byTestId(page, 'file-preview-download-thumb')).toBeVisible();
   await expectAccessible(page);
+  expect(problems()).toEqual([]);
+});
+
+test('a turn that made more than 3 files shows 3, then a row that unfolds the rest in place and folds them back', async ({
+  page,
+}) => {
+  const problems = watchForProblems(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fakeApi(page);
+  await madeTheFiles(page, NOTES);
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  const cards = byTestId(page, 'made-file');
+  const fold = byTestId(page, 'turn-made-fold');
+  await expect(cards).toHaveCount(3);
+  await expect(fold).toHaveText('2 more files');
+  await expect(fold).toHaveAttribute('aria-expanded', 'false');
+  await fold.click();
+  await expect(cards).toHaveCount(5);
+  await expect(byTestId(page, 'made-file-title').last()).toHaveText('Restaurants');
+  await expect(fold).toHaveText('Show fewer');
+  await expect(fold).toHaveAttribute('aria-expanded', 'true');
+  await expectAccessible(page);
+  await fold.click();
+  await expect(cards).toHaveCount(3);
+  await expect(fold).toHaveAttribute('aria-expanded', 'false');
   expect(problems()).toEqual([]);
 });

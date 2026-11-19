@@ -90,10 +90,11 @@ impl Enforcer {
             cache: reached.cache.map(Path::to_path_buf),
             glave_on_path: resolved(reached.glave_on_path).await,
             runtime: resolved(Some(runtime_folder().as_path())).await,
-            daemons: mounts::daemons(
-                Some(&runtime_folder()),
+            daemons: mounts::daemons(Some(&runtime_folder()), ssh_agent().as_deref()),
+            moved_sessions: mounts::moved_sessions(
                 rustix::process::getuid().as_raw(),
-                ssh_agent().as_deref(),
+                path_in("TMUX_TMPDIR").as_deref(),
+                path_in("TMPDIR").as_deref(),
             ),
             git_common,
         };
@@ -175,9 +176,14 @@ fn runtime_folder() -> PathBuf {
 
 /// The ssh agent's socket, where `$SSH_AUTH_SOCK` names one.
 fn ssh_agent() -> Option<PathBuf> {
-    std::env::var_os("SSH_AUTH_SOCK")
+    path_in("SSH_AUTH_SOCK")
+}
+
+/// The absolute path the variable `name` holds, if it holds one.
+fn path_in(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name)
         .map(PathBuf::from)
-        .filter(|socket| socket.is_absolute())
+        .filter(|path| path.is_absolute())
 }
 
 /// bubblewrap if it starts here; otherwise Landlock if the level allows it and the kernel and
