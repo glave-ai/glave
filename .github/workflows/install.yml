@@ -38,8 +38,7 @@ env:
 # tools with install-action has ten minutes (ci.yml says why).
 jobs:
   server:
-    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -56,9 +55,18 @@ jobs:
         timeout-minutes: 10
         with:
           tool: cargo-nextest
-      - name: Build glave, and the test that signs in to it
+      # glave built for musl, as releases are: static, so it runs in the Compose image, Ubuntu
+      # 24.04, whatever glibc the runner has (#1561).
+      - name: Install musl's standard library and musl-gcc
         run: |
-          cargo build -p glave
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+      - name: Build glave, and the test that signs in to it
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
+        run: |
+          cargo build -p glave --target x86_64-unknown-linux-musl
           cargo nextest run -p glave --no-run
       # Pebble (MPL-2.0), pinned by digest, checks names over TLS-ALPN-01 on port 443 here,
       # where glave serves HTTPS of its own, and reaches glave.test, this runner. glave trusts
@@ -92,7 +100,7 @@ jobs:
         if: matrix.way == 'public'
         run: |
           sudo sh install/server.sh --public glave.test --acme https://localhost:14000/dir \
-            --binary target/debug/glave | tee "$RUNNER_TEMP/installed.txt"
+            --binary target/x86_64-unknown-linux-musl/debug/glave | tee "$RUNNER_TEMP/installed.txt"
           grep -q 'https://glave.test/#setup=' "$RUNNER_TEMP/installed.txt"
           curl -sf --cacert "$RUNNER_TEMP/pebble.minica.pem" -o "$RUNNER_TEMP/pebble.root.pem" https://localhost:15000/roots/0
           echo "GLAVE_TEST_INSTALLED_ROOT=$RUNNER_TEMP/pebble.root.pem" >> "$GITHUB_ENV"
@@ -114,7 +122,7 @@ jobs:
       - name: Install glave, reached through Tailscale
         if: matrix.way == 'private'
         run: |
-          sh install/server.sh --private --binary target/debug/glave | tee "$RUNNER_TEMP/installed.txt"
+          sh install/server.sh --private --binary target/x86_64-unknown-linux-musl/debug/glave | tee "$RUNNER_TEMP/installed.txt"
           grep -q 'https://runner.tail1234.ts.net/#setup=' "$RUNNER_TEMP/installed.txt"
           grep -qx 'serve --bg --https=443 http://127.0.0.1:4180' /tmp/tailscale-serve
       - name: Install glave in Docker Compose
@@ -131,7 +139,7 @@ jobs:
             tunnel:
               profiles: [tunnel]
           EOF
-          sh install/server.sh --docker --origin https://glave.test --binary target/debug/glave |
+          sh install/server.sh --docker --origin https://glave.test --binary target/x86_64-unknown-linux-musl/debug/glave |
             tee "$RUNNER_TEMP/installed.txt"
           grep -q 'https://glave.test/#setup=' "$RUNNER_TEMP/installed.txt"
           # This runner's /opt hands new files a default ACL that lets anyone write them.
@@ -162,7 +170,7 @@ jobs:
       - name: The same line again updates glave in Docker, keeping its settings and passkeys
         if: matrix.way == 'docker'
         run: |
-          sh install/server.sh --binary target/debug/glave | tee "$RUNNER_TEMP/updated.txt"
+          sh install/server.sh --binary target/x86_64-unknown-linux-musl/debug/glave | tee "$RUNNER_TEMP/updated.txt"
           if grep -q '#setup=' "$RUNNER_TEMP/updated.txt"; then echo "an update prints no setup link"; exit 1; fi
           curl -sf -H 'host: glave.test' -H 'origin: https://glave.test' \
             -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"passkey/get_options"}' \
@@ -170,7 +178,7 @@ jobs:
       - name: The same line again updates glave, keeping its settings and passkeys
         if: matrix.way == 'public'
         run: |
-          sh install/server.sh --binary target/debug/glave | tee "$RUNNER_TEMP/updated.txt"
+          sh install/server.sh --binary target/x86_64-unknown-linux-musl/debug/glave | tee "$RUNNER_TEMP/updated.txt"
           if grep -q '#setup=' "$RUNNER_TEMP/updated.txt"; then echo "an update prints no setup link"; exit 1; fi
           systemctl is-active glave
           curl -sf --cacert "$GLAVE_TEST_INSTALLED_ROOT" -H 'origin: https://glave.test' \

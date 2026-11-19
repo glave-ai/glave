@@ -254,6 +254,13 @@ impl Drop for Daemon {
     }
 }
 
+/// Whether a command said it connected: a line of its own that is `connected`. Anywhere in
+/// the output would not do: since Python 3.13 a traceback for `-c` code echoes its source line,
+/// `…; print('connected')` included, so a refused connect would read as reached (#1561).
+fn connected(said: &str) -> bool {
+    said.lines().any(|line| line.trim() == "connected")
+}
+
 /// A command connecting to the Unix socket at `socket`, which prints `connected` if it can.
 fn connect(socket: &Path) -> String {
     format!(
@@ -281,16 +288,16 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
             .1
     };
     let (_, open) = run(&dir, None, None, &connect(&socket)).unwrap();
-    assert!(open.contains("connected"), "{open}");
+    assert!(connected(&open), "{open}");
     let (_, open) = run(&dir, None, None, &connect(&tmux.socket)).unwrap();
-    assert!(open.contains("connected"), "control, tmux's: {open}");
+    assert!(connected(&open), "control, tmux's: {open}");
 
     let offline = sandboxed(false, &connect(&socket));
-    assert!(!offline.contains("connected"), "{offline}");
+    assert!(!connected(&offline), "{offline}");
     let online = sandboxed(true, &connect(&socket));
-    assert!(online.contains("connected"), "{online}");
+    assert!(connected(&online), "{online}");
     let daemon = sandboxed(true, &connect(&tmux.socket));
-    assert!(!daemon.contains("connected"), "tmux's: {daemon}");
+    assert!(!connected(&daemon), "tmux's: {daemon}");
     let pool = sandboxed(true, "python3 pool.py");
     assert_eq!(pool.trim(), "pooled 3");
 
@@ -305,7 +312,7 @@ fn bubblewrap_lets_unix_sockets_with_the_network_but_hides_the_daemons_and_block
 fn reached(dir: &Path, sandboxed: bool, daemon: &Daemon) -> bool {
     let sandbox = sandboxed.then_some((SandboxLevel::Project, true));
     let (_, said) = run(dir, sandbox, None, &connect(&daemon.socket)).unwrap();
-    said.contains("connected")
+    connected(&said)
 }
 
 /// What listens in `/tmp` for the person's other programs has no fixed name, so it is looked
@@ -363,8 +370,9 @@ fn bubblewrap_hides_every_place_a_daemon_or_a_session_listens() {
     }
     // Each place there is, a socket or a folder with something in it, shows as neither.
     let tmux = PathBuf::from(format!("/tmp/tmux-{uid}"));
-    let look: Vec<String> = super::mounts::daemons(None, uid, None)
-        .iter()
+    let tmp = Path::new("/tmp");
+    let places = super::mounts::daemons(None, None);
+    let look: Vec<String> = (places.iter().chain(&super::mounts::sessions(tmp, uid)))
         .filter(|place| **place != tmux)
         .map(|place| {
             let place = place.display();
@@ -423,7 +431,7 @@ fn landlock_confines_read_only_commands() {
         said.contains("temp-ok") && said.contains("tmp-ok"),
         "{said}"
     );
-    assert!(!said.contains("connected"), "{said}");
+    assert!(!connected(&said), "{said}");
     // Landlock leaves `/proc` the machine's, but not another process's environment.
     assert!(!said.contains("environ-read"), "{said}");
     assert!(!project.join("inside.txt").exists(), "{said}");
