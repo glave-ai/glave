@@ -35,7 +35,7 @@ use only_on_linux::helper;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::{ComputerError, Sandbox, git_settings};
+use glave_ports::computer::{ComputerError, Sandbox, SandboxCaches, git_settings};
 
 use run_temp::RunTemp;
 pub(crate) use secrets::moved_stores;
@@ -149,7 +149,11 @@ impl Prepared {
         hidden: &[PathBuf],
         glave_on_path: Option<&Path>,
     ) -> Result<Self, ComputerError> {
-        let cache = cache_home(sandbox.glave_home.as_deref()).await;
+        let cache = match sandbox.caches {
+            SandboxCaches::Kept => cache_home(sandbox.glave_home.as_deref()).await,
+            // Each command's own, in its temp folder (`caches`): none kept to share.
+            SandboxCaches::PerCommand => None,
+        };
         let reached = Reached {
             cache: cache.as_deref(),
             glave_on_path,
@@ -167,7 +171,8 @@ impl Prepared {
     }
 
     /// Where package managers keep their caches for `launch`'s command: glave's sandbox
-    /// cache folder, kept between runs, or without glave's folder one in its temp folder.
+    /// cache folder, kept between runs; or, for someone other than the person whose computer it
+    /// is ([`SandboxCaches::PerCommand`]) or without glave's folder, one in its temp folder.
     pub(crate) fn caches(&self, launch: &Launch) -> PathBuf {
         self.cache
             .clone()

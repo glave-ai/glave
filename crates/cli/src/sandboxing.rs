@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use glave_computer::LocalComputers;
 use glave_config::policy::Choices;
 use glave_harness::{Permissions, Workspace};
-use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{ComputerError, Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork};
 use glave_process::Processes;
 
 use crate::setup::Setup;
@@ -26,6 +26,7 @@ pub(crate) fn sandbox_at(
         network: SandboxNetwork::when(choices.network.value),
         home: std::env::var_os("HOME").map(PathBuf::from),
         glave_home: glave_home.map(Path::to_path_buf),
+        caches: SandboxCaches::Kept,
     }
 }
 

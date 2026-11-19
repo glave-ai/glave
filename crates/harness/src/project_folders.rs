@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glave_event::Permissions;
+use glave_ports::computer::{Sandbox, SandboxCaches};
 use glave_ports::settings::{Hooks, Judge, Protections};
 use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ProjectId, Scope, ToolSource};
 
@@ -151,9 +152,18 @@ where
             } else {
                 thread.defaults.home_sandbox.as_ref()
             };
-            let wanted = protections.sandbox(mode, most);
-            let asks = thread.defaults.ask_network;
             let walled = self.walled(thread);
+            // Someone else's commands keep no package caches the person's commands use: what
+            // they left there the person's next command would run (#1469).
+            let caches = if walled {
+                SandboxCaches::PerCommand
+            } else {
+                SandboxCaches::Kept
+            };
+            let wanted = protections
+                .sandbox(mode, most)
+                .map(|sandbox| Sandbox { caches, ..sandbox });
+            let asks = thread.defaults.ask_network;
             if workspace.sandbox() != wanted.as_ref()
                 || workspace.asks_network() != asks
                 || workspace.plans() != planning
