@@ -620,18 +620,16 @@ jobs:
         env:
           GLAVE_REQUIRE_LANDLOCK: "1"
           GLAVE_TEST_SANDBOX_HELPER: ${{ github.workspace }}/target/debug/glave
-        # apt left it in place on Ubuntu 26.04 (#1561), so after apt's try, saying why, each
-        # bwrap still there is moved aside, which is all glave looks for, and put back before
-        # bubblewrap's step; what package owns it, and what installed needs it, is said first.
+        # Not removed with apt: on Ubuntu 26.04 GTK's image loaders (glycin) need bubblewrap, so
+        # removing it takes GTK, Chrome and Edge with it and swaps Firefox, a transaction of 1.5
+        # GB that once left it in place (#1561). Each bwrap is moved aside instead, which is all
+        # glave looks for, and put back before bubblewrap's step.
         run: |
-          sudo apt-get remove -y bubblewrap || true
           for bwrap in /usr/bin/bwrap $(which -a bwrap); do
             [ -e "$bwrap" ] || continue
-            echo "$bwrap: $(dpkg -S "$bwrap" 2>&1)"
             sudo mv "$bwrap" "$bwrap.aside"
             echo "$bwrap" >>"$RUNNER_TEMP/bwrap-aside"
           done
-          apt-cache rdepends --installed bubblewrap || true
           if command -v bwrap; then echo "bubblewrap is still on the PATH"; exit 1; fi
           cargo nextest run -p glave-computer -E 'test(/landlock/)'
           cargo nextest run -p glave --test cli -E 'test(/landlock/)'
