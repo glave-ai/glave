@@ -585,8 +585,7 @@ jobs:
   # itself is the helper), then bubblewrap and seccomp, with every sandbox test required to
   # run rather than skip.
   sandbox-linux:
-    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
@@ -621,9 +620,18 @@ jobs:
         env:
           GLAVE_REQUIRE_LANDLOCK: "1"
           GLAVE_TEST_SANDBOX_HELPER: ${{ github.workspace }}/target/debug/glave
+        # Not removed with apt, which left it in place on Ubuntu 26.04 (#1561): each bwrap is
+        # moved aside instead, which is all glave looks for, and put back before bubblewrap's
+        # step. What package owns it, and what installed needs it, is said first.
         run: |
-          sudo apt-get remove -y bubblewrap >/dev/null 2>&1 || true
-          if command -v bwrap; then echo "bubblewrap is still installed"; exit 1; fi
+          for bwrap in /usr/bin/bwrap $(which -a bwrap); do
+            [ -e "$bwrap" ] || continue
+            echo "$bwrap: $(dpkg -S "$bwrap" 2>&1)"
+            sudo mv "$bwrap" "$bwrap.aside"
+            echo "$bwrap" >>"$RUNNER_TEMP/bwrap-aside"
+          done
+          apt-cache rdepends --installed bubblewrap || true
+          if command -v bwrap; then echo "bubblewrap is still on the PATH"; exit 1; fi
           cargo nextest run -p glave-computer -E 'test(/landlock/)'
           cargo nextest run -p glave --test cli -E 'test(/landlock/)'
       # Again with the helper as releases build it, on musl, whose standard library opens files
@@ -642,6 +650,9 @@ jobs:
       # is the profile the person adds too (specs/sandbox.md).
       - name: Install bubblewrap, with an AppArmor profile that lets it make user namespaces
         run: |
+          if [ -f "$RUNNER_TEMP/bwrap-aside" ]; then
+            while read -r bwrap; do sudo mv "$bwrap.aside" "$bwrap"; done <"$RUNNER_TEMP/bwrap-aside"
+          fi
           sudo apt-get update -q
           sudo apt-get install -y -q bubblewrap
           if [ -d /etc/apparmor.d ]; then
