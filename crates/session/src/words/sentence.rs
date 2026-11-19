@@ -458,9 +458,15 @@ sentences! {
         "{ $kept } schedules are kept, the most policy allows ([tasks] max_schedules = { $most }); delete one first",
     TooManySchedulesKept { kept: usize, most: usize } = "too-many-schedules-kept"
         "{ $kept } of your schedules are kept, the most here ({ $most }); delete one first",
+    ScheduleNotKept = "schedule-not-kept" "the schedule was not kept",
+    SchedulesNotHere = "schedules-not-here"
+        "schedules don't run here: nothing on this server starts work at set times",
+    MakerRemoved = "maker-removed"
+        "whoever made it is no longer in this organization",
+    MakerUnknown = "maker-unknown"
+        "glave can't tell who made it, so it doesn't run it for anyone",
     CronTooOften { minutes: u16 } = "cron-too-often"
         "a schedule runs at most once every { $minutes } minutes: choose times further apart",
-    ScheduleNotKept = "schedule-not-kept" "the schedule was not kept",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
     ScheduleNoChatToResume = "schedule-no-chat-to-resume"
         "this schedule was made before schedules had chats of their own, so it can't run again: set it up again",
@@ -475,9 +481,10 @@ sentences! {
         "{ $outcome ->\n    [cancelled] Stopped\n    [interrupted] Interrupted, as glave stopped\n    [limit_reached] Stopped at its budget\n   *[failed] Didn't finish\n }",
     RunSkipped = "run-skipped" "Skipped: the run before was still going",
     // Why a run couldn't start: `reason` names a refusal as the session API's error codes do,
-    // empty for one recorded before refusals had reasons.
+    // or finer where the scheduler says more (`MAKER_REMOVED`, `MAKER_UNKNOWN`); empty for one
+    // recorded before refusals had reasons.
     RunRefused { reason: String } = "run-refused"
-        "Couldn't start: { $reason ->\n    [ARCHIVED] its chat is archived\n    [NO_THREAD] its chat is gone\n    [NOT_ALLOWED] it may not run here\n    [LIMIT] a limit was reached\n    [WORKSPACE] its chat's folder couldn't be opened\n    [NO_FOLDER] its project's folder isn't there anymore\n    [PROMPT_BLOCKED] a check set to run before each prompt stopped it\n    [NO_MODEL] its model isn't available here\n    [NO_PROVIDER] the model account it uses is gone\n    [PROVIDER] the model's provider failed\n    [NOT_AVAILABLE] the computer it works on can't run it now\n   *[other] something went wrong\n }",
+        "Couldn't start: { $reason ->\n    [MAKER_REMOVED] whoever made it is no longer in this organization\n    [MAKER_UNKNOWN] glave can't tell who made it\n    [TOO_OFTEN] it runs more often than every five minutes\n    [ARCHIVED] its chat is archived\n    [NO_THREAD] its chat is gone\n    [NOT_ALLOWED] it may not run here\n    [LIMIT] a limit was reached\n    [WORKSPACE] its chat's folder couldn't be opened\n    [NO_FOLDER] its project's folder isn't there anymore\n    [PROMPT_BLOCKED] a check set to run before each prompt stopped it\n    [NO_MODEL] its model isn't available here\n    [NO_PROVIDER] the model account it uses is gone\n    [PROVIDER] the model's provider failed\n    [NOT_AVAILABLE] the computer it works on can't run it now\n   *[other] something went wrong\n }",
     RunStarted = "run-started" "Started",
     RunMissed = "run-missed" "Missed: it was paused at its time",
     // Told to a schedule's run whose copy of its project was left as it was: `why` is

@@ -227,12 +227,17 @@ pub(crate) async fn tasks<L: EventLog + 'static>(server: &Tested<L>) -> Vec<Task
 
 /// Lets the server's own work run until no task runs here any more.
 pub(crate) async fn settle<L: EventLog + 'static>(server: &Tested<L>) {
+    settle_for(server, &Caller::default()).await;
+}
+
+/// Lets the server's own work run until no task of `caller`'s projects runs here any more.
+pub(crate) async fn settle_for<L: EventLog + 'static>(server: &Tested<L>, caller: &Caller) {
     for _ in 0..100_000 {
-        if tasks(server)
-            .await
-            .iter()
-            .all(|task| task.status != TaskStatus::Running)
-        {
+        let listed = server.request_as(caller, Request::TasksList { limit: None });
+        let Reply::Tasks { tasks } = listed.await.unwrap() else {
+            panic!("tasks");
+        };
+        if tasks.iter().all(|task| task.status != TaskStatus::Running) {
             return;
         }
         tokio::task::yield_now().await;
@@ -272,8 +277,17 @@ pub(crate) async fn asked_in<L: EventLog + 'static>(
     server: &Tested<L>,
     thread: ThreadId,
 ) -> CallId {
+    asked_in_as(server, &Caller::default(), thread).await
+}
+
+/// The call whose `approval.requested` `caller`'s `thread` waits at, once its turn has asked.
+pub(crate) async fn asked_in_as<L: EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    thread: ThreadId,
+) -> CallId {
     for _ in 0..100_000 {
-        let asked = (events(server, thread).await.into_iter()).find_map(|raw| {
+        let asked = (events_as(server, caller, thread).await.into_iter()).find_map(|raw| {
             match decode(raw).ok()?.body {
                 Body::ApprovalRequested(asked) => Some(asked.call_id),
                 _ => None,

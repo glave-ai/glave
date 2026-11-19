@@ -127,7 +127,7 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/session/src/schedule/fire.rs",
-        "() = self.inner.tasks_ended.notified() => {}",
+        "self.inner.tasks_ended.notified().await;",
         1,
         "a task ending, raced against the scheduler's sleep until its next look, a minute at most",
     ),

@@ -501,10 +501,12 @@ fn a_run_waiting_for_the_person_across_a_restart_keeps_its_budget() {
         set(&now, "2026-10-10T11:00:00Z");
         assert_eq!(server.tick().await.unwrap(), vec![chat]);
         let approval = asked_in(&server, chat).await;
+        let person = server.person();
         server.shutdown().await;
         drop(server);
         let mut later = Setup::asking(writes_after_asking().split_off(1), Answering::Clients);
         later.clock = now.clone();
+        later.settings.person = person;
         later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
         let (restarted, _) = later.build_on(&repo, log).await;
         let recovered = restarted.recover_tasks().await.unwrap();

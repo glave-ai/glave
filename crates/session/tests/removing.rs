@@ -10,13 +10,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::{
-    Body, CommandEnding, OrgRole, Outcome, PrincipalKind, RawEvent, Secret, ThreadId, When, decode,
+    Body, CommandEnding, OrgRole, Outcome, PrincipalId, PrincipalKind, RawEvent, Secret, ThreadId,
+    When, decode,
 };
 use glave_ports::computer::{Bytes, TerminalId, TerminalSize};
 use glave_ports::stream::Reserved;
 use glave_ports::testing::HUNG;
-use glave_ports::{Caller, EventLog as _, OrgId, Scope};
+use glave_ports::{
+    BoxFuture, Caller, Directory, DirectoryError, EventLog as _, IdentityKey, OrgId, Scope,
+};
 use glave_session::protocol::{ApiError, Notification, Reply, Request, Status, code};
+use glave_session::signin::Accounts;
 use glave_session::{Sent, TurnItem, TurnStream, Watched};
 use serde_json::json;
 use tokio::sync::Notify;
@@ -549,5 +553,83 @@ fn someone_removed_has_their_schedules_deleted() {
             panic!("her schedules, not {listed:?}");
         };
         assert_eq!(schedules, []);
+    });
+}
+
+/// A directory that holds no one and fails to take anyone out, as a store that blips does.
+struct NoLeaving;
+
+impl Directory for NoLeaving {
+    fn link<'a>(
+        &'a self,
+        _: &'a IdentityKey,
+        person: PrincipalId,
+    ) -> BoxFuture<'a, Result<PrincipalId, DirectoryError>> {
+        Box::pin(async move { Ok(person) })
+    }
+
+    fn unlink_email_if_alone(&self, _: PrincipalId) -> BoxFuture<'_, Result<(), DirectoryError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn find<'a>(
+        &'a self,
+        _: &'a IdentityKey,
+    ) -> BoxFuture<'a, Result<Option<PrincipalId>, DirectoryError>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    fn join(&self, _: PrincipalId, _: OrgId) -> BoxFuture<'_, Result<(), DirectoryError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn leave(&self, _: PrincipalId, _: OrgId) -> BoxFuture<'_, Result<(), DirectoryError>> {
+        Box::pin(async { Err(DirectoryError::Storage("the store did not answer".into())) })
+    }
+
+    fn organizations(&self, _: PrincipalId) -> BoxFuture<'_, Result<Vec<OrgId>, DirectoryError>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+#[test]
+fn a_removal_that_fails_after_deleting_their_schedules_leaves_none_to_fire() {
+    block_on!(async {
+        let dir = folder("removal-schedules-first");
+        let log = Shared::default();
+        let origin = glave_ports::host::PublicOrigin::parse("https://glave.example.com").unwrap();
+        let clock = glave_ports::testing::ManualClock::ticking(1_791_001_000_000);
+        let server = "0192f5c6-0000-7000-8000-0000000005e8".to_owned();
+        let accounts = Accounts::new(
+            log.clone(),
+            Arc::new(NoLeaving),
+            server,
+            &origin,
+            Arc::new(clock),
+        );
+        let mut setup = Setup::new(Vec::new());
+        setup.identity_provider = true;
+        setup.accounts = Some(Arc::new(accounts.unwrap()));
+        let server = setup.build_on(&dir, log.clone()).await.0;
+        let ada = signed_in("ada");
+        let schedule = Request::ScheduleCreate {
+            project: None,
+            name: None,
+            when: When::Cron("0 9 * * *".into()),
+            zone: None,
+            prompt: "check the build".into(),
+            budget: 5_000,
+        };
+        let Reply::Schedule { schedule } = server.request_as(&ada, schedule).await.unwrap() else {
+            panic!("her schedule");
+        };
+        remove(&server, &Caller::default(), "ada")
+            .await
+            .unwrap_err();
+        let ledger = Scope::glaves_own(scope().org(), schedule.project);
+        let read = log.read(&ledger, Reserved::Tasks.id(), None, usize::MAX);
+        let deleted = (read.await.unwrap().into_iter())
+            .any(|raw| matches!(decode(raw).unwrap().body, Body::ScheduleDeleted(_)));
+        assert!(deleted, "her schedule went before her membership failed to");
     });
 }

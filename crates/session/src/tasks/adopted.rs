@@ -2,16 +2,18 @@
 //! next adopts it as it starts, under the task's lease, rather than recording it interrupted, so
 //! its budget holds when the person answers and it goes on, and its end is recorded as any
 //! task's is, once. It is followed by what its thread records: what this server's hub hears of
-//! it, and its turn's end looked for in the log, since another server may go on with it.
+//! it, and its turn's end looked for in the log, since another server may go on with it. One
+//! whose maker was removed from its organization, or whose people can't be read to tell, is not
+//! adopted, so it is recorded interrupted.
 
 use std::time::Duration;
 
 use glave_event::{
-    At, Body, Currency, Money, Nanos, Payload as _, PrincipalKind, Seq, ThreadId, TokenCounts,
-    ToolCallRequested, TurnResult, TurnStarted, decode,
+    At, Body, Currency, Money, Nanos, Payload as _, Seq, ThreadId, TokenCounts, ToolCallRequested,
+    TurnResult, TurnStarted, decode,
 };
 use glave_harness::Cancel;
-use glave_ports::{BlobStore, CallKind, Caller, EventLog, Lease, Located, ModelProvider, Scope};
+use glave_ports::{BlobStore, CallKind, EventLog, Lease, Located, ModelProvider, Scope};
 use tokio::sync::broadcast;
 
 use super::Running;
@@ -47,21 +49,27 @@ where
         project: Located,
         thread: ThreadId,
         lease: Lease,
+        people: &super::PeopleOnce,
     ) -> Result<bool, ApiError> {
         let open =
             (self.ledgers().get(&project)).and_then(|ledger| ledger.open.get(&thread).cloned());
         let Some(recorded) = open.filter(|task| task.started.schedule.is_some()) else {
             return Ok(false);
         };
-        // As whoever's run it is.
-        let person = (recorded.started.by.as_ref())
-            .filter(|by| by.kind == PrincipalKind::Person)
-            .and_then(|by| by.id);
-        let caller = Caller {
-            person,
-            org: Some(project.org),
-            ..Caller::default()
+        // As whoever's run it is: never one of someone glave can't tell, or of anyone its
+        // organization's people ledger doesn't list as there now, or can't be read to tell.
+        let Ok(person) = self.maker_of(recorded.started.by.as_ref()) else {
+            return Ok(false);
         };
+        let caller = self.acting_as(Some(person), project.org);
+        match self.membership(person, project.org, people).await {
+            Ok(super::Membership::Member) => {}
+            Ok(super::Membership::Removed | super::Membership::Unknown) => return Ok(false),
+            Err(error) => {
+                tracing::warn!(%error, org = %project.org, "could not read the organization's people");
+                return Ok(false);
+            }
+        }
         let scope = self.authorize(&caller, thread).await?;
         let view = self.inner.harness.log().thread_view(&scope, thread).await?;
         let Some(view) = view else {
@@ -75,7 +83,7 @@ where
             project,
             started: recorded.started,
             at: recorded.at,
-            by: person,
+            by: caller.person,
             tokens,
             cost,
             stopped: false,

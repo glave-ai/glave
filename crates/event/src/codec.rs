@@ -19,15 +19,15 @@ use crate::payload::{
     PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated,
     ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, PushClaimed, PushKeyMade,
     PushSubscribed, PushUnsubscribed, RoleSet, ScheduleCreated, ScheduleDeleted, SchedulePaused,
-    ScheduleSkipped, SearchSet, SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked,
-    SignupFinished, SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
-    ThreadDeleted, ThreadForked, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
-    ToolCallRequested, ToolCallStarted, TrustDecided, TurnMade, TurnResult, TurnStarted,
-    WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance, approval, awake, browser, catalog,
-    certificate, chosen, command, connection, connector, credential, credits, filters, fork,
-    grouping, hook, instructions, language, library, made, memory, message, model, passkey, people,
-    plan, project, provider, push, remembering, search, secrets, service, signup, standing, task,
-    thread, tool, trust, turn, workspace, zone,
+    SchedulePlaced, ScheduleSkipped, ScheduleUnplaced, SearchSet, SecretAdded, SecretRemoved,
+    ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted, TaskEnded, TaskStarted,
+    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked, ThreadRenamed, ThreadStarted,
+    ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted, TrustDecided,
+    TurnMade, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance,
+    approval, awake, browser, catalog, certificate, chosen, command, connection, connector,
+    credential, credits, filters, fork, grouping, hook, instructions, language, library, made,
+    memory, message, model, passkey, people, plan, project, provider, push, remembering, search,
+    secrets, service, signup, standing, task, thread, tool, trust, turn, workspace, zone,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -78,10 +78,13 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (task::CREATED, 1),
     (task::CREATED, 2),
     (task::CREATED, 3),
+    (task::CREATED, 4),
     (task::DELETED, 1),
     (task::SKIPPED, 1),
     (task::SKIPPED, 2),
     (task::PAUSED, 1),
+    (task::PLACED, 1),
+    (task::UNPLACED, 1),
     (memory::SAVED, 1),
     (memory::EDITED, 1),
     (memory::FORGOTTEN, 1),
@@ -192,6 +195,8 @@ pub enum Body {
     ScheduleDeleted(ScheduleDeleted),
     ScheduleSkipped(ScheduleSkipped),
     SchedulePaused(SchedulePaused),
+    SchedulePlaced(SchedulePlaced),
+    ScheduleUnplaced(ScheduleUnplaced),
     MemorySaved(MemorySaved),
     MemoryEdited(MemoryEdited),
     MemoryForgotten(MemoryForgotten),
@@ -348,11 +353,9 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         hook::TYPE => hook::decode(version, data).map(|r| r.map(Body::HookRan)),
         task::STARTED => task::decode_started(version, data).map(|r| r.map(Body::TaskStarted)),
         task::ENDED => task::decode_ended(version, data).map(|r| r.map(Body::TaskEnded)),
-        task::CREATED => task::decode_created(version, data).map(|r| r.map(Body::ScheduleCreated)),
-        task::DELETED => task::decode_deleted(version, data).map(|r| r.map(Body::ScheduleDeleted)),
-        task::SKIPPED => task::decode_skipped(version, data).map(|r| r.map(Body::ScheduleSkipped)),
-        task::PAUSED => task::decode_paused(version, data).map(|r| r.map(Body::SchedulePaused)),
-        other => decode_others(other, version, data),
+        other => {
+            decode_schedules(other, version, data).or_else(|| decode_others(other, version, data))
+        }
     };
     let body = match known {
         Some(Ok(body)) => body,
@@ -417,6 +420,8 @@ impl Event {
             Body::ScheduleDeleted(payload) => encode(header, payload),
             Body::ScheduleSkipped(payload) => encode(header, payload),
             Body::SchedulePaused(payload) => encode(header, payload),
+            Body::SchedulePlaced(payload) => encode(header, payload),
+            Body::ScheduleUnplaced(payload) => encode(header, payload),
             Body::MemorySaved(payload) => encode(header, payload),
             Body::MemoryEdited(payload) => encode(header, payload),
             Body::MemoryForgotten(payload) => encode(header, payload),
@@ -514,6 +519,22 @@ fn decode_connection(
         }
         _ => connector::decode_disconnected(version, data)
             .map(|r| r.map(Body::ConnectorDisconnected)),
+    }
+}
+
+/// Decodes a schedule's events, and the schedules' index's, by their type; `None` for any other
+/// type.
+fn decode_schedules(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
+    match kind {
+        task::CREATED => task::decode_created(version, data).map(|r| r.map(Body::ScheduleCreated)),
+        task::DELETED => task::decode_deleted(version, data).map(|r| r.map(Body::ScheduleDeleted)),
+        task::SKIPPED => task::decode_skipped(version, data).map(|r| r.map(Body::ScheduleSkipped)),
+        task::PAUSED => task::decode_paused(version, data).map(|r| r.map(Body::SchedulePaused)),
+        task::PLACED => task::decode_placed(version, data).map(|r| r.map(Body::SchedulePlaced)),
+        task::UNPLACED => {
+            task::decode_unplaced(version, data).map(|r| r.map(Body::ScheduleUnplaced))
+        }
+        _ => None,
     }
 }
 

@@ -9,8 +9,13 @@
 
 mod fire;
 mod info;
+mod placed;
 
-use glave_event::{ScheduleCreated, ScheduleDeleted, ScheduleId, SchedulePaused, ThreadId, When};
+pub(crate) use placed::Placed;
+
+use glave_event::{
+    Principal, ScheduleCreated, ScheduleDeleted, ScheduleId, SchedulePaused, ThreadId, When,
+};
 use glave_harness::Change;
 use glave_ports::{
     BlobStore, Caller, EventLog, Located, ModelProvider, ProjectId, Scope, Standing, title_from,
@@ -42,12 +47,25 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Makes the schedule `new` asks for, and its chat, for `caller`.
+    /// Whether schedules run here: a server on the store fires them, and policy lets a person
+    /// keep one.
+    pub(crate) fn schedules_run(&self) -> bool {
+        self.inner.schedules && self.inner.limits.max_schedules != Some(0)
+    }
+
+    /// Makes the schedule `new` asks for, and its chat, for `caller`: refused where no server
+    /// fires schedules.
     pub(crate) async fn create_schedule(
         &self,
         caller: &Caller,
         new: NewSchedule,
     ) -> Result<ScheduleInfo, ApiError> {
+        if !self.inner.schedules {
+            return Err(ApiError::new(
+                code::NOT_AVAILABLE,
+                Sentence::SchedulesNotHere,
+            ));
+        }
         if let When::Cron(text) = &new.when {
             Cron::for_a_schedule(text).map_err(|why| ApiError::new(code::INVALID_PARAMS, why))?;
         }
@@ -84,10 +102,13 @@ where
             budget: new.budget,
             thread: Some(thread),
             from: new.from,
-            by: self.someone_else(caller.person),
+            // Named always, never left implied: another server's own person may be someone else.
+            by: Some(Principal::person(self.person_of(caller)?)),
         };
         let project = scope.located();
         if let Err(refused) = self.keep_schedule(caller, project, &created).await {
+            // One whose record landed though keeping it failed goes, so none outlives its chat.
+            self.forget_schedule(caller, project, schedule).await;
             // A chat made for a schedule that isn't kept goes, with its copy.
             if let Err(error) = self.change(caller, thread, Change::Delete).await {
                 tracing::warn!(error = %error.message, %thread, "a schedule's chat was left after the schedule was not kept");
@@ -98,7 +119,9 @@ where
             .ok_or_else(|| ApiError::new(code::INTERNAL, Sentence::ScheduleNotKept))
     }
 
-    /// Names `created`'s chat for it, then keeps it in `project`'s ledger, for `caller`.
+    /// Names `created`'s chat for it, then keeps it in `project`'s ledger, for `caller`: its
+    /// project listed before and after, so the server that fires schedules finds it once it is
+    /// recorded, whatever it unplaced meanwhile; counted again once kept.
     async fn keep_schedule(
         &self,
         caller: &Caller,
@@ -108,7 +131,39 @@ where
         if let Some(thread) = created.thread {
             self.rename(caller, thread, created.name.clone()).await?;
         }
-        self.record_in_ledger(project, created).await
+        self.room_for_one_more(caller).await?;
+        self.place_schedules(project).await?;
+        self.record_in_ledger(project, created).await?;
+        self.place_schedules(project).await?;
+        // Counted again once kept, so schedules made at once on any server never keep more than
+        // policy allows: one that finds too many goes, to be made again; both may.
+        if self.kept_schedules(caller).await? > self.most_schedules() {
+            let deleted = ScheduleDeleted {
+                schedule: created.schedule,
+                by: self.someone_else(caller.person),
+            };
+            self.record_in_ledger(project, &deleted).await?;
+            return Err(self.too_many_schedules(self.most_schedules()));
+        }
+        Ok(())
+    }
+
+    /// Deletes `schedule` from `project`'s ledger where its record landed though keeping it
+    /// failed, for `caller`, so no schedule outlives the chat made for it; best effort.
+    async fn forget_schedule(&self, caller: &Caller, project: Located, schedule: ScheduleId) {
+        let forgot = async {
+            if !(self.ledger_apart(project).await?.schedules).contains_key(&schedule) {
+                return Ok(());
+            }
+            let deleted = ScheduleDeleted {
+                schedule,
+                by: self.someone_else(caller.person),
+            };
+            self.record_in_ledger(project, &deleted).await
+        };
+        if let Err(error) = forgot.await {
+            tracing::warn!(error = %error.message, %schedule, "a schedule not kept was left");
+        }
     }
 
     /// A new chat in `scope` for a schedule's runs: on a copy of its project's folder where the
@@ -129,24 +184,38 @@ where
     /// may once resumed, a hundred where it sets none: a paused one counts, so pausing makes
     /// no room.
     async fn room_for_one_more(&self, caller: &Caller) -> Result<(), ApiError> {
-        let most = self.most_schedules();
-        let projects = self.read_ledgers_of(caller).await?;
-        let now = self.inner.harness.clock().now();
-        let kept = self
-            .ledgers()
-            .iter()
-            .filter(|(id, _)| projects.contains(id))
-            .flat_map(|(_, ledger)| ledger.schedules.values())
-            .filter(|scheduled| info::kept(scheduled, now))
-            .count();
-        if kept >= most {
-            let said = match self.inner.limits.max_schedules {
-                Some(_) => Sentence::TooManySchedules { kept, most },
-                None => Sentence::TooManySchedulesKept { kept, most },
-            };
-            return Err(ApiError::new(code::LIMIT, said));
+        let kept = self.kept_schedules(caller).await?;
+        if kept >= self.most_schedules() {
+            return Err(self.too_many_schedules(kept));
         }
         Ok(())
+    }
+
+    /// The schedules `caller` keeps that will still run, or may once resumed, read whole from
+    /// the ledger of each project of theirs the index lists, apart from what this server keeps:
+    /// so one made on another server a moment ago counts.
+    async fn kept_schedules(&self, caller: &Caller) -> Result<usize, ApiError> {
+        // The list read up to now; each project of theirs looked up in it.
+        self.placed().await;
+        let theirs = self.projects_of(caller).await?;
+        let now = self.inner.harness.clock().now();
+        let mut kept = 0usize;
+        for project in theirs.into_iter().filter(|at| self.is_placed(*at)) {
+            let ledger = self.ledger_apart(project).await?;
+            let here = (ledger.schedules.values()).filter(|scheduled| info::kept(scheduled, now));
+            kept = kept.saturating_add(here.count());
+        }
+        Ok(kept)
+    }
+
+    /// `kept` schedules are as many as policy allows, or more, said in plain words.
+    fn too_many_schedules(&self, kept: usize) -> ApiError {
+        let most = self.most_schedules();
+        let said = match self.inner.limits.max_schedules {
+            Some(_) => Sentence::TooManySchedules { kept, most },
+            None => Sentence::TooManySchedulesKept { kept, most },
+        };
+        ApiError::new(code::LIMIT, said)
     }
 
     /// The schedules of every project `caller` works in, oldest first.
@@ -315,7 +384,7 @@ where
     pub(crate) async fn delete_schedules_in(
         &self,
         project: Located,
-        by: Option<&glave_event::Principal>,
+        by: Option<&Principal>,
     ) -> Result<(), ApiError> {
         let ledger = self.ledger_apart(project).await?;
         for schedule in ledger.schedules.into_keys() {

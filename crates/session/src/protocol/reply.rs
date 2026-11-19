@@ -103,6 +103,10 @@ pub struct ServerInfo {
     /// offers that only where it does.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub push: bool,
+    /// Whether schedules run here (`schedule/*`), so a client offers them only where they do:
+    /// a server on its store fires them, and policy lets the caller keep one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub schedules: bool,
     /// What the caller may connect here, so a client offers only that; absent where they may
     /// connect none of it.
     #[serde(default, skip_serializing_if = "Connects::is_none")]

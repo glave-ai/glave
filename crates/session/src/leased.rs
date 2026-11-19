@@ -117,7 +117,7 @@ where
     }
 
     /// Closes every turn left open in the projects whose tasks this server runs, whose lease
-    /// lapsed or that has none: for the person's server as it starts, before it serves. A turn
+    /// lapsed or that has none: for the person's server as it starts. A turn
     /// another server's lease holds is left to it, or to this server once the lease lapses.
     pub async fn repair_left_open(&self) -> Result<Repaired, ApiError> {
         let mut repaired = Repaired::default();

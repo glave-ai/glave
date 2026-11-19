@@ -52,6 +52,10 @@ use glave_ports::stream::Reserved;
 pub(crate) const MAX_PAGE: usize = 5_000;
 
 /// What a server is built from: the harness's parts, less the approver, which is the API.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent switches of a deployment, each a yes or no"
+)]
 pub struct Wiring<P, L, B> {
     pub provider: P,
     pub log: L,
@@ -80,6 +84,10 @@ pub struct Wiring<P, L, B> {
     pub identity_provider: bool,
     /// What one person may run at once and keep scheduled.
     pub tasks: TaskLimits,
+    /// Whether a server on its store fires schedules (`Server::run_scheduler`), as every glave
+    /// served on a computer or a cluster does: where none does, it offers no schedules and
+    /// refuses `schedule/create`.
+    pub schedules: bool,
     /// What threads remember from one to the next (`specs/memory.md`); none when memory is off.
     pub memory: Option<Arc<dyn Memory>>,
     /// The projects of the server's organization, and who owns each.
@@ -163,7 +171,7 @@ impl<P, L, B> Wiring<P, L, B> {
     /// starts off or empty: the system clock and the operating system's randomness; no
     /// `web_fetch`, other tools, hooks, identity provider, memory, model accounts, git
     /// hosts, connections, rereading, project folders, trust, browsers or worktrees to let go
-    /// of; no limit on tasks; no notifications pushed;
+    /// of; no limit on tasks, and no schedules; no notifications pushed;
     /// only the settings' own model and mode; threads in their project's folder rather than a
     /// worktree; reached only on its own computer, which it does not keep awake; leases in its
     /// own memory. An embedder names only what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
@@ -189,6 +197,7 @@ impl<P, L, B> Wiring<P, L, B> {
             hooks: Hooks::default(),
             identity_provider: false,
             tasks: TaskLimits::default(),
+            schedules: false,
             memory: None,
             projects,
             models: Vec::new(),
@@ -320,11 +329,17 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) connections: Option<Arc<dyn Connections>>,
     /// Once it listens over HTTP, where a browser on this computer reaches it.
     pub(crate) reached: OnceLock<crate::connections::Reached>,
-    /// The project's own person, whom the log leaves implied.
+    /// The server's own person, the one threads are for unless someone else starts them:
+    /// from the settings, or the one its harness made.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
     /// What each project's task ledger says, as far as this server has read it.
     pub(crate) ledgers: Mutex<Ledgers>,
+    /// The store's index of the projects with schedules, as far as this server has read it, and
+    /// which organization the scheduler's next tick starts from.
+    pub(crate) placed: Mutex<crate::schedule::Placed>,
+    /// Whether a server on its store fires schedules ([`Wiring::schedules`]).
+    pub(crate) schedules: bool,
     /// What each organization's people ledger says, as far as this server has read it.
     pub(crate) people: Arc<Mutex<crate::people::Peoples>>,
     /// Tasks running in this server.
@@ -430,7 +445,7 @@ where
         harness.set_without_images(crate::models::without_images(&catalog));
         Self {
             inner: Arc::new(Inner {
-                person: harness.settings().person,
+                person: harness.person(),
                 harness,
                 clock,
                 identity_provider: wiring.identity_provider,
@@ -443,6 +458,8 @@ where
                 reached: OnceLock::new(),
                 limits: wiring.tasks,
                 ledgers: Mutex::new(Ledgers::new()),
+                placed: Mutex::new(crate::schedule::Placed::default()),
+                schedules: wiring.schedules,
                 people: Arc::new(Mutex::new(crate::people::Peoples::default())),
                 running: Mutex::new(Tasks::new()),
                 own: org,

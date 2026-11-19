@@ -318,7 +318,7 @@ async fn past_a_page(log: &InMemoryLog, ledger: &Scope) {
                 budget: 1_000,
                 thread: None,
                 from: None,
-                by: None,
+                by: Some(Principal::person(id("ada"))),
             };
             written(log, ledger, next + n, &created).await;
         } else {
@@ -406,11 +406,13 @@ fn a_fresh_server_runs_what_was_missed_while_none_ran_once() {
             .build_in_repository("schedule-restart", log.clone())
             .await;
         create(&server, cron("0 * * * *"), 10_000).await.unwrap();
+        let person = server.person();
         server.shutdown().await;
         drop(server);
         // Down for a day: 24 runs missed.
         let mut later = setup();
         later.clock = now.clone();
+        later.settings.person = person;
         later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
         set(&now, "2026-10-11T10:30:00Z");
         let (restarted, _) = later.build_on(&repo, log).await;
@@ -447,6 +449,69 @@ fn a_person_keeps_a_hundred_schedules_where_policy_sets_no_limit() {
             refused.message.to_string(),
             "100 of your schedules are kept, the most here (100); delete one first"
         );
+    });
+}
+
+#[test]
+fn schedules_made_at_once_never_keep_more_than_policy_allows() {
+    block_on!(async {
+        let log = Arc::new(InMemoryLog::new());
+        let faulty = FaultyLog::over(Arc::clone(&log));
+        let mut first = setup();
+        first.limits.max_schedules = Some(1);
+        let (server, _, _, _dir) = first
+            .build_in_repository("schedule-racing", faulty.clone())
+            .await;
+        // The first is held as it is kept, while the second is made: each found room for one.
+        faulty.hold("schedule.created");
+        let one = create(&server, cron("0 9 * * *"), 10);
+        let two = async {
+            faulty.held().await;
+            let made = create(&server, cron("0 10 * * *"), 10).await;
+            faulty.release();
+            made
+        };
+        let (one, two) = tokio::join!(one, two);
+        assert_eq!(
+            one.unwrap_err(),
+            code::LIMIT,
+            "counted once kept: one too many, it goes"
+        );
+        assert!(two.is_ok());
+        assert_eq!(list(&server).await.len(), 1);
+    });
+}
+
+/// `setup()` on a repository of its own in the fresh folder `name`, its leases shared with the
+/// test as with another server: the server, its clock, the leases and the folder.
+async fn with_leases(name: &str) -> (Tested, ManualClock, Arc<InMemoryLeases>, TempDir) {
+    let mut first = setup();
+    let now = first.clock.clone();
+    let leases = Arc::new(InMemoryLeases::new(Arc::new(now.clone())));
+    first.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
+    let (server, _, _, dir) = first.build_in_repository(name, InMemoryLog::new()).await;
+    (server, now, leases, dir)
+}
+
+#[test]
+fn a_run_whose_task_another_server_holds_is_held_back_and_recorded_nowhere() {
+    block_on!(async {
+        let (server, now, leases, _dir) = with_leases("schedule-held-task").await;
+        let made = create(&server, cron("0 11 * * *"), 5_000).await.unwrap();
+        set(&now, "2026-10-10T11:00:00Z");
+        // Another server holds the run's task, as it claims the run.
+        let entropy = CountingEntropy::starting_at(0x7e);
+        let other = Holder::new(&now, &entropy).unwrap();
+        let minute = std::time::Duration::from_secs(60);
+        let task = Leased::Task(made.thread.unwrap());
+        let held = leases.acquire(scope().org(), task, other, minute).await;
+        let held = held.unwrap().unwrap();
+        assert_eq!(tick(&server).await, 0);
+        assert_eq!(list(&server).await[0].last, None, "recorded nowhere");
+        leases.release(&held).await.unwrap();
+        set(&now, "2026-10-10T11:00:05Z");
+        assert_eq!(tick(&server).await, 1, "started once it is let go");
+        settle(&server).await;
     });
 }
 
@@ -597,18 +662,11 @@ fn schedules_fire_from_one_server_at_a_time() {
 
 /// One server looks after the schedules of every organization its callers work in, under the
 /// store's one scheduler lease, and a run lands in its schedule's organization:
-/// someone in another organization sees nothing of it. A run for someone signed in from
-/// elsewhere does not start yet (#410), in any organization.
+/// someone in another organization sees nothing of it.
 #[test]
 fn one_server_keeps_every_organizations_schedules_under_the_store_s_lease() {
     block_on!(async {
-        let mut first = setup();
-        let now = first.clock.clone();
-        let leases = Arc::new(InMemoryLeases::new(Arc::new(now.clone())));
-        first.leases = Some(Arc::clone(&leases) as Arc<dyn Leases>);
-        let (server, _, _, _dir) = first
-            .build_in_repository("schedule-orgs", InMemoryLog::new())
-            .await;
+        let (server, now, leases, _dir) = with_leases("schedule-orgs").await;
         let third = OrgId::from_uuid(uuid::Uuid::from_u128(3));
         let grace = Caller {
             org: Some(third),
@@ -627,13 +685,11 @@ fn one_server_keeps_every_organizations_schedules_under_the_store_s_lease() {
             budget: 5_000,
         };
         let made = server.request_as(&grace, theirs).await;
-        assert!(made.is_ok(), "{made:?}");
+        let Ok(Reply::Schedule { schedule: hers }) = made else {
+            panic!("her schedule, not {made:?}");
+        };
         set(&now, "2026-10-10T10:05:00Z");
-        assert_eq!(
-            tick(&server).await,
-            1,
-            "the run of the person on this computer"
-        );
+        assert_eq!(tick(&server).await, 2, "everyone's run");
         let runs = async |caller: &Caller| {
             let listed = Request::TasksList { limit: None };
             match server.request_as(caller, listed).await.unwrap() {
@@ -648,7 +704,7 @@ fn one_server_keeps_every_organizations_schedules_under_the_store_s_lease() {
             vec![scope().project()],
             "in its organization"
         );
-        assert_eq!(runs(&grace).await, Vec::new(), "and in no other");
+        assert_eq!(runs(&grace).await, vec![hers.project], "and hers in hers");
         // The server holds the store's one scheduler lease.
         let entropy = CountingEntropy::starting_at(0x7e);
         let other = Holder::new(&now, &entropy).unwrap();

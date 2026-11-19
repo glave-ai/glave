@@ -64,6 +64,25 @@ fn is_paused(scheduled: &Scheduled) -> bool {
     scheduled.paused || scheduled.created.thread.is_none()
 }
 
+/// Whether `ledger` holds a run still open, as one waiting for the person is, or a schedule that
+/// will still run, or will once resumed, at `now`.
+pub(super) fn live(ledger: &Ledger, now: Timestamp) -> bool {
+    !ledger.open.is_empty() || (ledger.schedules.values()).any(|scheduled| kept(scheduled, now))
+}
+
+/// Since when `ledger` has held nothing to run, as far as it says: its last schedule's going, or
+/// the latest a schedule of it was made or due to run.
+pub(super) fn idle_since(ledger: &Ledger) -> Option<At> {
+    let latest = (ledger.schedules.values())
+        .map(|scheduled| {
+            scheduled
+                .last
+                .map_or(scheduled.at, |last| last.max(scheduled.at))
+        })
+        .max();
+    latest.max(ledger.emptied)
+}
+
 /// Whether `scheduled` counts toward the schedules a person keeps at `now`: it will still run,
 /// or will once resumed. One made before schedules had chats runs no more, and doesn't.
 pub(super) fn kept(scheduled: &Scheduled, now: Timestamp) -> bool {

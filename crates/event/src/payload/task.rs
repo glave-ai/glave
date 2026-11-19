@@ -3,9 +3,12 @@
 //! (threads that run with no one attached) and the schedules that start them. They are kept in
 //! the project's task ledger, glave's own stream under a reserved id (`specs/events.md`), never
 //! in a conversation.
+//! `schedule.placed`: a project with schedules, in its organization's index of
+//! them, until `schedule.unplaced`, as its last schedule goes.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use uuid::Uuid;
 
 use crate::codec::{Payload, parse};
 use crate::envelope::At;
@@ -21,6 +24,8 @@ pub(crate) const CREATED: &str = "schedule.created";
 pub(crate) const DELETED: &str = "schedule.deleted";
 pub(crate) const SKIPPED: &str = "schedule.skipped";
 pub(crate) const PAUSED: &str = "schedule.paused";
+pub(crate) const PLACED: &str = "schedule.placed";
+pub(crate) const UNPLACED: &str = "schedule.unplaced";
 
 /// A thread began running as a task, with no one attached.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,7 +113,8 @@ pub struct ScheduleCreated {
     /// The chat it was set up from, when it was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<ThreadId>,
-    /// Who made it. Absent: the project's person.
+    /// Who made it: named always from v4; absent in v1 to v3, which left the server's own
+    /// person implied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
 }
@@ -229,6 +235,27 @@ pub struct ScheduleDeleted {
     pub by: Option<Principal>,
 }
 
+/// Someone made a schedule in a project, which the store's list of where schedules are now
+/// holds, ids alone: the server that fires schedules reads the task ledger of each project it
+/// lists, so a schedule runs though no one asked that server for anything since it started.
+/// Recorded once for each project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SchedulePlaced {
+    pub org: Uuid,
+    pub project: Uuid,
+}
+
+/// A project's last schedule went, so the store's list of where schedules are no longer holds
+/// it: what the list holds is the projects with schedules now, never every one that once had
+/// one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduleUnplaced {
+    pub org: Uuid,
+    pub project: Uuid,
+}
+
 impl Payload for TaskStarted {
     const TYPE: &'static str = STARTED;
     const VERSION: u32 = 1;
@@ -241,7 +268,7 @@ impl Payload for TaskEnded {
 
 impl Payload for ScheduleCreated {
     const TYPE: &'static str = CREATED;
-    const VERSION: u32 = 3;
+    const VERSION: u32 = 4;
 }
 
 impl Payload for SchedulePaused {
@@ -256,6 +283,16 @@ impl Payload for ScheduleSkipped {
 
 impl Payload for ScheduleDeleted {
     const TYPE: &'static str = DELETED;
+    const VERSION: u32 = 1;
+}
+
+impl Payload for SchedulePlaced {
+    const TYPE: &'static str = PLACED;
+    const VERSION: u32 = 1;
+}
+
+impl Payload for ScheduleUnplaced {
+    const TYPE: &'static str = UNPLACED;
     const VERSION: u32 = 1;
 }
 
@@ -278,6 +315,13 @@ pub(crate) fn decode_created(
     match version {
         1 | 2 => Some(parse::<ScheduleCreatedBefore>(data).map(ScheduleCreated::from)),
         3 => Some(parse(data)),
+        // Named always from v4: none is no schedule of this version.
+        4 => Some(
+            parse(data).and_then(|created: ScheduleCreated| match created.by {
+                Some(_) => Ok(created),
+                None => Err(serde::de::Error::missing_field("by")),
+            }),
+        ),
         _ => None,
     }
 }
@@ -304,6 +348,20 @@ pub(crate) fn decode_deleted(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<ScheduleDeleted>> {
+    (version == 1).then(|| parse(data))
+}
+
+pub(crate) fn decode_placed(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<SchedulePlaced>> {
+    (version == 1).then(|| parse(data))
+}
+
+pub(crate) fn decode_unplaced(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<ScheduleUnplaced>> {
     (version == 1).then(|| parse(data))
 }
 

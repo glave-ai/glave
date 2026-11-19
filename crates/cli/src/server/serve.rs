@@ -128,8 +128,6 @@ pub(crate) async fn run(
     // Only the lock's holder removes a socket a server before it left.
     let listener = crate::socket::listen(&path).await?;
     let said = args.said();
-    // What a glave before this one left running, and later what its leases still held.
-    let mut left_open = recover(server, said).await;
     // The key every push is signed with, made now where there is none, so reading it never
     // has to. A store that can't keep it fails the start, as any store failing at start does,
     // and whatever runs the server starts it again.
@@ -143,19 +141,16 @@ pub(crate) async fn run(
     let stopping = Cancel::new();
     let stop = stopping.clone();
     let mut http = pin!(http.serve(server.clone(), async move { stop.cancelled().await }));
-    // Each runs until the loop below ends, and is dropped then. Schedules never fire where
-    // people sign in from elsewhere, whose sign-in may end while their schedules last.
-    let fires = args.issuers.is_empty();
-    let mut scheduler = Box::pin(async move {
-        if fires {
-            server.run_scheduler(std::future::pending()).await;
-        }
-        std::future::pending::<()>().await;
-    });
+    // Each runs until the loop below ends, and is dropped then.
+    let mut scheduler = Box::pin(server.run_scheduler(std::future::pending()));
     let mut removals = Box::pin(server.follow_removals());
     let mut notifications = Box::pin(server.push_notifications());
     let mut daily = Box::pin(daily.run());
     let mut certificates = Box::pin(crate::serving::keep_https(reach, said));
+    // What a glave before this one left running, recorded apart from the loop below, so
+    // serving starts at once, and looked at again while another server's leases held any.
+    let mut held = Box::pin(look_again(server, said));
+    let mut looked = false;
     let mut clients = JoinSet::new();
     // Only a server started in the background writes to the log.
     let log = args.own_session.then(log_path).transpose()?;
@@ -171,11 +166,9 @@ pub(crate) async fn run(
             () = &mut notifications => {}
             () = &mut daily => {}
             () = &mut certificates => {}
+            () = &mut held, if !looked => looked = true,
             _ = tick.tick() => {
                 while clients.try_join_next().is_some() {}
-                if left_open > 0 {
-                    left_open = recover(server, said).await;
-                }
                 if let Some(log) = &log
                     && let Err(error) = log::keep_capped(log.clone()).await
                 {
@@ -187,7 +180,7 @@ pub(crate) async fn run(
             _ = interrupt.recv() => break None,
         }
     };
-    drop((scheduler, removals, daily, certificates));
+    drop((scheduler, removals, daily, certificates, held));
     said.info("stopping");
     drop(listener);
     let _ = tokio::fs::remove_file(&path).await;
@@ -201,6 +194,17 @@ pub(crate) async fn run(
     clients.abort_all();
     while clients.join_next().await.is_some() {}
     outcome
+}
+
+/// Records what a glave before this one left running, then looks again every [`TICK`] at what
+/// another server's leases held of it, until none is held.
+async fn look_again(server: &Glave, said: Said) {
+    let mut left_open = recover(server, said).await;
+    let mut every = tokio::time::interval_at(Instant::now() + TICK, TICK);
+    while left_open > 0 {
+        every.tick().await;
+        left_open = recover(server, said).await;
+    }
 }
 
 /// Records the tasks and turns a glave before this one left running as interrupted, and

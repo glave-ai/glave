@@ -12,6 +12,7 @@ mod acting;
 mod adopted;
 mod run;
 
+pub(crate) use acting::{Membership, PeopleOnce};
 pub(crate) use run::Unstarted;
 
 use std::collections::HashMap;
@@ -484,9 +485,21 @@ where
     /// (`Repaired::held`), until it lapses.
     pub async fn recover_tasks(&self) -> Result<Repaired, ApiError> {
         let mut recovered = Repaired::default();
+        // The person's own projects with schedules made before where schedules are was kept
+        // are listed, so the server firing schedules finds them wherever it runs; and any a
+        // scheduler that stopped mid-unplace may have left out.
+        self.placed().await;
+        self.look_again_at_unplaced().await;
+        for project in self.task_projects_here().await? {
+            self.catch_up(project).await?;
+            let any = (self.ledgers().get(&project)).is_some_and(|l| !l.schedules.is_empty());
+            if any && !self.is_placed(project) {
+                self.place_schedules(project).await?;
+            }
+        }
         for project in self.task_projects().await? {
             self.catch_up(project).await?;
-            let here = self.recover_in(project).await?;
+            let here = self.recover_in(project, &PeopleOnce::new()).await?;
             recovered.closed = recovered.closed.saturating_add(here.closed);
             recovered.held = recovered.held.saturating_add(here.held);
         }
@@ -496,7 +509,11 @@ where
     /// Recovers the tasks `project`'s ledger, as read, has open that no server follows any more:
     /// those whose task lease lapsed, adopted when a schedule's run waits for the person, else
     /// recorded interrupted. Those another server's lease holds are counted, to look at again.
-    pub(crate) async fn recover_in(&self, project: Located) -> Result<Repaired, ApiError> {
+    pub(crate) async fn recover_in(
+        &self,
+        project: Located,
+        people: &PeopleOnce,
+    ) -> Result<Repaired, ApiError> {
         let mut recovered = Repaired::default();
         {
             let stale: Vec<ThreadId> = {
@@ -524,7 +541,7 @@ where
                 };
                 // A schedule's run that waits for the person goes on, under its budget, once
                 // they answer; one that can't be adopted is recorded interrupted.
-                let adopted = match self.adopt_waiting(project, thread, task).await {
+                let adopted = match self.adopt_waiting(project, thread, task, people).await {
                     Ok(adopted) => adopted,
                     Err(error) => {
                         tracing::warn!(%error, %thread, "a waiting run could not be adopted");
@@ -593,7 +610,8 @@ where
         self.inner.limits.max_schedules.unwrap_or(MOST_SCHEDULES)
     }
 
-    fn running_for(&self, person: Option<PrincipalId>) -> usize {
+    /// How many tasks of `person`'s this server runs now: none for the server's own person.
+    pub(crate) fn running_for(&self, person: Option<PrincipalId>) -> usize {
         self.working(|task| task.by == person)
     }
 
