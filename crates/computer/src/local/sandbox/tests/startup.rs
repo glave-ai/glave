@@ -7,7 +7,7 @@ use std::path::Path;
 use glave_ports::block_on;
 use glave_ports::computer::{Ending, SandboxNetwork};
 
-use super::{computers_saying, enforced, open_app, run, scratch};
+use super::{computers, computers_saying, enforced, open_app, run, scratch};
 
 /// Says what the shell was given, so a failure shows it, appends a line to `ran.txt` in the
 /// project, and says it is done.
@@ -34,10 +34,7 @@ fn counted(name: &str, environment: &[(&str, &str)], bash_env: Option<&str>) -> 
         environment.push(("BASH_ENV", &file));
     }
     block_on!(async {
-        let (computers, mut sandbox) = computers_saying(&dir, &environment);
-        // With the network, as Auto runs: without it Linux refuses `getpeername`, which bash
-        // takes for a remote shell's, reading `~/.bashrc` in place of `BASH_ENV`.
-        sandbox.network = SandboxNetwork::Direct;
+        let (computers, sandbox) = computers_saying(&dir, &environment);
         let there = open_app(&computers, &dir).await;
         let (ending, said) = run(&computers, there, &sandbox, COUNTED).await;
         Counted {
@@ -109,4 +106,36 @@ fn exported_functions_never_run_a_command_again() {
         assert!(ran.said.contains("done"), "{name}: {}", ran.said);
         assert_eq!(ran.runs, 1, "{name}: {}", ran.said);
     }
+}
+
+/// A command's shell reads none of the person's startup files, without the network as with
+/// it: on Linux a refused `getpeername` made bash take its standard input for a remote shell's
+/// connection and read `~/.bashrc` (#1550). Run as a service runs it, with no `SHLVL`.
+#[test]
+fn a_command_without_the_network_never_runs_the_person_s_bashrc() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("bashrc");
+    let app = dir.join("app");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let ran = app.join("bashrc-ran.txt");
+    let bashrc = format!("echo bashrc >> '{}'\n", ran.display());
+    std::fs::write(home.join(".bashrc"), bashrc).unwrap();
+    let (ending, said) = block_on!(async {
+        let (computers, sandbox) = computers(&dir);
+        assert_eq!(sandbox.network, SandboxNetwork::Off);
+        let there = open_app(&computers, &dir).await;
+        run(
+            &computers,
+            there,
+            &sandbox,
+            "cat ~/.bashrc >/dev/null && echo done",
+        )
+        .await
+    });
+    assert_eq!(ending, Ending::Exited { code: 0 }, "{said}");
+    assert!(said.contains("done"), "the file can be read: {said}");
+    assert!(!ran.exists(), "{said}");
 }

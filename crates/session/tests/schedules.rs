@@ -424,6 +424,33 @@ fn a_fresh_server_runs_what_was_missed_while_none_ran_once() {
 }
 
 #[test]
+fn a_person_keeps_a_hundred_schedules_where_policy_sets_no_limit() {
+    block_on!(async {
+        let (server, _, _, _dir) = on_repository("schedule-hundred").await;
+        // In Chats, whose chats need no copy of a folder each.
+        for _ in 0..100 {
+            create_in(&server, None, cron("0 9 * * *"), 10)
+                .await
+                .unwrap();
+        }
+        let request = Request::ScheduleCreate {
+            project: None,
+            name: None,
+            when: cron("0 10 * * *"),
+            zone: None,
+            prompt: "one more".into(),
+            budget: 10,
+        };
+        let refused = server.request(request).await.unwrap_err();
+        assert_eq!(refused.code, code::LIMIT);
+        assert_eq!(
+            refused.message.to_string(),
+            "100 of your schedules are kept, the most here (100); delete one first"
+        );
+    });
+}
+
+#[test]
 fn schedules_need_a_budget_a_valid_time_and_room_under_policy() {
     let dir = folder("schedule-limits");
     block_on!(async {
@@ -433,9 +460,26 @@ fn schedules_need_a_budget_a_valid_time_and_room_under_policy() {
         setup.worktrees = Some(dir.join("worktrees"));
         let (server, _) = setup.build(&dir).await;
         assert_eq!(
-            create(&server, cron("* * * * *"), 0).await.unwrap_err(),
+            create(&server, cron("*/5 * * * *"), 0).await.unwrap_err(),
             code::INVALID_PARAMS
         );
+        // Never more often than every five minutes, said plainly.
+        for often in ["* * * * *", "*/2 * * * *"] {
+            let request = Request::ScheduleCreate {
+                project: None,
+                name: None,
+                when: cron(often),
+                zone: None,
+                prompt: "check the build".into(),
+                budget: 10,
+            };
+            let refused = server.request(request).await.unwrap_err();
+            assert_eq!(refused.code, code::INVALID_PARAMS);
+            assert_eq!(
+                refused.message.to_string(),
+                "a schedule runs at most once every 5 minutes: choose times further apart"
+            );
+        }
         assert_eq!(
             create(&server, cron("every day"), 10).await.unwrap_err(),
             code::INVALID_PARAMS

@@ -35,13 +35,21 @@ use crate::steer::{Message, Sent};
 use crate::turn::{TurnItem, TurnStream};
 use crate::words::Sentence;
 
-/// What a person may run at once and keep scheduled (`[tasks]` in `policy.toml`): no limit
-/// when `None`.
+/// What a person may run at once and keep scheduled (`[tasks]` in `policy.toml`): with no rule,
+/// four tasks at once and a hundred schedules that will still run.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TaskLimits {
     pub max_running: Option<usize>,
     pub max_schedules: Option<usize>,
 }
+
+/// The tasks a person runs at once where policy sets no `max_running`, decided: each is a copy
+/// of a folder, model calls and commands on one computer (`specs/one-server.md`).
+const MOST_RUNNING: usize = 4;
+
+/// The schedules a person keeps that will still run where policy sets no `max_schedules`: each
+/// is runs of theirs at set times, read every tick.
+const MOST_SCHEDULES: usize = 100;
 
 /// What a task does: one turn with this prompt, with the model and mode chosen with it, if any.
 pub(crate) struct Work(pub(crate) String, pub(crate) Choice);
@@ -114,14 +122,13 @@ where
                 Sentence::TaskThreadInFolder,
             ));
         }
-        if let Some(max) = self.inner.limits.max_running {
-            let running = self.running_for(caller.person);
-            if running >= max {
-                return Err(ApiError::new(
-                    code::LIMIT,
-                    Sentence::TooManyTasks { running, most: max },
-                ));
-            }
+        let (running, most) = (self.running_for(caller.person), self.most_running());
+        if running >= most {
+            let said = match self.inner.limits.max_running {
+                Some(_) => Sentence::TooManyTasks { running, most },
+                None => Sentence::TooManyTasksAtOnce { running, most },
+            };
+            return Err(ApiError::new(code::LIMIT, said));
         }
         // Checked before no one answers for the thread, so a turn someone follows keeps its
         // answers. Work that only manages it, such as the look over what a stopped turn made,
@@ -536,6 +543,17 @@ where
         person
             .filter(|person| Some(*person) != self.inner.person)
             .map(Principal::person)
+    }
+
+    /// The tasks one person may run at once here: policy's `max_running`, else four.
+    pub(crate) fn most_running(&self) -> usize {
+        self.inner.limits.max_running.unwrap_or(MOST_RUNNING)
+    }
+
+    /// The schedules one person may keep that will still run: policy's `max_schedules`, else
+    /// a hundred.
+    pub(crate) fn most_schedules(&self) -> usize {
+        self.inner.limits.max_schedules.unwrap_or(MOST_SCHEDULES)
     }
 
     fn running_for(&self, person: Option<PrincipalId>) -> usize {

@@ -20,6 +20,8 @@ use crate::local::sandbox::tests::token;
 use crate::local::sandbox_available;
 use crate::{CancelSwitch, LocalComputers};
 
+mod made_again;
+
 fn bubblewrap() -> bool {
     let available = sandbox_available();
     assert!(
