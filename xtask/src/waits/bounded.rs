@@ -142,10 +142,8 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "crates/session/src/turn.rs",
         "match ending.wait_for(|ended| *ended).await {",
         1,
-        "a turn already ending, whose last events are being written, or work that only manages \
-         the thread, held to its own limits: the look over what a command made once it ended \
-         waits at most a minute for its place among the server's look-overs, then looks for \
-         about 2 s and keeps a few files",
+        "a turn already ending, stopped or at its last call, whose last events are being \
+         written",
     ),
     // A life that ends when it is stopped or closed: a server's, a connection's, a watch's.
     (

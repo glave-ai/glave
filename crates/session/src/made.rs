@@ -1,16 +1,24 @@
 //! Files a thread's turns made for the person (`specs/session.md`, "Files it made"), read from
 //! its log: each `turn.ended` names the files its turn made (`glave_event::FileMade`), kept with
-//! the thread or left on the computer, and a `turn.made` what more a turn's look-over found once
-//! the thread's commands in the background had ended. `thread/files` gives them by turn, each
-//! path once. Nothing here reads a file the agent made.
+//! the thread or left on the computer, with what glave read of each in a process of its own,
+//! and a `turn.made` what more a turn's look-over found once the thread's commands in the
+//! background had ended. `thread/files` gives them by turn, each path once, `file/preview` a
+//! file's preview as its turn kept it. Nothing here reads a file the agent made.
 
-use glave_event::{AssetKind, Body, FileMade, Kept, MadeLeft, RawEvent, Seq, ThreadId, decode};
+use glave_event::{
+    AssetKind, Body, FileMade, Kept, MadeLeft, MadePreview, Parts, RawEvent, Seq, Sha256, ThreadId,
+    decode,
+};
 use glave_harness::MAX_FILE;
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, EventLog, ModelProvider, read_all};
 
-use crate::protocol::{ApiError, MadeFile, Reply, Told, TurnFiles};
+use crate::files::not_here;
+use crate::protocol::{ApiError, FilePreview, MadeFile, Reply, Told, TurnFiles, code};
 use crate::server::Server;
 use crate::words::Sentence;
+
+/// The most of a preview read back, in bytes: more than any preview holds (256 KB).
+const MOST_PREVIEW: u64 = 1024 * 1024;
 
 /// What a turn made, as the thread's log names it.
 struct Turn {
@@ -40,6 +48,40 @@ where
             })
             .collect();
         Ok(Reply::Files { made })
+    }
+
+    /// Answers `file/preview`: the preview `thread`'s turn kept of the file `sha256` it made;
+    /// refused for a file it keeps none of.
+    pub(crate) async fn preview_file(
+        &self,
+        thread: ThreadId,
+        sha256: &Sha256,
+    ) -> Result<Reply, ApiError> {
+        let scope = self.holding(thread, sha256).await?;
+        let no_preview = || ApiError::new(code::INVALID_PARAMS, Sentence::NoPreview);
+        let MadePreview { blob, cut } = self
+            .made_by_turns(thread)
+            .await?
+            .into_iter()
+            .flat_map(|turn| turn.files)
+            .find_map(|file| match (file.kept, file.read) {
+                (Kept::Blob(kept), Some(read)) if kept.sha256 == *sha256 => read.preview,
+                _ => None,
+            })
+            .ok_or_else(no_preview)?;
+        let found = self.inner.harness.blobs().get(&scope, &blob.sha256).await;
+        let mut found = found
+            .map_err(|error| ApiError::internal(&error))?
+            .ok_or_else(not_here)?;
+        let bytes = read_all(found.bytes.as_mut(), MOST_PREVIEW).await;
+        let bytes = bytes.map_err(|error| ApiError::internal(&error))?;
+        let markdown = String::from_utf8(bytes).map_err(|_| no_preview())?;
+        Ok(Reply::FilePreview {
+            preview: FilePreview {
+                markdown,
+                cut: cut.then(|| Sentence::PreviewCut.into()),
+            },
+        })
     }
 
     /// What each of `thread`'s turns made, as its log names it, in order.
@@ -93,8 +135,8 @@ fn read(turns: &mut Vec<Turn>, event: RawEvent) {
     }
 }
 
-/// `file` as `thread/files` gives it: named by its file's name, and said where it is kept, or
-/// why it isn't.
+/// `file` as `thread/files` gives it: named by its title, else its file's name, and said where
+/// it is kept, or why it isn't, and why it can't be shown when glave couldn't read it.
 fn made_file(file: &FileMade) -> MadeFile {
     let file_name = file
         .path
@@ -115,19 +157,39 @@ fn made_file(file: &FileMade) -> MadeFile {
         Kept::Secret => (None, Sentence::LeftSecret),
         Kept::Unchecked => (None, Sentence::LeftUnchecked),
     };
-    let name = cleaned(&file_name);
+    let unread = sha256.is_some() && file.read.is_none();
+    let read = file.read.clone().unwrap_or_default();
+    let name = read.title.unwrap_or_else(|| cleaned(&file_name));
+    let (unit, count) = match read.parts {
+        Some(Parts::Pages(count)) => ("pages", count),
+        Some(Parts::Sheets(count)) => ("sheets", count),
+        Some(Parts::Slides(count)) => ("slides", count),
+        None => ("none", 0),
+    };
     let sentence = Sentence::MadeLine {
         kind: kind_word(kind).to_owned(),
         name: name.clone(),
+        unit: unit.to_owned(),
+        count,
     };
+    // A PDF is drawn by the browser; any other file opens as the preview its turn kept.
+    let shown = read.preview.is_some() || kind == AssetKind::Pdf;
     MadeFile {
         kind,
         name,
         file_name,
         media_type: media_type.to_owned(),
         bytes: file.bytes,
+        previews: sha256.is_some() && !unread && shown,
         sha256,
+        parts: read.parts.map(|_| {
+            Told::from(Sentence::FileParts {
+                unit: unit.to_owned(),
+                count,
+            })
+        }),
         kept: kept.into(),
+        unread: unread.then(|| Sentence::MadeUnread.into()),
         sentence: sentence.into(),
     }
 }

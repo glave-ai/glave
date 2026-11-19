@@ -12,11 +12,12 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     AcceptedPasskeys, ConnectionInfo, ConnectorCategory, ConnectorCompany, ConnectorInfo,
-    ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, FilePiece, GoneFolder,
-    Grouping, InviteInfo, LibraryItem, Logo, ModelInfo, OrganizationInfo, OrganizationLook,
-    PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder, ProviderInfo, PushInfo,
-    ReplySources, ScheduleInfo, SearchInfo, SecretInfo, Shades, ShownInvite, SignInLink, SignInWay,
-    SpaceCredits, TaskInfo, ThreadChanges, ThreadSteps, Told, TrustAsk, TurnFiles, WatchEnd,
+    ConnectorTag, Copies, CredentialInfo, CreditsInfo, DeviceCode, FileInfo, FilePiece,
+    FilePreview, GoneFolder, Grouping, InviteInfo, LibraryItem, Logo, ModelInfo, OrganizationInfo,
+    OrganizationLook, PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder,
+    ProviderInfo, PushInfo, ReplySources, ScheduleInfo, SearchInfo, SecretInfo, Shades,
+    ShownInvite, SignInLink, SignInWay, SpaceCredits, TaskInfo, ThreadChanges, ThreadSteps, Told,
+    TrustAsk, TurnFiles, WatchEnd,
 };
 
 mod listening;
@@ -584,6 +585,9 @@ pub enum Reply {
     /// The files a thread's turns made for the person.
     #[schemars(title = "Files")]
     Files { made: Vec<TurnFiles> },
+    /// A file a thread made, as a person previews it.
+    #[schemars(title = "FilePreview")]
+    FilePreview { preview: FilePreview },
     /// A thread's turns in steps.
     #[schemars(title = "Steps")]
     Steps { steps: ThreadSteps },

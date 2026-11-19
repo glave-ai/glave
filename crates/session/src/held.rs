@@ -3,10 +3,11 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
+use std::time::Duration;
 
 use glave_event::{PrincipalId, ThreadId};
 use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Thread, Workspace};
-use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Standing};
+use glave_ports::{BlobStore, Caller, EventLog, Lease, Located, ModelProvider, Scope, Standing};
 use jiff::Timestamp;
 use tokio::sync::watch;
 
@@ -23,6 +24,19 @@ const IDLE_THREADS: usize = 256;
 /// How long a thread with no work stays in memory, as Codex unloads one: 30 minutes.
 const IDLE_MILLIS: i64 = 30 * 60 * 1_000;
 
+/// How many times work asked of a thread stops work there that only manages it before it starts:
+/// more may begin meanwhile, such as a look over what a command made once it ended.
+const MOST_STOPS: usize = 3;
+
+/// How long work that only manages a thread takes to end once stopped: a look stops at its next
+/// step, and it, or a change to whether the thread is shown, then writes a few events.
+const STOPPED_WITHIN: Duration = Duration::from_secs(5);
+
+/// How long work that only manages a thread may take when nothing stops it: a look over what a
+/// turn made waits at most a minute for its place among the server's look-overs, looks for about
+/// 2 seconds, then keeps a few files and reads them within 30 seconds.
+pub(crate) const MANAGED_WITHIN: Duration = Duration::from_secs(120);
+
 /// A thread the server holds: idle and ready, or busy with a turn or a compaction.
 pub(crate) enum Slot {
     Idle {
@@ -37,8 +51,9 @@ pub(crate) enum Slot {
         /// turn (`steer.rs`).
         inbox: Option<Inbox>,
         /// Whether the work only manages the thread: changes whether it is shown, or records
-        /// what its commands did and what they made. A message sent meanwhile starts a turn
-        /// once it ends.
+        /// what its commands did and what they made. Other work asked of the thread meanwhile,
+        /// a message among it, stops it and starts once it has ended, a look it stopped left
+        /// owed.
         manages: bool,
         /// Its commands in the background, listed and stopped while the work holds it.
         commands: Arc<Commands>,
@@ -184,15 +199,84 @@ where
         }
     }
 
+    /// Whether other work than what only manages `thread` holds it here: a turn, which takes
+    /// messages. Never work that only manages it and outlasted every stop, which a message would
+    /// otherwise try again forever.
+    pub(crate) fn turn_holds(&self, thread: ThreadId) -> bool {
+        matches!(
+            self.lock().get(&thread),
+            Some(Slot::Busy { manages: false, .. })
+        )
+    }
+
+    /// The end of the work that only manages `thread`, when such work holds it here, stopped
+    /// first when `stop`: a look it makes is then owed, for later.
+    pub(crate) fn managing(&self, thread: ThreadId, stop: bool) -> Option<watch::Receiver<bool>> {
+        match self.lock().get(&thread) {
+            Some(Slot::Busy {
+                manages: true,
+                cancel,
+                finished,
+                ..
+            }) => {
+                if stop {
+                    cancel.cancel();
+                }
+                Some(finished.clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// Takes `thread`'s lease, reads it again where its folder is `folder`, and takes it busy
+    /// for work of the kind `purpose` ([`Server::take_busy`]). Work there that only manages it,
+    /// such as glave's own look over what its turns made, is stopped first and its end waited
+    /// for, up to [`MOST_STOPS`] times, since more may begin meanwhile: so what is asked starts
+    /// at once, never refused as though a turn ran, and never waits behind a look. Answers too
+    /// whether it stopped such work.
+    async fn take_stopping(
+        &self,
+        scope: Scope,
+        thread: ThreadId,
+        folder: Option<&str>,
+        purpose: Use,
+        (cancel, finished): (&Cancel, &watch::Receiver<bool>),
+    ) -> Result<(Lease, Thread, bool), ApiError> {
+        let mut stopped = false;
+        for round in 0..=MOST_STOPS {
+            let last = round == MOST_STOPS;
+            if let Some(mut ending) = self.managing(thread, !last) {
+                // Still running after every stop: its lease is this server's too, so taking it
+                // would only renew one that work lets go of as it ends, leaving none.
+                if last {
+                    return Err(busy(thread));
+                }
+                stopped = true;
+                // It lets go of its lease, which is this server's too, before it ends.
+                let _ = tokio::time::timeout(STOPPED_WITHIN, ending.wait_for(|ended| *ended)).await;
+                continue;
+            }
+            let lease = self.lease(thread).await?;
+            self.read_again(scope, thread, folder).await?;
+            match self.take_busy(thread, purpose, cancel, finished.clone()) {
+                // Such work began meanwhile, under the same lease, which it lets go as it ends.
+                Err(_) if !last && self.managing(thread, false).is_some() => {}
+                taken => return Ok((lease, taken?, stopped)),
+            }
+        }
+        Err(busy(thread))
+    }
+
     /// Refuses work of the kind `purpose` on `thread` that cannot start, as this server holds it
-    /// now, before its lease is taken: the server is stopping, other work runs there, or the
-    /// thread is archived for work other than changing whether it is shown.
+    /// now, before its lease is taken: the server is stopping, other work runs there (but work
+    /// that only manages it, which [`Server::take_stopping`] stops), or the thread is archived
+    /// for work other than changing whether it is shown.
     fn refuse_early(&self, thread: ThreadId, purpose: Use) -> Result<(), ApiError> {
         if self.is_stopping() {
             return Err(crate::stopping::stopping());
         }
         match self.lock().get(&thread) {
-            Some(Slot::Busy { .. }) => Err(busy(thread)),
+            Some(Slot::Busy { manages: false, .. }) => Err(busy(thread)),
             Some(Slot::Idle { thread: held, .. }) if purpose != Use::Answer && held.waits() => {
                 Err(waiting(thread))
             }
@@ -210,7 +294,7 @@ where
     /// lease.
     async fn read_again(
         &self,
-        scope: glave_ports::Scope,
+        scope: Scope,
         thread: ThreadId,
         folder: Option<&str>,
     ) -> Result<(), ApiError> {
@@ -290,21 +374,17 @@ where
         self.occupy_for(thread, done, Use::Work, work).await
     }
 
-    /// Like [`Server::occupy`], for work of the kind `purpose` says.
-    pub(crate) async fn occupy_for<W, F, R>(
+    /// Readies `thread`, in `scope`, for work of the kind `purpose`, before anything is held:
+    /// what the person chose of keeping the computer awake and of memory is read, the thread
+    /// loaded, and work that cannot start refused. Answers where its project's folder is now,
+    /// which nothing but changing whether it is shown runs without.
+    async fn ready_for(
         &self,
+        scope: Scope,
         thread: ThreadId,
-        done: Finish<R>,
         purpose: Use,
-        work: W,
-    ) -> Result<(), ApiError>
-    where
-        W: FnOnce(Arc<Inner<P, L, B>>, Thread, Cancel) -> F + Send + 'static,
-        F: Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
-        R: Send + Sync + 'static,
-    {
-        let scope = self.scope_of(thread)?;
-        // Work keeps the computer awake as the person chose: read before anything is held.
+    ) -> Result<Option<String>, ApiError> {
+        // Work keeps the computer awake as the person chose.
         if purpose != Use::Manage
             && let Some(awake) = &self.inner.awake
         {
@@ -319,20 +399,43 @@ where
         {
             tracing::warn!(%error, "could not read whether the person wants memory");
         }
-        // Nothing but changing whether it is shown runs where its project's folder was.
         let folder = match purpose {
             Use::Manage => None,
             Use::Work | Use::Steered | Use::Answer => self.folder_now(scope.located()).await?,
         };
         self.load(thread).await?;
         self.refuse_early(thread, purpose)?;
+        Ok(folder)
+    }
+
+    /// Like [`Server::occupy`], for work of the kind `purpose` says.
+    pub(crate) async fn occupy_for<W, F, R>(
+        &self,
+        thread: ThreadId,
+        done: Finish<R>,
+        purpose: Use,
+        work: W,
+    ) -> Result<(), ApiError>
+    where
+        W: FnOnce(Arc<Inner<P, L, B>>, Thread, Cancel) -> F + Send + 'static,
+        F: Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
+        R: Send + Sync + 'static,
+    {
+        let scope = self.scope_of(thread)?;
+        let folder = self.ready_for(scope, thread, purpose).await?;
         // From here the store's lease keeps every other server off the thread; work that does
         // not start after all lets it lapse rather than end one this server's other work holds.
-        let lease = self.lease(thread).await?;
-        self.read_again(scope, thread, folder.as_deref()).await?;
         let cancel = Cancel::new();
         let (finish, finished) = watch::channel(false);
-        let held = self.take_busy(thread, purpose, &cancel, finished)?;
+        let (lease, held, stopped) = self
+            .take_stopping(
+                scope,
+                thread,
+                folder.as_deref(),
+                purpose,
+                (&cancel, &finished),
+            )
+            .await?;
         // Busy here, so its summary says it runs: lists are told, and again once it ends. Not
         // for a change to whether it is shown, which never shows as running.
         let project = scope.located();
@@ -365,6 +468,11 @@ where
             // anything still waiting, which only work that ended early leaves, is given back.
             // A turn that stopped at a wait keeps what was sent to it for when it goes on.
             let waits = matches!(result, Err(HarnessError::Waits(_)));
+            // A turn the person stopped owes the look over what it made, as does work that
+            // stopped a look to start: made once it has ended, so the files don't wait for the
+            // person's next message.
+            let owes =
+                (stopped || matches!(purpose, Use::Steered | Use::Answer)) && held.owes_look();
             let (unread, gone) = {
                 let mut threads = inner.threads.lock().unwrap_or_else(PoisonError::into_inner);
                 let unread = if matches!(purpose, Use::Steered | Use::Answer) && !waits {
@@ -384,6 +492,9 @@ where
             // Kept even when no one is following any more: a retry may still ask for it.
             done.send_replace(Some(Arc::new(result)));
             server.let_go_of(gone).await;
+            if owes && !server.is_stopping() {
+                server.record_idle(thread, true).await;
+            }
         });
         let mut tasks = self
             .inner

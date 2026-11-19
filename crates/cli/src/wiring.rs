@@ -202,6 +202,7 @@ pub(crate) async fn wire(
             processes.clone(),
             setup.said,
         ))),
+        reader: crate::reading::reader(&processes),
         homes,
         credits,
         router_floor: crate::gateway::router_floor(floor),
