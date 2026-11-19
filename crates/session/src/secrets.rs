@@ -109,6 +109,7 @@ where
         let secrets = self.inner.secrets.as_deref();
         theirs(
             caller,
+            self.inner.person,
             secrets,
             Sentence::SecretsNotHere,
             Sentence::SecretsOnItsComputer,

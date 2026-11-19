@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use glave_event::{At, AuthMethod, Secret};
+use glave_event::{At, AuthMethod, PrincipalId, Secret};
 use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use jiff::SignedDuration;
@@ -70,7 +70,7 @@ where
     /// signed in as them, never by a browser with a session of its own.
     pub(crate) fn link(&self, caller: &Caller) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
-        by_program(caller)?;
+        by_program(caller, self.inner.person)?;
         let code = browsers.link()?;
         Ok(Reply::Link { code })
     }
@@ -78,7 +78,7 @@ where
     /// Answers `signin/setup`: a setup link's code, asked for by a program on this computer.
     pub(crate) fn setup(&self, caller: &Caller) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
-        by_program(caller)?;
+        by_program(caller, self.inner.person)?;
         let code = browsers.setup()?;
         Ok(Reply::Link { code })
     }
@@ -232,7 +232,7 @@ where
         if let (true, Some(person)) = (with_account(caller), caller.person) {
             return Ok(self.accounts()?.browsers(person).await?);
         }
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
                 Sentence::PasskeysOnlyTheirs,
@@ -293,15 +293,11 @@ where
     }
 }
 
-/// Refuses `caller` unless they are a program on this computer signed in as the person: never
-/// a browser with a session of its own.
-fn by_program(caller: &Caller) -> Result<(), ApiError> {
-    let by_program = local(caller)
-        && caller
-            .auth
-            .as_ref()
-            .is_none_or(|auth| auth.session.is_none());
-    if by_program {
+/// Refuses `caller` unless they are a program on this computer signed in as the person on it,
+/// `own` (`local`): never a browser with a session of its own, nor anyone else.
+fn by_program(caller: &Caller, own: Option<PrincipalId>) -> Result<(), ApiError> {
+    let no_session = (caller.auth.as_ref()).is_none_or(|auth| auth.session.is_none());
+    if local(caller, own) && no_session {
         Ok(())
     } else {
         Err(ApiError::new(code::NOT_ALLOWED, Sentence::LinksOnlyHere))
