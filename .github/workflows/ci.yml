@@ -390,13 +390,16 @@ jobs:
   # built here). Everything they make is labelled glave.test=<run id>, and nothing labelled
   # may be left.
   kubernetes:
-    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     env:
       GLAVE_TEST_KUBE: "1"
       GLAVE_TEST_KUBE_RUNTIME_CLASS: glave-test-runc
-      GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
+      # glave built for musl, as releases are and as a release's computer image carries it:
+      # static, so it runs in the image whatever glibc the runner has (#1561).
+      GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/x86_64-unknown-linux-musl/debug/glave
+      # The flags dist sets for a musl target, as linux-checks gives them.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
     steps:
       # Linking every test binary of the workspace once filled a smaller runner's disk (ld died
       # with a bus error). Today's runner starts with about 85 GB free and the build takes about
@@ -430,17 +433,25 @@ jobs:
           # A registry on the runner the cluster pulls from, so glave's computer image is used
           # by its digest, as a deployment pins it.
           registry: true
-      - run: cargo build -p glave
+      - name: Install musl's standard library and musl-gcc
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+      - run: cargo build -p glave --target x86_64-unknown-linux-musl
       # With the glave just built in it, as a release's image carries that release's, so a
-      # person's computer serves with it rather than having it copied in.
+      # person's computer serves with it rather than having it copied in. Pushed through the
+      # registry's port on this runner, `localhost:5000`, which Docker reaches over plain HTTP;
+      # since Docker 29 (Ubuntu 26.04) `kind-registry:5000`, though it names this runner too,
+      # is asked over HTTPS (#1561). The cluster pulls it by its digest, as `kind-registry:5000`.
       - name: glave's computer image, built and pushed to the cluster's registry
         run: |
-          install -D -m 0755 target/debug/glave images/computer/glave/amd64/glave
-          docker build -t kind-registry:5000/glave-computer:test images/computer
-          docker push -q kind-registry:5000/glave-computer:test
-          image="$(docker inspect --format '{{index .RepoDigests 0}}' kind-registry:5000/glave-computer:test)"
-          docker image ls kind-registry:5000/glave-computer --format 'glave-computer: {{.Size}}'
-          echo "GLAVE_TEST_COMPUTER_IMAGE=$image" >> "$GITHUB_ENV"
+          install -D -m 0755 "$GLAVE_TEST_WORKER_GLAVE" images/computer/glave/amd64/glave
+          docker build -t localhost:5000/glave-computer:test images/computer
+          docker push -q localhost:5000/glave-computer:test
+          pushed="$(docker inspect --format '{{index .RepoDigests 0}}' localhost:5000/glave-computer:test)"
+          docker image ls localhost:5000/glave-computer --format 'glave-computer: {{.Size}}'
+          echo "GLAVE_TEST_COMPUTER_IMAGE=kind-registry:5000/glave-computer@${pushed#*@}" >> "$GITHUB_ENV"
       # gVisor in the kind node, as GKE Sandbox runs every person's computer: runsc and its
       # containerd shim from gVisor's release, pinned by its SHA-512 (the download tried again
       # while the server fails for a moment, as .github/curl/.curlrc says), and a runtime class
