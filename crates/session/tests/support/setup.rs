@@ -227,6 +227,8 @@ pub(crate) struct Setup {
     /// Tools beside the built-in ones.
     pub tools: Vec<Arc<dyn ToolSource>>,
     pub skills: Option<glave_harness::Skills>,
+    /// The hooks every thread runs; none unless a test sets some.
+    pub hooks: glave_ports::settings::Hooks,
     /// Variables its computer gives in place of this process's, such as its `HOME`.
     pub variables: Vec<(String, PathBuf)>,
     /// Whether people sign in through an identity provider; with none, it works for one person.
@@ -313,6 +315,7 @@ impl Setup {
             model: None,
             tools: Vec::new(),
             skills: None,
+            hooks: glave_ports::settings::Hooks::default(),
             variables: Vec::new(),
             identity_provider: false,
             schedules: true,
@@ -458,6 +461,7 @@ impl Setup {
             leases: self.leases,
             tools: self.tools,
             skills: self.skills,
+            hooks: self.hooks,
             awake: self.awake,
             worktrees: self.release,
             identity_provider: self.identity_provider,

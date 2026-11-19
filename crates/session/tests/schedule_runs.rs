@@ -502,31 +502,50 @@ fn a_run_waiting_for_the_person_across_a_restart_keeps_its_budget() {
             asking("runs-restart", writes_after_asking(), log.clone()).await;
         // 20 tokens: the first call's 15 pass, the second's go past.
         let made = schedule(&server, "Careful", "0 11 * * *", 20).await;
-        let chat = made.thread.unwrap();
-        set(&now, "2026-10-10T11:00:00Z");
-        assert_eq!(server.tick().await.unwrap(), vec![chat]);
-        let approval = asked_in(&server, chat).await;
-        let person = server.person();
-        server.shutdown().await;
-        drop(server);
-        let mut later = Setup::asking(writes_after_asking().split_off(1), Answering::Clients);
-        later.clock = now.clone();
-        later.settings.person = person;
-        later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
-        let (restarted, _) = later.build_on(&repo, log).await;
-        let recovered = restarted.recover_tasks().await.unwrap();
-        assert_eq!(recovered.closed, 0, "adopted, not interrupted");
-        let decided = Request::ApprovalDecide {
-            thread: chat,
-            approval,
-            decision: Answer::AllowOnce,
-        };
-        assert!(restarted.request(decided).await.is_ok());
-        settle(&restarted).await;
+        let answers = writes_after_asking().split_off(1);
+        let (restarted, _) =
+            allowed_after_a_restart(server, (&now, &repo, log), &made, answers).await;
         let ran = tasks(&restarted).await;
-        let run = ran.iter().find(|task| task.thread == chat).unwrap();
+        let run = ran
+            .iter()
+            .find(|task| made.thread == Some(task.thread))
+            .unwrap();
         assert_eq!(run.outcome, Some(Outcome::LimitReached), "{run:?}");
     });
+}
+
+/// Runs `made`, a schedule of `server`'s due at 11:00 whose run asks the person before it
+/// writes, and stops glave while the run waits; the person allows the write on a server started
+/// again on `log` that answers `answers`, which adopts the run and goes on with it to its end:
+/// that server, and what its model was sent.
+pub(crate) async fn allowed_after_a_restart(
+    server: Tested<Shared>,
+    (now, repo, log): (&ManualClock, &std::path::Path, Shared),
+    made: &ScheduleInfo,
+    answers: Vec<glave_ports::Completion>,
+) -> (Tested<Shared>, Seen) {
+    let chat = made.thread.unwrap();
+    set(now, "2026-10-10T11:00:00Z");
+    assert_eq!(server.tick().await.unwrap(), vec![chat]);
+    let approval = asked_in(&server, chat).await;
+    let person = server.person();
+    server.shutdown().await;
+    drop(server);
+    let mut later = Setup::asking(answers, Answering::Clients);
+    later.clock = now.clone();
+    later.settings.person = person;
+    later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
+    let (restarted, seen) = later.build_on(repo, log).await;
+    let recovered = restarted.recover_tasks().await.unwrap();
+    assert_eq!(recovered.closed, 0, "adopted, not interrupted");
+    let decided = Request::ApprovalDecide {
+        thread: chat,
+        approval,
+        decision: Answer::AllowOnce,
+    };
+    assert!(restarted.request(decided).await.is_ok());
+    settle(&restarted).await;
+    (restarted, seen)
 }
 
 #[test]
@@ -651,13 +670,15 @@ fn each_run_s_turn_says_when_it_was_due() {
         set(&now, "2026-10-10T11:00:30Z");
         assert_eq!(server.tick().await.unwrap(), vec![chat]);
         settle(&server).await;
-        let due: Vec<Option<At>> = (events(&server, chat).await.into_iter())
+        let due: Vec<(Option<At>, Option<String>)> = (events(&server, chat).await.into_iter())
             .filter_map(|raw| match glave_event::decode(raw).unwrap().body {
-                glave_event::Body::TurnStarted(started) => Some(started.scheduled),
+                glave_event::Body::TurnStarted(started) => Some((started.scheduled, started.zone)),
                 _ => None,
             })
             .collect();
-        assert_eq!(due, vec![Some(at("2026-10-10T11:00:00Z"))]);
+        // On the schedule's own clocks, which the run keeps whatever comes of the schedule.
+        let zone = Some(made.zone.clone());
+        assert_eq!(due, vec![(Some(at("2026-10-10T11:00:00Z")), zone)]);
     });
 }
 

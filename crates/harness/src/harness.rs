@@ -36,6 +36,7 @@ use crate::plan::Planning;
 use crate::prefix::Prefixed;
 use crate::project_folders::{Brought, ProjectFolders};
 use crate::room::LearnedWindows;
+use crate::schedule::Schedules;
 use crate::skills::Skills;
 use crate::tools::workspace::Workspace;
 use crate::waits::Opened;
@@ -122,6 +123,9 @@ pub struct Harness<P, L, B, A> {
     /// project turns on; none by default, so every thread opens with the settings' own and
     /// gets only the harness's tools and hooks.
     pub(crate) project_folders: Option<Arc<dyn ProjectFolders>>,
+    /// Where people's schedules are kept, which `schedule` sets up; none by default, so it is
+    /// not offered.
+    pub(crate) schedules: Option<Arc<dyn Schedules>>,
     /// Workspaces opened for threads let go of while commands were still in them, closed by a
     /// later let-go once their computer has none left there (`bind.rs`).
     pub(crate) lingering: Mutex<Vec<WorkspaceId>>,
@@ -350,6 +354,7 @@ where
             reading_for: crate::made::READING_FOR,
             memory: None,
             project_folders: None,
+            schedules: None,
             lingering: Mutex::default(),
         }
     }

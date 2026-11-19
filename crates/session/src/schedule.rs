@@ -7,10 +7,14 @@
 //! deletes or pauses it; deleting it keeps its chat, with its past runs.
 //! Firing them is `fire.rs`; how one reads in lists, `info.rs`.
 
+mod asked;
+mod card;
 mod fire;
 mod info;
 mod placed;
 
+pub(crate) use asked::asking;
+pub(crate) use card::{asked_in, card_in};
 pub(crate) use placed::Placed;
 
 use glave_event::{
@@ -26,7 +30,7 @@ use crate::cron::Cron;
 use crate::protocol::{ApiError, Reply, ScheduleInfo, code};
 use crate::server::Server;
 use crate::words::Sentence;
-use crate::zone::time_zone;
+use crate::zone::{UTC, time_zone};
 
 /// What `schedule/create` asks for.
 pub(crate) struct NewSchedule {
@@ -395,6 +399,19 @@ where
                     },
                 )
             })
+    }
+
+    /// The time zone `schedule` of `project` reads its clocks in, as this server last read its
+    /// ledger: what its run records it came due on; UTC, as for anyone who never gave theirs,
+    /// once it is gone.
+    pub(crate) fn zone_of_schedule(&self, project: Located, schedule: ScheduleId) -> String {
+        let ledgers = self.ledgers();
+        (ledgers.get(&project))
+            .and_then(|ledger| ledger.schedules.get(&schedule))
+            .map_or_else(
+                || UTC.to_owned(),
+                |scheduled| scheduled.created.zone.clone(),
+            )
     }
 
     /// `schedule` of `project`, as lists show it, as this server last read its ledger.

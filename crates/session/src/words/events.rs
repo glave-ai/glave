@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use glave_event::{
-    ApprovalRequested, Body, Event, Payload as _, RawEvent, ServiceAnswered, ServiceAsked,
-    ServiceOutcome, ThreadForked, decode,
+    ApprovalRequested, Body, CardLines, Event, Payload as _, RawEvent, ServiceAnswered,
+    ServiceAsked, ServiceOutcome, ThreadForked, decode,
 };
 
 use super::{Language, Sentence, caution_in, say, word};
@@ -38,6 +38,14 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
     let Event { header, body } = decode(event.clone()).ok()?;
     let body = match body {
         Body::ApprovalRequested(mut asked) => {
+            // A schedule's card is written again from what it was written from: its question,
+            // what that was written from, and its lines.
+            if let Some(repeating) = asked.repeating.as_ref() {
+                let lines = crate::schedule::card_in(language, repeating);
+                asked.asking = Some(crate::schedule::asked_in(language, repeating));
+                asked.detail = (lines.as_ref()).map_or(asked.detail, CardLines::joined);
+                asked.lines = lines.or(asked.lines);
+            }
             let ask = asked.asking.as_ref().map(|ask| word(language, ask));
             let caution = asked
                 .reason
@@ -131,4 +139,51 @@ pub(crate) fn note_in(note: &Arc<Notification>, language: Language) -> Arc<Notif
         _ => {}
     }
     Arc::clone(note)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_schedule_s_card_is_written_again_its_question_what_that_was_written_from_and_its_lines() {
+        let prompt = "Summarize my email and tell me what needs a reply.";
+        let raw: RawEvent = serde_json::from_value(serde_json::json!({
+            "glave": 1, "id": "0192f5c2-7000-7000-8000-000000000049",
+            "thread": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10", "seq": 14,
+            "at": "2026-11-16T09:00:00.000Z", "type": "approval.requested", "v": 2,
+            "data": {
+                "call_id": "call_14", "tool": "schedule", "summary": "schedule: \u{2026}",
+                "ask": "Repeat this every weekday at 8:00 am?",
+                "asking": {"says": "ask-repeat", "when": "every weekday at 8:00 am"},
+                "detail": "\u{2026}", "secret": false,
+                "repeating": {
+                    "cron": "0 8 * * 1-5", "zone": "Europe/Lisbon", "name": "Morning check",
+                    "first": "2026-11-17T08:00:00.000Z", "prompt": prompt
+                }
+            }
+        }))
+        .unwrap();
+        let written = event_in(&raw, Language::Accented).unwrap();
+        let data = serde_json::to_value(&written.data).unwrap();
+        assert_eq!(data["asking"]["says"], "ask-repeat");
+        let when = data["asking"]["when"].as_str().unwrap();
+        assert!(!when.contains("every weekday"), "{when}");
+        let ask = data["ask"].as_str().unwrap();
+        assert!(!ask.contains("Repeat this") && ask.contains(when), "{ask}");
+        let detail = data["detail"].as_str().unwrap();
+        assert!(!detail.contains("Monday to Friday"), "{detail}");
+        assert!(
+            detail.contains(prompt),
+            "the model's words stay as they are: {detail}"
+        );
+        // Its lines, typed, say what the detail says, a line each.
+        let lines = &data["lines"];
+        let typed: Vec<&str> = ["when", "chat", "prompt"]
+            .iter()
+            .filter_map(|line| lines[*line].as_str())
+            .collect();
+        assert_eq!(typed.len(), 3, "{lines}");
+        assert_eq!(typed.join("\n"), detail);
+    }
 }

@@ -28,6 +28,10 @@ pub(crate) const SHORTEST_GAP: u16 = 5;
 
 const MINUTES_A_DAY: u32 = 24 * 60;
 
+/// Where a schedule's dates are looked for: any day would do, since five years from it hold
+/// every date that ever comes, the 29th of February among them.
+const EVER_FROM: DateTime = jiff::civil::datetime(2000, 1, 1, 0, 0, 0, 0);
+
 /// The zone's changes of offset looked across for what its clocks show next: two a year for
 /// five years, and room for a zone that changes more.
 const MOST_CHANGES: usize = 64;
@@ -141,8 +145,9 @@ impl Cron {
         None
     }
 
-    /// `text` parsed for a schedule, which also never runs twice within [`SHORTEST_GAP`]
-    /// minutes: refused, in plain words, when it would.
+    /// `text` parsed for a schedule, which runs on some date and never twice within
+    /// [`SHORTEST_GAP`] minutes: refused, in plain words, when it never runs (the 30th of
+    /// February) or would run more often.
     pub(crate) fn for_a_schedule(text: &str) -> Result<Self, Sentence> {
         let cron = Self::parse(text)?;
         if cron.shortest_gap() < u32::from(SHORTEST_GAP) {
@@ -150,12 +155,16 @@ impl Cron {
                 minutes: SHORTEST_GAP,
             });
         }
+        if cron.next_on_clocks(EVER_FROM).is_none() {
+            let text = text.escape_debug().to_string();
+            return Err(Sentence::CronNever { text });
+        }
         Ok(cron)
     }
 
     /// The fewest minutes between two of its times on the clocks: within a day, and from a
     /// day's last to the next day's first, as if every day matched.
-    fn shortest_gap(&self) -> u32 {
+    pub(crate) fn shortest_gap(&self) -> u32 {
         let times: Vec<u32> = (0..24i8)
             .flat_map(|hour| (0..60i8).map(move |minute| (hour, minute)))
             .filter(|(hour, minute)| self.matches_time(*hour, *minute))
@@ -437,6 +446,21 @@ mod tests {
         for enough in ["*/5 * * * *", "0 8 * * 1-5", "30 7 1 * *"] {
             assert!(Cron::for_a_schedule(enough).is_ok(), "{enough}");
         }
+    }
+
+    #[test]
+    fn a_schedule_on_a_date_that_never_comes_is_refused() {
+        for never in ["0 8 30 2 *", "0 8 31 4,6,9,11 *"] {
+            assert_eq!(
+                Cron::for_a_schedule(never),
+                Err(Sentence::CronNever { text: never.into() }),
+                "{never}"
+            );
+        }
+        // Every fourth year.
+        assert!(Cron::for_a_schedule("0 8 29 2 *").is_ok());
+        // Either the 30th or a Monday: Mondays come.
+        assert!(Cron::for_a_schedule("0 8 30 2 1").is_ok());
     }
 
     proptest! {

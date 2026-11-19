@@ -47,6 +47,8 @@ where
                 secret: false,
                 caution: None,
                 outside_sandbox: None,
+                repeating: None,
+                lines: None,
             };
             let turn = &mut step.summary;
             self.approve(thread, &request, turn, cancel, live).await?

@@ -68,6 +68,8 @@ mod schedule_firing;
 mod schedule_pausing;
 mod schedule_people;
 mod schedule_runs;
+mod schedule_tool;
+mod schedule_tool_bounds;
 mod schedules;
 mod search;
 mod secrets;

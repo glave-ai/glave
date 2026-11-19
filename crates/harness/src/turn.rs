@@ -50,6 +50,9 @@ pub(crate) struct Step {
     pub(crate) proposed: bool,
     /// The compaction the person asked for in this turn, if they did (`compaction/asked.rs`).
     pub(crate) compact: Asked,
+    /// Whether the turn is a schedule's run, which never sets up or removes what repeats
+    /// (`schedule.rs`).
+    pub(crate) scheduled: bool,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -186,6 +189,7 @@ where
             round: None,
             proposed: false,
             compact: Asked::No,
+            scheduled: prompt.scheduled.is_some(),
         };
         self.steps(thread, step, &[], cancel, live).await
     }

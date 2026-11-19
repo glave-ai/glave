@@ -1,0 +1,408 @@
+//! The agent's `schedule` tool through the session API: it is offered in a chat someone can
+//! answer in, where schedules run, and never in a task; setting one up asks the person with the
+//! server's own card (its question, when it runs on their clock, its chat, what each run starts
+//! with), in every mode, Full access included, refused before asking for whatever would refuse
+//! it, and refused in plan mode; only their yes makes the schedule, under the server's own
+//! budget, in the time zone its card showed, remembering the chat it was asked in; "Not now"
+//! makes nothing; and the agent lists and removes schedules when asked, removing one asking as
+//! any change does.
+
+use glave_event::{Ask, Body, Permissions, ThreadId, decode};
+use glave_ports::testing::ManualClock;
+use glave_ports::{Caller, EventLog, InMemoryLog};
+use glave_session::protocol::{Answer, Reply, Request, ScheduleInfo};
+use glave_session::{Answering, KeepAwake, Unawake};
+use serde_json::{Value, json};
+
+use crate::support::*;
+
+/// What the model calls to set up a schedule every weekday at 8.
+pub(crate) fn create() -> Value {
+    json!({
+        "action": "create", "name": "Morning check", "prompt": "check the build",
+        "cron": "0 8 * * 1-5"
+    })
+}
+
+/// A setup in `mode`, whose model makes each of `calls` then says it is done, on a clock at
+/// Monday 16 November 2026, 10:00 UTC.
+pub(crate) fn setup(mode: Permissions, calls: Vec<Value>) -> Setup {
+    let mut answers: Vec<_> = (calls.into_iter())
+        .map(|call| answer(None, Some(("schedule", call))))
+        .collect();
+    answers.push(answer(Some("Done."), None));
+    let mut setup = Setup::asking(answers, Answering::Clients);
+    setup.settings.permissions = mode;
+    setup.clock = ManualClock::at_millis(1_794_823_200_000);
+    setup
+}
+
+/// A server in `mode` on a repository of its own, whose model makes each of `calls` then says
+/// it is done; what its model was sent; and the folder.
+pub(crate) async fn server(
+    name: &str,
+    mode: Permissions,
+    calls: Vec<Value>,
+) -> (Tested, Seen, glave_ports::testing::TempDir) {
+    let setup = setup(mode, calls);
+    let (server, seen, _, dir) = setup.build_in_repository(name, InMemoryLog::new()).await;
+    (server, seen, dir)
+}
+
+pub(crate) async fn schedules<L: EventLog + 'static>(server: &Tested<L>) -> Vec<ScheduleInfo> {
+    match server.request(Request::ScheduleList {}).await.unwrap() {
+        Reply::Schedules { schedules } => schedules,
+        other => panic!("schedules, not {other:?}"),
+    }
+}
+
+/// Lets `caller`'s `thread`'s turn run until it has ended.
+async fn ended<L: EventLog + 'static>(server: &Tested<L>, caller: &Caller, thread: ThreadId) {
+    for _ in 0..100_000 {
+        let events = events_as(server, caller, thread).await;
+        if events
+            .iter()
+            .any(|event| event.kind.as_str() == "turn.ended")
+        {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("the turn never ended");
+}
+
+/// The person answers `thread`'s waiting approval with `decision`, and the turn goes on to
+/// its end.
+pub(crate) async fn decide<L: EventLog + 'static>(
+    server: &Tested<L>,
+    thread: ThreadId,
+    decision: Answer,
+) {
+    decide_as(server, &Caller::default(), thread, decision).await;
+}
+
+/// `caller` answers their `thread`'s waiting approval with `decision`, and the turn goes on to
+/// its end.
+pub(crate) async fn decide_as<L: EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    thread: ThreadId,
+    decision: Answer,
+) {
+    let approval = asked_in_as(server, caller, thread).await;
+    let decided = Request::ApprovalDecide {
+        thread,
+        approval,
+        decision,
+    };
+    let answered = server.request_as(caller, decided).await;
+    assert!(answered.is_ok(), "{answered:?}");
+    ended(server, caller, thread).await;
+}
+
+/// What `thread` asked the person, recorded.
+pub(crate) async fn asked<L: EventLog + 'static>(
+    server: &Tested<L>,
+    thread: ThreadId,
+) -> Option<glave_event::ApprovalRequested> {
+    asked_of(server, &Caller::default(), thread).await
+}
+
+/// What `caller`'s `thread` asked them, recorded.
+pub(crate) async fn asked_of<L: EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    thread: ThreadId,
+) -> Option<glave_event::ApprovalRequested> {
+    let events = events_as(server, caller, thread).await;
+    (events.into_iter()).find_map(|raw| match decode(raw).ok()?.body {
+        Body::ApprovalRequested(asked) => Some(asked),
+        _ => None,
+    })
+}
+
+/// The structured result of `thread`'s first tool call that has one.
+async fn structured<L: EventLog + 'static>(server: &Tested<L>, thread: ThreadId) -> Value {
+    (events(server, thread).await.into_iter())
+        .find_map(|raw| match decode(raw).ok()?.body {
+            Body::ToolCallCompleted(done) => done.structured,
+            _ => None,
+        })
+        .unwrap()
+}
+
+#[test]
+fn the_agent_sets_up_a_schedule_only_once_the_person_says_yes_to_the_server_s_card() {
+    block_on!(async {
+        let (server, seen, _dir) = server("tool-yes", Permissions::Auto, vec![create()]).await;
+        let zone = Request::ZoneSet {
+            zone: "America/New_York".into(),
+        };
+        server.request(zone).await.unwrap();
+        let thread = start(&server, false).await;
+        let _turn = stream_turn(&server, thread, "check the build every weekday at 8", None)
+            .await
+            .unwrap();
+        asked_in(&server, thread).await;
+        let sent = json(&seen);
+        assert!(
+            sent[0].contains("\"name\":\"schedule\""),
+            "offered in a chat"
+        );
+        assert!(
+            !sent[0].contains("\"budget\""),
+            "the server's budget, not the model's"
+        );
+        let asked = asked(&server, thread).await.unwrap();
+        assert_eq!(asked.ask, "Repeat this every weekday at 8:00 am?");
+        assert_eq!(
+            asked.asking,
+            Some(Ask::Repeat {
+                when: "every weekday at 8:00 am".into()
+            })
+        );
+        let card = asked.repeating.clone().unwrap();
+        let from = (card.cron.as_str(), card.zone.as_str(), card.name.as_str());
+        let want = ("0 8 * * 1-5", "America/New_York", "Morning check");
+        assert_eq!(
+            from, want,
+            "what the card was written from, to write it again"
+        );
+        let detail = "Monday to Friday, 8:00 am your time. First run: Monday 16 November.\n\
+             Each run is added to its own chat, \u{201c}Morning check\u{201d}.\n\
+             Each run starts with: \u{201c}check the build\u{201d}";
+        assert_eq!(asked.detail, detail);
+        assert_eq!(
+            asked.summary,
+            format!("schedule: {detail}"),
+            "what would run, whole"
+        );
+        assert_eq!(asked.caution, None, "no laptop caveat on a server");
+        assert_eq!(
+            schedules(&server).await,
+            Vec::new(),
+            "nothing before the yes"
+        );
+        decide(&server, thread, Answer::AllowOnce).await;
+        let made = schedules(&server).await;
+        assert_eq!(made.len(), 1);
+        assert_eq!(made[0].name, "Morning check");
+        assert_eq!(made[0].from, Some(thread), "it remembers the chat");
+        assert_eq!(made[0].zone, "America/New_York");
+        assert_eq!(made[0].budget, 200_000, "the server's own budget");
+        assert_ne!(made[0].thread, Some(thread), "a chat of its own");
+        let result = structured(&server, thread).await;
+        assert_eq!(
+            result["schedule"],
+            json!(made[0].schedule),
+            "the client finds the schedule"
+        );
+        assert_eq!(result["chat"], json!(made[0].thread));
+        assert_eq!(
+            result["repeats"], "Every weekday at 8:00 am",
+            "the folded card's line, the server's own"
+        );
+        let told = json(&seen);
+        assert!(
+            told[1].contains("Set up \\\"Morning check\\\""),
+            "{}",
+            told[1]
+        );
+    });
+}
+
+#[test]
+fn not_now_sets_up_nothing_and_full_access_still_asks() {
+    block_on!(async {
+        let (server, seen, _dir) = server("tool-no", Permissions::FullAccess, vec![create()]).await;
+        let thread = start(&server, false).await;
+        let _turn = stream_turn(&server, thread, "check the build every weekday", None)
+            .await
+            .unwrap();
+        decide(&server, thread, Answer::Deny).await;
+        assert_eq!(schedules(&server).await, Vec::new());
+        let told = json(&seen);
+        assert!(told[1].contains("The person declined"), "{}", told[1]);
+    });
+}
+
+#[test]
+fn what_would_refuse_a_schedule_refuses_it_before_anyone_is_asked() {
+    block_on!(async {
+        let blank = json!({"action": "create", "name": "x", "prompt": "  ", "cron": "0 8 * * *"});
+        let at =
+            |cron: &str| json!({"action": "create", "name": "x", "prompt": "hi", "cron": cron});
+        let calls = vec![blank, at("*/30 * * * *"), at("0 8 30 2 *"), create()];
+        let mut full = setup(Permissions::Auto, calls);
+        full.limits.max_schedules = Some(0);
+        let (server, seen, _, _dir) = full
+            .build_in_repository("tool-refused", InMemoryLog::new())
+            .await;
+        let thread = start(&server, false).await;
+        turn(&server, thread, "check the build every weekday")
+            .await
+            .unwrap();
+        assert_eq!(asked(&server, thread).await, None, "no one was asked");
+        let told = json(&seen);
+        assert!(told[1].contains("a schedule needs a prompt"), "{}", told[1]);
+        assert!(
+            told[2].contains("at most once every 60 minutes"),
+            "the agent proposes nothing more often than hourly: {}",
+            told[2]
+        );
+        assert!(
+            told[3].contains("never runs"),
+            "the 30th of February: {}",
+            told[3]
+        );
+        assert!(told[4].contains("max_schedules"), "{}", told[4]);
+    });
+}
+
+#[test]
+fn plan_mode_refuses_a_schedule() {
+    block_on!(async {
+        let (server, seen, _dir) = server("tool-plan", Permissions::Plan, vec![create()]).await;
+        let thread = start(&server, false).await;
+        turn(&server, thread, "check the build every weekday")
+            .await
+            .unwrap();
+        assert_eq!(asked(&server, thread).await, None);
+        let told = json(&seen);
+        assert!(told[1].contains("Not set up in plan mode"), "{}", told[1]);
+        assert_eq!(schedules(&server).await, Vec::new());
+    });
+}
+
+#[test]
+fn a_task_is_never_offered_a_schedule() {
+    block_on!(async {
+        let (tasked, seen, _dir) = server("tool-task", Permissions::Auto, Vec::new()).await;
+        let thread = start(&tasked, true).await;
+        background(&tasked, thread, Some(10_000)).await;
+        settle(&tasked).await;
+        let sent = json(&seen);
+        assert!(
+            !sent[0].contains("\"name\":\"schedule\""),
+            "no one to confirm it"
+        );
+    });
+}
+
+#[test]
+fn schedules_are_not_offered_where_none_fires_them() {
+    block_on!(async {
+        let mut none = setup(Permissions::Auto, Vec::new());
+        none.schedules = false;
+        let (server, seen, _, _dir) = none
+            .build_in_repository("tool-none", InMemoryLog::new())
+            .await;
+        let thread = start(&server, false).await;
+        turn(&server, thread, "hi").await.unwrap();
+        assert!(!json(&seen)[0].contains("\"name\":\"schedule\""));
+    });
+}
+
+#[test]
+fn the_agent_lists_and_removes_only_the_schedules_of_its_chat_s_project_removing_asking_as_a_change_does()
+ {
+    block_on!(async {
+        let made = |name: &str, project: Option<glave_ports::ProjectId>| Request::ScheduleCreate {
+            project,
+            name: Some(name.into()),
+            when: glave_event::When::Cron("0 19 * * *".into()),
+            zone: Some("Europe/Lisbon".into()),
+            prompt: "tidy the notes".into(),
+            budget: 1_000,
+        };
+        let calls = |(here, elsewhere): (String, String)| {
+            vec![
+                json!({"action": "list"}),
+                json!({"action": "remove", "schedule": elsewhere}),
+                json!({"action": "remove", "schedule": here}),
+            ]
+        };
+        // Their ids are known only once they are made: a server set up the same way, with the
+        // same clock and randomness, makes the same ones. One in this project, one in Chats.
+        let made_by = async |name: &str, calls| {
+            let built = setup(Permissions::Ask, calls)
+                .build_in_repository(name, InMemoryLog::new())
+                .await;
+            let mut ids = Vec::new();
+            for (name, project) in [("Evening tidy", Some(scope().project())), ("Inbox", None)] {
+                let Reply::Schedule { schedule } =
+                    built.0.request(made(name, project)).await.unwrap()
+                else {
+                    panic!("a schedule");
+                };
+                ids.push(schedule.schedule.to_string());
+            }
+            (built, (ids[0].clone(), ids[1].clone()))
+        };
+        let (_probe, ids) = made_by("tool-list-probe", Vec::new()).await;
+        let ((server, seen, _, _dir), again) = made_by("tool-list", calls(ids.clone())).await;
+        assert_eq!(again, ids, "the same schedules");
+        let (here, elsewhere) = ids;
+        let thread = start(&server, false).await;
+        let _turn = stream_turn(&server, thread, "stop the evening tidy", None)
+            .await
+            .unwrap();
+        asked_in(&server, thread).await;
+        let told = json(&seen);
+        assert!(told[1].contains("Evening tidy"), "{}", told[1]);
+        assert!(
+            told[1].contains("every day at 7:00 pm, Europe/Lisbon time"),
+            "{}",
+            told[1]
+        );
+        assert!(told[1].contains(&here), "{}", told[1]);
+        assert!(!told[1].contains("Inbox"), "another project's: {}", told[1]);
+        assert!(
+            told[2].contains("no schedule"),
+            "another project's: {}",
+            told[2]
+        );
+        let asked = asked(&server, thread).await.unwrap();
+        assert_eq!(asked.ask, "Stop repeating Evening tidy?");
+        assert_eq!(schedules(&server).await.len(), 2, "not before the yes");
+        decide(&server, thread, Answer::AllowOnce).await;
+        let left: Vec<String> = (schedules(&server).await.into_iter())
+            .map(|it| it.schedule.to_string())
+            .collect();
+        assert_eq!(left, vec![elsewhere], "only the one asked for");
+    });
+}
+
+/// A person's own computer, which glave keeps awake while it works.
+struct Laptop;
+
+impl KeepAwake for Laptop {
+    fn hold(&self) -> glave_ports::BoxFuture<'_, Option<Box<dyn Send>>> {
+        Box::pin(async { None })
+    }
+
+    fn cannot(&self) -> Option<Unawake> {
+        None
+    }
+}
+
+#[test]
+fn on_a_person_s_own_computer_the_card_says_it_runs_only_while_glave_runs() {
+    block_on!(async {
+        let mut laptop = setup(Permissions::Auto, vec![create()]);
+        laptop.awake = Some(std::sync::Arc::new(Laptop));
+        let (server, _, _, _dir) = laptop
+            .build_in_repository("tool-laptop", InMemoryLog::new())
+            .await;
+        let thread = start(&server, false).await;
+        let _turn = stream_turn(&server, thread, "check the build every weekday at 8", None)
+            .await
+            .unwrap();
+        asked_in(&server, thread).await;
+        let asked = asked(&server, thread).await.unwrap();
+        assert_eq!(
+            asked.caution.as_deref(),
+            Some("It runs only while glave runs on this computer.")
+        );
+    });
+}

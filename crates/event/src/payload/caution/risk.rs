@@ -38,6 +38,9 @@ worded! {
         ChangesScheduledJobs = "risk-changes-scheduled-jobs" "it changes scheduled jobs",
         RunsAtLogin = "risk-runs-at-login" "it installs something that runs at login",
         RunsAtStartUp = "risk-runs-at-start-up" "it installs something that runs at start-up",
+        RunsWhileGlaveRuns = "risk-runs-while-glave-runs"
+            "it runs only while glave runs on this computer",
+        StopsRepeating { name } = "risk-stops-repeating" "it stops { $name } from repeating",
         WritesStartUp { path } = "risk-writes-start-up"
             "it writes { $path }, which runs later on its own",
 

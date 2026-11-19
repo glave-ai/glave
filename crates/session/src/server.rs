@@ -444,9 +444,9 @@ where
         let harness = equipment.onto(Harness::new(parts, settings));
         harness.set_without_images(crate::models::without_images(&catalog));
         Self {
-            inner: Arc::new(Inner {
+            inner: Arc::new_cyclic(|server| Inner {
                 person: harness.person(),
-                harness,
+                harness: harness.with_schedules(crate::schedule::asking(server, wiring.schedules)),
                 clock,
                 identity_provider: wiring.identity_provider,
                 models: RwLock::new(catalog),

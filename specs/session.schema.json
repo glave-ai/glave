@@ -3619,6 +3619,10 @@
           "description": "What it is called, as its chat is.",
           "type": "string"
         },
+        "name_shown": {
+          "description": "Its name as a client shows it: on one line, each letter the eye can't see (a\nbidirectional override, a zero-width mark) written out as its code, as its card showed it.",
+          "type": "string"
+        },
         "next": {
           "anyOf": [
             {
@@ -3648,12 +3652,20 @@
         "prompt": {
           "type": "string"
         },
+        "prompt_shown": {
+          "description": "What each run starts with, shown as `name_shown` is.",
+          "type": "string"
+        },
         "repeats": {
           "description": "When it repeats, in the server's words: \"Every weekday at 8:00 am\".",
           "type": "string"
         },
         "schedule": {
           "$ref": "#/$defs/ScheduleId"
+        },
+        "stop": {
+          "description": "What removing it asks the person, in the server's words, naming it: \"Stop repeating\nMorning check?\".",
+          "type": "string"
         },
         "thread": {
           "anyOf": [
@@ -3677,11 +3689,14 @@
       "required": [
         "schedule",
         "name",
+        "name_shown",
         "project",
         "when",
         "zone",
         "repeats",
         "prompt",
+        "prompt_shown",
+        "stop",
         "budget",
         "created_at",
         "paused"

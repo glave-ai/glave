@@ -224,7 +224,7 @@ where
             text: prompt,
             files: &files,
             key: key.map(IdempotencyKey::as_str),
-            scheduled,
+            scheduled: scheduled.as_ref(),
         };
         let sent = loop {
             if queue {
@@ -317,7 +317,7 @@ where
     B: BlobStore + 'static,
 {
     let (prompt, files) = (said.text.to_owned(), said.files.to_vec());
-    let (key, scheduled) = (said.key.map(str::to_owned), said.scheduled);
+    let (key, scheduled) = (said.key.map(str::to_owned), said.scheduled.cloned());
     let (caller, choice) = (caller.clone(), choice.clone());
     Box::new(move |inner, mut held, cancel| {
         Box::pin(async move {
@@ -341,7 +341,7 @@ where
                         text: &prompt,
                         files: &files,
                         key: key.as_deref(),
-                        scheduled,
+                        scheduled: scheduled.as_ref(),
                     },
                     &caller,
                     &cancel,

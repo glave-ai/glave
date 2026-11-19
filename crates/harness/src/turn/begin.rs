@@ -105,18 +105,16 @@ where
                 trace: caller.trace.clone(),
                 auth: caller.auth.clone(),
                 missing: offer.missing.clone(),
-                scheduled,
+                scheduled: scheduled.map(|due| due.at),
+                zone: scheduled.map(|due| due.zone.clone()),
             },
         )?;
         thread.turn_open = crate::made::opened_by(&events);
         let message = MessageAdded {
             role: Role::User,
             parts: parts.clone(),
-            author: if by_glave {
-                Some(Principal::glave())
-            } else {
-                Self::other_than_for(thread, caller.person)
-            },
+            author: (by_glave.then(Principal::glave))
+                .or_else(|| Self::other_than_for(thread, caller.person)),
             thought: None,
             key: key.map(str::to_owned),
         };

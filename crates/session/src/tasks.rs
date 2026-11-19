@@ -20,12 +20,14 @@ use std::future::Future;
 use std::sync::Arc;
 
 use glave_event::{
-    At, Body, Currency, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId, TaskEnded,
-    TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
+    At, Body, Currency, Due, Money, Nanos, Opened, Outcome, Payload, Principal, PrincipalId,
+    TaskEnded, TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
 use glave_harness::Cancel;
 use glave_ports::computer::{Reason, Refusal};
-use glave_ports::{BlobStore, Caller, EventLog, Lease, Located, ModelProvider, Scope, title_from};
+use glave_ports::{
+    BlobStore, Caller, EventLog, Lease, Located, ModelProvider, OrgId, Scope, title_from,
+};
 
 use crate::choice::Choice;
 use crate::held::{Slot, busy};
@@ -170,6 +172,20 @@ where
             .await
     }
 
+    /// The task lease of `thread` in `org`: `held`, where a schedule's claim took it already,
+    /// else taken now; refused while another server holds it.
+    async fn task_lease(
+        &self,
+        held: Option<Lease>,
+        org: OrgId,
+        thread: ThreadId,
+    ) -> Result<Lease, ApiError> {
+        match held {
+            Some(lease) => Ok(lease),
+            None => (self.take_task(org, thread).await?).ok_or_else(|| elsewhere(thread)),
+        }
+    }
+
     /// Starts `work` in `thread` of `project` as a task for `caller`, who may, and answers
     /// with it at once: its start recorded once its turn started, unless it came `claimed`, a
     /// schedule's run whose start was recorded first under its task's lease (`run.rs`).
@@ -184,12 +200,7 @@ where
         let (claimed, held) = claimed.unzip();
         let schedule = claimed.as_ref().and_then(|started| started.schedule);
         // Whoever follows a task holds its task lease, so one server records its end.
-        let lease = match held {
-            Some(lease) => lease,
-            None => {
-                (self.take_task(project.org, thread).await?).ok_or_else(|| elsewhere(thread))?
-            }
-        };
+        let lease = self.task_lease(held, project.org, thread).await?;
         let Work(prompt, choice) = work;
         let title = title_from(&prompt).unwrap_or_default();
         // A schedule's run waits for the person where it needs them, as their chat does; no one
@@ -205,7 +216,10 @@ where
             queue: false,
             // Its thread is unattended for the whole task already, where it is.
             unattended: false,
-            scheduled: schedule.map(|fired| fired.due),
+            scheduled: schedule.map(|fired| Due {
+                zone: self.zone_of_schedule(project, fired.schedule),
+                at: fired.due,
+            }),
         };
         let stream = self
             .start_turn_with(caller, thread, message, None)

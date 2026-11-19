@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
 use crate::codec::{Payload, parse};
+use crate::envelope::At;
 use crate::id::CallId;
 use crate::payload::caution::Caution;
 use crate::payload::principal::Principal;
@@ -14,7 +15,9 @@ pub(crate) const DECIDED: &str = "approval.decided";
 
 crate::worded! {
     /// What an approval asks the person, by what would run: a command, an edit, a write, a
-    /// read, a page, a service's tool by what it does and the service, or any other tool.
+    /// read, a page, a service's tool by what it does and the service, work that would repeat,
+    /// by when (or for a shape with no plain words, its next runs), or stop repeating (version
+    /// 2), or any other tool.
     Ask {
         Command = "ask-command" "Run this command?",
         Edit = "ask-edit" "Edit this file?",
@@ -22,6 +25,9 @@ crate::worded! {
         Read = "ask-read" "Read this file?",
         Page = "ask-page" "Open this page?",
         With { act, service } = "ask-with" "{ $act } with { $service }?",
+        Repeat { when } = "ask-repeat" "Repeat this { $when }?",
+        RepeatNext { runs } = "ask-repeat-next" "Repeat this, next on { $runs }?",
+        StopRepeating { name } = "ask-stop-repeating" "Stop repeating { $name }?",
         Allow = "ask-allow" "Allow this?",
     }
 }
@@ -62,6 +68,55 @@ pub struct ApprovalRequested {
     /// network, as the model asked. Such a request asks every time, and is allowed only once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outside_sandbox: Option<OutsideSandbox>,
+    /// For a schedule's card (`ask-repeat`), what it was written from, so the session writes its
+    /// question and its `detail` again in the reader's language (version 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeating: Option<Repeating>,
+    /// For a schedule's card, its lines, typed, as `detail` holds them a line each, so a client
+    /// draws each by what it says; written again in the reader's language with `detail`
+    /// (version 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lines: Option<CardLines>,
+}
+
+/// A schedule's card's lines, in the server's words: when it runs on whose clock, the chat its
+/// runs go to, and what each run starts with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CardLines {
+    /// "Monday to Friday, 8:00 am your time. First run: Tuesday 17 November."
+    pub when: String,
+    /// "Each run is added to its own chat, “Morning check”."
+    pub chat: String,
+    /// "Each run starts with: “Check the build.”": glave always writes it (#1510).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+}
+
+impl CardLines {
+    /// The lines as `detail` holds them, one after another.
+    pub fn joined(&self) -> String {
+        let mut lines = vec![self.when.as_str(), self.chat.as_str()];
+        lines.extend(self.prompt.as_deref());
+        lines.join("\n")
+    }
+}
+
+/// What a schedule's card was written from: when it repeats, on whose clocks, its chat's name,
+/// its first run, and what each run starts with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Repeating {
+    /// A five-field cron expression, on the clocks of `zone`.
+    pub cron: String,
+    /// An IANA time zone.
+    pub zone: String,
+    /// The schedule's name, and its chat's.
+    pub name: String,
+    pub first: At,
+    /// What each run starts with, in the model's words: glave always writes it (#1510).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
 }
 
 /// A request to run one command outside the sandbox, or in it with the network.
@@ -127,7 +182,7 @@ pub enum Verdict {
 
 impl Payload for ApprovalRequested {
     const TYPE: &'static str = REQUESTED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for ApprovalDecided {
@@ -140,7 +195,8 @@ pub(crate) fn decode_requested(
     data: &RawValue,
 ) -> Option<serde_json::Result<ApprovalRequested>> {
     match version {
-        1 => Some(parse(data)),
+        // Version 2 only adds what an approval may ask and why: version 1 reads as it is.
+        1 | 2 => Some(parse(data)),
         _ => None,
     }
 }

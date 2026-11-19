@@ -69,11 +69,13 @@ enum Own {
     ImageEdit,
     /// `web_search`: where the provider searches and the person has it on.
     WebSearch,
+    /// `schedule`: in a chat someone can answer in, where schedules run.
+    Schedule,
 }
 
 impl Own {
     /// Every one of glave's own tools.
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Question,
         Self::Agent,
         Self::Plan,
@@ -81,6 +83,7 @@ impl Own {
         Self::ImageGenerate,
         Self::ImageEdit,
         Self::WebSearch,
+        Self::Schedule,
     ];
 
     /// The tool's name.
@@ -93,6 +96,7 @@ impl Own {
             Self::ImageGenerate => crate::media::IMAGE_GENERATE,
             Self::ImageEdit => crate::media::IMAGE_EDIT,
             Self::WebSearch => crate::web_search::WEB_SEARCH,
+            Self::Schedule => crate::schedule::SCHEDULE,
         }
     }
 }
@@ -304,8 +308,18 @@ impl ToolSet {
         self.offers(Own::WebSearch, name)
     }
 
+    /// Offers `schedule` too (`schedule.rs`). A subagent never gets it.
+    pub(crate) fn offer_schedule(&mut self) {
+        self.offer(Own::Schedule, crate::schedule::spec());
+    }
+
+    /// Whether `name` is `schedule`, while it is on offer.
+    pub(crate) fn is_schedule(&self, name: &str) -> bool {
+        self.offers(Own::Schedule, name)
+    }
+
     /// The tools a subagent has: these, less glave's own (`agent`, `question`,
-    /// `update_plan`, `compact`, media and memory's) but `web_search`, and for an explorer only
+    /// `update_plan`, `compact`, `schedule`, media and memory's) but `web_search`, and for an explorer only
     /// those that read, which a search does.
     pub(crate) fn for_child(&self, kind: SubagentType) -> Self {
         let keeps = |info: &ToolInfo| kind == SubagentType::General || info.effect == Effect::Reads;

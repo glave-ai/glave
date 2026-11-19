@@ -320,3 +320,16 @@ fn an_explorer_keeps_the_search_and_the_connectors_with_tools_that_read() {
     let general = set.for_child(SubagentType::General);
     assert_eq!(names(&general), names(&set));
 }
+
+#[test]
+fn a_subagent_never_gets_schedule() {
+    let mut set = set_of(Vec::new(), 128_000);
+    set.offer_schedule();
+    assert_eq!(names(&set), ["read", "schedule"]);
+    let child = set.for_child(SubagentType::General);
+    assert_eq!(
+        names(&child),
+        ["read"],
+        "only a chat sets up repeating work"
+    );
+}

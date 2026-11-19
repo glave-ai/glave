@@ -150,6 +150,9 @@ where
         if self.approver.can_answer(thread.id) {
             set.offer_question();
         }
+        if self.offers_schedule(thread) {
+            set.offer_schedule();
+        }
         if self.settings.subagents {
             set.offer_agent();
         }
