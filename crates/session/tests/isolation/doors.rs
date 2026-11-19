@@ -182,8 +182,17 @@ const DOORS: [(&str, &str, &str); 28] = [
 fn transport() -> BTreeMap<String, String> {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = BTreeMap::new();
-    let mut folders = vec![src.join("http")];
-    let mut found = vec![src.join("http.rs")];
+    let found = rust_files(vec![src.join("http")], vec![src.join("http.rs")]);
+    for path in found {
+        let name = named(&src, &path);
+        files.insert(name, std::fs::read_to_string(&path).unwrap());
+    }
+    files
+}
+
+/// `path` from `src`, with `/` between its parts on every system.
+/// The Rust files in `folders` and theirs, after `found`.
+pub(super) fn rust_files(mut folders: Vec<PathBuf>, mut found: Vec<PathBuf>) -> Vec<PathBuf> {
     while let Some(folder) = folders.pop() {
         for entry in std::fs::read_dir(&folder).unwrap() {
             let path = entry.unwrap().path();
@@ -194,14 +203,9 @@ fn transport() -> BTreeMap<String, String> {
             }
         }
     }
-    for path in found {
-        let name = named(&src, &path);
-        files.insert(name, std::fs::read_to_string(&path).unwrap());
-    }
-    files
+    found
 }
 
-/// `path` from `src`, with `/` between its parts on every system.
 fn named(src: &Path, path: &Path) -> String {
     let relative: PathBuf = path.strip_prefix(src).unwrap().to_path_buf();
     let parts: Vec<&str> = relative.iter().map(|part| part.to_str().unwrap()).collect();

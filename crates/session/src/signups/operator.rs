@@ -46,7 +46,7 @@ where
         let (true, Some(origin)) = (self.links_signups(), &self.inner.origin) else {
             return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::NoSignupLinks));
         };
-        if !local(caller) {
+        if !local(caller, self.inner.person) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
                 Sentence::OperatorLinksSignups,
