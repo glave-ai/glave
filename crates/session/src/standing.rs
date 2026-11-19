@@ -129,11 +129,13 @@ where
         {
             worktrees.release(scope, thread).await;
         }
-        // A schedule runs only into its own chat: deleting the chat deletes it.
-        if change == Change::Delete
+        // A schedule runs only into its own chat: deleting the chat deletes it, archiving it
+        // pauses it.
+        if matches!(change, Change::Delete | Change::Archive)
             && let Ok(scope) = self.scope_of(thread)
         {
-            self.chat_deleted(caller, &scope, thread).await?;
+            let deleted = change == Change::Delete;
+            self.chat_put_away(caller, &scope, thread, deleted).await?;
         }
         Ok(Reply::Done {})
     }

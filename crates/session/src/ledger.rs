@@ -1,6 +1,6 @@
 //! Each project's task ledger: glave's own stream in the event log, under a reserved thread id,
 //! holding the project's tasks (`task.started`, `task.ended`) and schedules (`schedule.created`,
-//! `.skipped`, `.deleted`). It is never a conversation: lists and reads of threads leave it out.
+//! `.paused`, `.skipped`, `.deleted`). It is never a conversation: lists and reads of threads leave it out.
 //! Any glave process of the deployment may append to it; an append that meets another's
 //! `(thread, seq)` conflict reads what was written and tries again after it.
 
@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use glave_event::{
     At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, Skipped,
-    TaskEnded, TaskStarted, ThreadId, encode,
+    TaskEnded, TaskStarted, ThreadId, When, encode,
 };
 use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope};
@@ -34,9 +34,36 @@ pub(crate) struct Scheduled {
     /// before still goes, which is recorded once, or one whose skip could not be recorded. In
     /// memory only, so a server started later tries it once more.
     pub(crate) held: Option<At>,
+    pub(crate) paused: bool,
+    /// When it was last paused.
+    paused_at: Option<At>,
+    /// When it was last resumed: its runs count from then, none for the time it was paused.
+    pub(crate) resumed: Option<At>,
+    /// When a one-off's time came, when that was while it was paused: it runs no more.
+    pub(crate) missed: Option<At>,
 }
 
 impl Scheduled {
+    /// Takes in its pausing (`paused`) or resuming at `at`: a one-off that has not run and whose
+    /// time came while it was paused is missed.
+    fn pause(&mut self, paused: bool, at: At) {
+        if paused && !self.paused {
+            self.paused_at = Some(at);
+        }
+        if !paused {
+            self.resumed = Some(at);
+            if let When::At(due) = &self.created.when
+                && self.paused
+                && self.last.is_none()
+                && self.paused_at.is_some_and(|since| since <= *due)
+                && *due < at
+            {
+                self.missed = Some(*due);
+            }
+        }
+        self.paused = paused;
+    }
+
     /// Takes in a run that was due at `due`: started, or skipped for `skipped`.
     fn ran(&mut self, due: At, skipped: Option<Skipped>) {
         if self.last.is_none_or(|last| due >= last) {
@@ -92,11 +119,20 @@ impl Ledger {
                     last: None,
                     skipped: None,
                     held: None,
+                    paused: false,
+                    paused_at: None,
+                    resumed: None,
+                    missed: None,
                 };
                 self.schedules.insert(scheduled.created.schedule, scheduled);
             }
             Body::ScheduleDeleted(deleted) => {
                 self.schedules.remove(&deleted.schedule);
+            }
+            Body::SchedulePaused(paused) => {
+                if let Some(scheduled) = self.schedules.get_mut(&paused.schedule) {
+                    scheduled.pause(paused.paused, at);
+                }
             }
             Body::ScheduleSkipped(skipped) => {
                 if let Some(scheduled) = self.schedules.get_mut(&skipped.schedule) {

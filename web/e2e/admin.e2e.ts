@@ -37,10 +37,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await byTestId(page, 'invite-email').fill('alex@example.com');
     await expectAccessible(page);
     await byTestId(page, 'invite-make').click();
-    await expect(byTestId(page, 'invite-link')).toHaveValue(
-      `https://glave.example/#invite=${INVITE_CODE}`,
+    await expect(byTestId(page, 'invite-told')).toContainText(
+      'We sent the invite to alex@example.com',
     );
-    await expect(byTestId(page, 'invite-told')).toContainText('We emailed it to alex@example.com');
+    await expect(byTestId(page, 'invite-link')).toHaveCount(0);
     await expectAccessible(page);
     await byTestId(page, 'invite-done').click();
     await expect(byTestId(page, 'people-waiting')).toHaveCount(2);
