@@ -29,12 +29,28 @@ fn a_program_that_ends_in_time_gives_what_it_printed() {
             .output(Program::new("printf").arg("done"), AMPLE)
             .await;
         let echoed = processes
-            .output_with(Program::new("cat").stdout(Stdio::piped()), b"given", AMPLE)
+            .output_with(&mut Program::new("cat"), b"given", AMPLE, 100)
             .await;
         (printed, echoed)
     });
     assert_eq!(printed.unwrap().stdout, b"done");
     assert_eq!(echoed.unwrap().stdout, b"given");
+}
+
+#[test]
+fn a_program_that_ends_before_reading_its_input_is_answered_as_it_ended() {
+    let processes = Processes::unrecorded();
+    // More than a pipe holds, so writing it meets the end of a program that read none of it.
+    let given = vec![b'x'; 4 << 20];
+    let refused = glave_ports::block_on!(processes.output_with(
+        Program::new("sh").args(["-c", "echo why >&2; exit 3"]),
+        &given,
+        AMPLE,
+        100,
+    ));
+    let refused = refused.unwrap();
+    assert_eq!(refused.status.code(), Some(3));
+    assert_eq!(refused.stderr, b"why\n", "what it said of why");
 }
 
 #[test]
@@ -86,7 +102,7 @@ fn one_still_running_at_its_limit_is_stopped_saying_how_long_it_had() {
             .output(Program::new("sleep").arg("300"), limit)
             .await;
         let fed = processes
-            .output_with(Program::new("sleep").arg("300"), b"unread", limit)
+            .output_with(Program::new("sleep").arg("300"), b"unread", limit, 100)
             .await;
         (waited, fed)
     });
