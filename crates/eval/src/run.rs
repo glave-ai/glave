@@ -8,15 +8,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use glave_computer::LocalComputers;
 use glave_event::Nanos;
 use glave_gateway::Gateway;
 use glave_harness::{
-    Cancel, Change, Harness, Live, NoOneToAsk, Parts, Settings, Skill, Skills, Workspace,
-    agents_md, change_standing, find_skills, skill_folders,
+    Cancel, Change, Harness, Live, NoOneToAsk, Parts, Settings, Skill, Skills, agents_md,
+    change_standing, find_skills, skill_folders,
 };
 use glave_memory::Tidier;
-use glave_ports::computer::{Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork};
 use glave_ports::{Caller, EventLog, OsEntropy, Scope, SystemClock, ToolSource};
 use glave_process::Processes;
 use glave_provider_openai::Config;
@@ -36,6 +34,9 @@ use crate::probe::{self, Probes};
 use crate::steer::{Steer, Steering};
 use crate::task::{Task, Tidying};
 use crate::trace::{self, Trace};
+use workspace::workspace;
+
+mod workspace;
 
 /// Model calls one turn of an attempt may make, unless its task says otherwise.
 const MAX_STEPS: u32 = 50;
@@ -306,44 +307,6 @@ async fn tested(
     let output = output?;
     write(dir.join("test.log"), &output.text).await?;
     Ok((!output.success).then(|| format!("tests/test.sh failed: {}", last_lines(&output.text))))
-}
-
-/// The workspace in `root`, in the sandbox, which the task's mode narrows, with `hidden`
-/// hidden from it too. As glave does: where the sandbox cannot run, commands run without it,
-/// and Auto and Ask first ask (with no one to ask, they are not run); a task that tests the
-/// sandbox never gives way.
-async fn workspace(
-    task: &Task,
-    setup: &Setup,
-    (environment, hidden): (&Environment, &[PathBuf]),
-    root: &Path,
-) -> Result<Workspace, EvalError> {
-    let open = || async {
-        let computers = LocalComputers::for_here(environment.clone())
-            .with_processes(setup.processes.clone())
-            .with_hidden(hidden.iter().cloned());
-        let computers = match &setup.glave_on_path {
-            Some(folder) => computers.with_glave_on_path(folder),
-            None => computers,
-        };
-        let (computers, info) = computers
-            .open_here(root)
-            .await
-            .map_err(|error| EvalError::io("open", root)(std::io::Error::other(error)))?;
-        Ok::<_, EvalError>(Workspace::new(computers, info))
-    };
-    let sandbox = Sandbox {
-        level: SandboxLevel::Project,
-        network: SandboxNetwork::when(task.network),
-        home: environment.get(&OsString::from("HOME")).map(PathBuf::from),
-        glave_home: None,
-        caches: SandboxCaches::Kept,
-    };
-    match open().await?.with_sandbox(&sandbox).await {
-        Ok(workspace) => Ok(workspace),
-        Err(_) if !task.sandboxed => open().await,
-        Err(error) => Err(EvalError::io("sandbox", root)(std::io::Error::other(error))),
-    }
 }
 
 /// The harness for one attempt, wired in-process: a real provider, an in-memory log, the
