@@ -61,6 +61,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (chosen::EFFORT, 1),
     (turn::ENDED, 1),
     (turn::ENDED, 2),
+    (turn::ENDED, 3),
     (approval::REQUESTED, 1),
     (approval::REQUESTED, 2),
     (approval::DECIDED, 1),
@@ -149,6 +150,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (library::KEPT, 1),
     (library::REMOVED, 1),
     (made::TURN_MADE, 1),
+    (made::TURN_MADE, 2),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -707,7 +709,7 @@ mod tests {
     #[test]
     fn newer_versions_of_known_types_pass_through() {
         let raw =
-            RawEvent::from_json(&line("turn.ended", 3, r#"{"outcome":"done","why":"x"}"#)).unwrap();
+            RawEvent::from_json(&line("turn.ended", 4, r#"{"outcome":"done","why":"x"}"#)).unwrap();
         assert!(matches!(decode(raw).unwrap().body, Body::Unknown(_)));
     }
 

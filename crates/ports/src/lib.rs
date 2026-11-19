@@ -31,6 +31,7 @@ pub mod migrations;
 mod model;
 mod objects;
 mod projects;
+mod read_made;
 mod remove;
 mod scope;
 pub mod search;
@@ -73,6 +74,7 @@ pub use projects::{
     FolderKey, MAX_NAME, Project, ProjectError, ProjectKind, ProjectRefusal, Projects,
     origin_remote,
 };
+pub use read_made::{MadeRead, ReadMade};
 pub use remove::remove_tree;
 pub use scope::{Located, OrgId, ProjectId, Scope};
 pub use socket::MAX_SOCKET_PATH;

@@ -137,8 +137,12 @@ where
             return Err(ApiError::new(code::LIMIT, said));
         }
         // Checked before no one answers for the thread, so a turn someone follows keeps its
-        // answers.
-        let busy = matches!(self.lock().get(&thread), Some(Slot::Busy { .. }));
+        // answers. Work that only manages it, such as the look over what a stopped turn made,
+        // never refuses a task: the task's turn stops it as it starts (`held.rs`).
+        let busy = matches!(
+            self.lock().get(&thread),
+            Some(Slot::Busy { manages: false, .. })
+        );
         if busy || self.tasks().contains_key(&thread) {
             return Err(crate::held::busy(thread));
         }

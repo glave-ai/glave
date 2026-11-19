@@ -299,8 +299,9 @@ pub enum Outcome {
 impl Payload for TurnResult {
     const TYPE: &'static str = ENDED;
     // 2 names the files the turn made (`made`, `made_left`, `made_until_ns`, `made_waits`); a
-    // version 1 end made none, and reads as one that made none.
-    const VERSION: u32 = 2;
+    // version 1 end made none, and reads as one that made none. 3 has what was read of each
+    // (`read`); a version 2 end read none.
+    const VERSION: u32 = 3;
 }
 
 pub(crate) fn decode_ended(
@@ -308,7 +309,7 @@ pub(crate) fn decode_ended(
     data: &RawValue,
 ) -> Option<serde_json::Result<TurnResult>> {
     match version {
-        1 | 2 => Some(parse(data)),
+        1..=3 => Some(parse(data)),
         _ => None,
     }
 }

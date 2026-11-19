@@ -70,7 +70,8 @@ where
     /// messages. A message chooses no model or mode: those are for a turn to start
     /// with. Refused when as many messages wait as a turn takes (`-32028`), or while work that
     /// takes none runs (`-32002`), but for work that only manages the thread, such as a look
-    /// over what a command made once it ended, which it starts a turn after.
+    /// over what a command made once it ended, which the turn it starts stops (`held.rs`), the
+    /// turn's start making the look.
     pub(crate) fn queue(
         &self,
         caller: &Caller,
@@ -97,7 +98,7 @@ where
             return Ok(Queue::Idle);
         };
         if *manages {
-            return Ok(Queue::Ending(finished.clone()));
+            return Ok(Queue::Idle);
         }
         let Some(inbox) = inbox else {
             return Err(busy(thread));
