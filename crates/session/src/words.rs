@@ -254,8 +254,8 @@ fn connectors_in(
     }
 }
 
-/// Whether `thread` says what its project asks to be trusted, or that its computer is short of
-/// room, in the server's own words.
+/// Whether `thread` says what its project asks to be trusted, that its computer is short of
+/// room, or its schedule, in the server's own words.
 fn in_its_own_words(thread: &ThreadSummary) -> bool {
     thread
         .trust
@@ -263,9 +263,11 @@ fn in_its_own_words(thread: &ThreadSummary) -> bool {
         .flat_map(|ask| &ask.items)
         .any(|item| item.text.translatable())
         || thread.disk.is_some()
+        || thread.schedule.is_some()
 }
 
-/// Writes what `thread`'s project asks to be trusted, and what it says of room, in `language`.
+/// Writes what `thread`'s project asks to be trusted, what it says of room, and its schedule,
+/// in `language`.
 pub(crate) fn summary_in(thread: &mut ThreadSummary, language: Language) {
     if let Some(ask) = &mut thread.trust {
         for item in &mut ask.items {
@@ -274,6 +276,9 @@ pub(crate) fn summary_in(thread: &mut ThreadSummary, language: Language) {
     }
     if let Some(disk) = &mut thread.disk {
         disk.told.translate(language);
+    }
+    if let Some(schedule) = &mut thread.schedule {
+        schedule_in(schedule, language);
     }
 }
 

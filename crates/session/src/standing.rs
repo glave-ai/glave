@@ -77,7 +77,7 @@ where
         let summary = self.summary(scope, thread).await?;
         let ask = self.trust_in(caller, scope.located()).await;
         Ok(Reply::Thread {
-            thread: self.asking(summary, ask.as_ref(), true),
+            thread: self.asking(summary, ask.as_ref(), Some(scope.org())),
         })
     }
 
@@ -169,7 +169,7 @@ where
             .trust_on_page(caller, scope.located(), std::iter::once(thread))
             .await;
         Ok(Reply::Thread {
-            thread: self.asking(summary, ask.as_ref(), false),
+            thread: self.asking(summary, ask.as_ref(), None),
         })
     }
 
@@ -217,6 +217,7 @@ where
             })
             .flatten();
         let protections = self.project_settled(scope.located()).await.protections;
+        self.read_schedules_in(scope.located()).await;
         let ask = self
             .trust_on_page(
                 caller,
@@ -231,7 +232,7 @@ where
             }
             self.place(view.thread, scope);
             let summary = self.summarize(scope, view, protections).await?;
-            threads.push(self.asking(summary, ask.as_ref(), false));
+            threads.push(self.asking(summary, ask.as_ref(), None));
         }
         Ok(Reply::Threads { threads, next })
     }
@@ -251,6 +252,7 @@ where
                 .ok_or_else(|| no_thread(thread))?,
         };
         let protections = self.project_settled(scope.located()).await.protections;
+        self.read_schedules_in(scope.located()).await;
         self.summarize(scope, view, protections).await
     }
 
@@ -303,6 +305,7 @@ where
                 })
             });
         let terminals = self.opens_terminals(view.standing, workspace.as_deref(), theirs);
+        let schedule = self.schedule_of_chat(scope.located(), view.thread);
         Ok(ThreadSummary {
             id: view.thread,
             project: scope.project(),
@@ -327,6 +330,7 @@ where
             context,
             disk,
             terminals,
+            schedule: schedule.map(Box::new),
         })
     }
 

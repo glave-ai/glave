@@ -87,6 +87,7 @@ where
             text: prompt,
             files: &[],
             key: None,
+            scheduled: None,
         };
         self.run_turn_with_files(thread, said, caller, cancel, live)
             .await
@@ -106,6 +107,7 @@ where
         let prompt = Prompt {
             files: said.files,
             key: said.key,
+            scheduled: said.scheduled,
             ..Prompt::new(said.text, caller)
         };
         self.run_prompt(thread, prompt, cancel, live).await

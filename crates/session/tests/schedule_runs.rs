@@ -5,16 +5,21 @@
 //! skipped and recorded so once; a run refused otherwise is recorded with its reason, once for
 //! the same; the scheduler never wakes at once for a run it would not start; deleting the chat
 //! deletes the schedule; and a schedule is made on a copy of a repository or refused, its chat
-//! gone when it is not kept.
+//! gone when it is not kept. The chat says its schedule in its own facts, a list's watch hearing
+//! it change, though never of what a first read of the ledger finds, nor in another
+//! organization; and each run's turn says when it was due.
 
 use glave_event::{At, Outcome, ThreadId, When};
 use glave_ports::testing::{ManualClock, TempDir};
+use glave_ports::{Caller, OrgId};
 use glave_ports::{EventLog, InMemoryLog};
-use glave_session::Answering;
+use glave_session::protocol::Notification;
 use glave_session::protocol::{Answer, Reply, Request, RunStatus, ScheduleInfo, TaskStatus};
+use glave_session::{Answering, ListWatch, Watched};
 use jiff::Timestamp;
 use serde_json::json;
 
+use crate::schedule_pausing::pause;
 use crate::support::*;
 
 pub(crate) fn at(text: &str) -> At {
@@ -597,4 +602,137 @@ fn last_said(seen: &Seen) -> [String; 2] {
         })
         .collect();
     texts.try_into().unwrap()
+}
+
+#[test]
+fn a_schedule_s_chat_says_its_schedule_and_a_list_hears_it_change() {
+    block_on!(async {
+        let (server, _, _, _dir) = asking("runs-facts", Vec::new(), Shared::default()).await;
+        let made = schedule(&server, "Daily check", "0 11 * * *", 10_000).await;
+        let chat = made.thread.unwrap();
+        let Reply::Thread { thread } = server
+            .request(Request::ThreadGet { thread: chat })
+            .await
+            .unwrap()
+        else {
+            panic!("the chat");
+        };
+        let said = thread.schedule.unwrap();
+        assert_eq!(said.schedule, made.schedule);
+        assert_eq!(said.repeats, "Every day at 11:00 am");
+        assert_eq!(said.next, Some(at("2026-10-10T11:00:00Z")));
+        assert!(!said.paused);
+        let mut watch = server
+            .watch_list(&Caller::default(), None, None, false)
+            .await
+            .unwrap();
+        pause(&server, made.schedule, true).await;
+        loop {
+            let Some(Watched::Note(note)) = watch.next().await else {
+                panic!("the watch ended");
+            };
+            if let Notification::Changed { summary, .. } = note.as_ref()
+                && summary.id == chat
+                && summary.schedule.as_ref().is_some_and(|said| said.paused)
+            {
+                break;
+            }
+        }
+    });
+}
+
+#[test]
+fn each_run_s_turn_says_when_it_was_due() {
+    block_on!(async {
+        let answers = vec![answer(Some("Done."), None)];
+        let (server, now, _, _dir) = asking("runs-due", answers, Shared::default()).await;
+        let made = schedule(&server, "Daily check", "0 11 * * *", 10_000).await;
+        let chat = made.thread.unwrap();
+        set(&now, "2026-10-10T11:00:30Z");
+        assert_eq!(server.tick().await.unwrap(), vec![chat]);
+        settle(&server).await;
+        let due: Vec<Option<At>> = (events(&server, chat).await.into_iter())
+            .filter_map(|raw| match glave_event::decode(raw).unwrap().body {
+                glave_event::Body::TurnStarted(started) => Some(started.scheduled),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(due, vec![Some(at("2026-10-10T11:00:00Z"))]);
+    });
+}
+
+/// Of `wanted`, the chat a list's `watch` is first told changed.
+async fn first_heard(watch: &mut ListWatch, wanted: &[ThreadId]) -> ThreadId {
+    loop {
+        let Some(Watched::Note(note)) = watch.next().await else {
+            panic!("the watch ended");
+        };
+        if let Notification::Changed { thread, .. } = note.as_ref()
+            && wanted.contains(thread)
+        {
+            return *thread;
+        }
+    }
+}
+
+/// A chat `caller` starts in their Chats.
+async fn chat_of<L: EventLog + 'static>(server: &Tested<L>, caller: &Caller) -> ThreadId {
+    let started = Request::ThreadStart {
+        project: None,
+        worktree: None,
+        background: false,
+        computer: None,
+        model: None,
+        permissions: None,
+        effort: None,
+    };
+    match server.request_as(caller, started).await.unwrap() {
+        Reply::Thread { thread } => thread.id,
+        other => panic!("a chat, not {other:?}"),
+    }
+}
+
+#[test]
+fn a_ledger_read_for_the_first_time_tells_lists_nothing_of_its_past() {
+    block_on!(async {
+        let log = Shared::default();
+        let (server, now, repo, _dir) = asking("runs-first-read", Vec::new(), log.clone()).await;
+        let made = schedule(&server, "Daily check", "0 11 * * *", 10_000).await;
+        pause(&server, made.schedule, true).await;
+        server.shutdown().await;
+        drop(server);
+        let mut later = Setup::asking(Vec::new(), Answering::Clients);
+        later.clock = now.clone();
+        later.worktrees = repo.parent().map(|dir| dir.join("worktrees"));
+        let (restarted, _) = later.build_on(&repo, log).await;
+        let here = Caller::default();
+        let mut watch = restarted
+            .watch_list(&here, None, None, false)
+            .await
+            .unwrap();
+        // Its first read of the ledger finds the schedule made and paused before it started.
+        restarted.tick().await.unwrap();
+        let since = chat_of(&restarted, &here).await;
+        let chat = made.thread.unwrap();
+        assert_eq!(first_heard(&mut watch, &[chat, since]).await, since);
+    });
+}
+
+#[test]
+fn a_list_watched_in_another_organization_hears_nothing_of_a_schedule_here() {
+    block_on!(async {
+        let (server, _, _, _dir) = asking("runs-elsewhere", Vec::new(), Shared::default()).await;
+        let third = OrgId::from_uuid(uuid::Uuid::from_u128(3));
+        let grace = Caller {
+            org: Some(third),
+            ..elsewhere()
+        };
+        let mut watch = server.watch_list(&grace, None, None, false).await.unwrap();
+        let made = schedule(&server, "Daily check", "0 11 * * *", 10_000).await;
+        pause(&server, made.schedule, true).await;
+        // What she hears first is a chat she starts in her own organization.
+        let hers = chat_of(&server, &grace).await;
+        let chat = made.thread.unwrap();
+        assert_eq!(first_heard(&mut watch, &[chat, hers]).await, hers);
+    });
 }

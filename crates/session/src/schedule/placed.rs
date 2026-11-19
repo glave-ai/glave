@@ -110,6 +110,13 @@ where
         self.held_placed(|held| held.items.clone())
     }
 
+    /// Whether the store's list of where schedules are holds the project `at`, read up to now:
+    /// whether it has had schedules within a day.
+    pub(crate) async fn has_schedules(&self, at: Located) -> Result<bool, ApiError> {
+        self.catch_up_placed().await?;
+        Ok(self.is_placed(at))
+    }
+
     /// Whether the stream, as last read, lists the project `at`.
     pub(crate) fn is_placed(&self, at: Located) -> bool {
         self.held_placed(|held| held.held.contains_key(&at))

@@ -1657,6 +1657,12 @@ export type ThreadSummary = {
    */
   readonly permissions: Permissions;
   readonly project: ProjectId;
+  /**
+   * For a schedule's own chat, its schedule, as `schedule/list` shows it: what a client
+   * draws the chat's repeat line from (`specs/session.md`, "Schedules"). Absent for any
+   * other thread.
+   */
+  readonly schedule?: ScheduleInfo | null;
   readonly standing: Standing;
   readonly status: Status;
   /**

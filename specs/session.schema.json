@@ -4552,6 +4552,17 @@
         "project": {
           "$ref": "#/$defs/ProjectId"
         },
+        "schedule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScheduleInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For a schedule's own chat, its schedule, as `schedule/list` shows it: what a client\ndraws the chat's repeat line from (`specs/session.md`, \"Schedules\"). Absent for any\nother thread."
+        },
         "standing": {
           "$ref": "#/$defs/Standing"
         },

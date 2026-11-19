@@ -9,6 +9,7 @@ use super::model::{ModelRef, ModelResponded, TokenCounts};
 use super::tool::ToolError;
 use crate::blob::BlobRef;
 use crate::codec::{Payload, parse};
+use crate::envelope::At;
 use crate::error::InvalidValue;
 use crate::money::{Currency, Money, Nanos};
 use crate::payload::principal::open_kind;
@@ -33,6 +34,9 @@ pub struct TurnStarted {
     /// that could not say what tools it has.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub missing: Vec<ToolError>,
+    /// When the turn is a schedule's run, when that run was due (v2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled: Option<At>,
 }
 
 /// A W3C trace id: 32 lowercase hex digits, not all zero.
@@ -107,7 +111,7 @@ open_kind! {
 
 impl Payload for TurnStarted {
     const TYPE: &'static str = STARTED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 pub(crate) fn decode_started(
@@ -115,7 +119,8 @@ pub(crate) fn decode_started(
     data: &RawValue,
 ) -> Option<serde_json::Result<TurnStarted>> {
     match version {
-        1 => Some(parse(data)),
+        // Before a turn said it was a schedule's run: none was, as far as it says.
+        1 | 2 => Some(parse(data)),
         _ => None,
     }
 }

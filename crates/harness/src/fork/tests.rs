@@ -52,6 +52,7 @@ fn turn_started() -> Body {
         trace: None,
         auth: None,
         missing: Vec::new(),
+        scheduled: None,
     })
 }
 

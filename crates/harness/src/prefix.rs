@@ -61,12 +61,12 @@ impl Prefix {
     }
 }
 
-/// The note that opens `offer`'s turn's message, if anything changed since the model was told,
-/// with `also`, what else happened since, and `reminder`, what whoever started the turn has it
-/// told, in the same one note.
-pub(crate) fn news(offer: &ToolSet, also: Option<String>, reminder: Option<&str>) -> Option<Part> {
+/// The note that opens `offer`'s turn's message in `thread`, if anything changed since the model
+/// was told, with `also`, what else happened since, and the thread's reminder, what whoever
+/// started the turn has it told, in the same one note.
+pub(crate) fn news(offer: &ToolSet, also: Option<String>, thread: &Thread) -> Option<Part> {
     let told = offer.news.as_deref().map(|(text, _)| text.clone());
-    let reminder = reminder.map(str::to_owned);
+    let reminder = thread.reminder.clone();
     let notes: Vec<String> = told.into_iter().chain(also).chain(reminder).collect();
     (!notes.is_empty()).then(|| Part::Text {
         text: format!(

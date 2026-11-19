@@ -11,7 +11,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Body, Event, PrincipalId, RawEvent, Seq, ThreadId, decode};
-use glave_ports::{EventLog, Located, LogError, OrgId, ProjectId, Scope};
+use glave_ports::{EventLog, Located, LogError, OrgId, Scope};
 use tokio::sync::{broadcast, watch};
 
 use crate::notify::Need;
@@ -51,10 +51,11 @@ impl Default for Hub {
 }
 
 /// A thread whose summary may have changed: an event was recorded in it here, or work on it
-/// began or ended.
+/// began or ended. Where it is, its organization's and project's, so a list's watch drops
+/// another organization's at once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Changed {
-    pub(crate) project: ProjectId,
+    pub(crate) at: Located,
     pub(crate) thread: ThreadId,
 }
 
@@ -150,14 +151,12 @@ impl Hub {
         });
     }
 
-    /// Tells the watches of lists that `thread`, in `project`, changed. Glave's own streams
-    /// beside threads are never listed, so never told.
-    pub(crate) fn changed(&self, project: ProjectId, thread: ThreadId) {
+    /// Tells the watches of lists that `thread`, in the project `at`, changed. Glave's own
+    /// streams beside threads are never listed, so never told.
+    pub(crate) fn changed(&self, at: Located, thread: ThreadId) {
         if glave_ports::stream::Reserved::of(thread).is_none() {
             // Only fails when no list is watched, which is fine.
-            let _ = self
-                .changes
-                .send(Change::Thread(Changed { project, thread }));
+            let _ = self.changes.send(Change::Thread(Changed { at, thread }));
         }
     }
 
@@ -311,7 +310,7 @@ impl<L: EventLog> EventLog for Observed<L> {
         for event in events {
             if !told.contains(&event.thread) {
                 told.push(event.thread);
-                self.hub.changed(scope.project(), event.thread);
+                self.hub.changed(scope.located(), event.thread);
             }
         }
         Ok(())

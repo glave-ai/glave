@@ -64,6 +64,7 @@ where
             by_glave,
             id,
             key,
+            scheduled,
         } = prompt;
         // Where it works now that its project's folder moved, before the turn that works there.
         if let Some(bound) = thread.rebound.take() {
@@ -73,8 +74,7 @@ where
         }
         // What ended in the background since the last turn is recorded before this one.
         self.check_commands(thread, cancel).await?;
-        let sent_to = self.model_for(thread);
-        let provider = self.current_default().provider;
+        let (sent_to, provider) = (self.model_for(thread), self.current_default().provider);
         let config = self
             .store_config(thread, offer, &sent_to, &provider)
             .await?;
@@ -90,8 +90,7 @@ where
             .unwrap_or_default();
         // What changed since the model was told, and its reminder, before the person's words.
         let (stopped, told) = self.what_stopped(thread);
-        let reminder = thread.reminder.as_deref();
-        parts.extend(crate::prefix::news(offer, stopped, reminder));
+        parts.extend(crate::prefix::news(offer, stopped, thread));
         parts.push(Part::Text {
             text: prompt.to_owned(),
         });
@@ -106,6 +105,7 @@ where
                 trace: caller.trace.clone(),
                 auth: caller.auth.clone(),
                 missing: offer.missing.clone(),
+                scheduled,
             },
         )?;
         thread.turn_open = crate::made::opened_by(&events);

@@ -13,7 +13,7 @@ use crate::schedule_runs::{asking, at, listed, schedule, set};
 use crate::support::*;
 
 /// `schedule/pause` of `schedule`, pausing it (`paused`) or resuming it, answered.
-async fn pause<L: EventLog + 'static>(
+pub(crate) async fn pause<L: EventLog + 'static>(
     server: &Tested<L>,
     schedule: glave_event::ScheduleId,
     paused: bool,

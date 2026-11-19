@@ -14,7 +14,7 @@ use std::sync::{MutexGuard, PoisonError};
 
 use glave_event::{PrincipalId, ThreadId};
 use glave_ports::{
-    BlobStore, BoxFuture, Caller, EventLog, Located, ModelProvider, ProjectId, Scope,
+    BlobStore, BoxFuture, Caller, EventLog, Located, ModelProvider, OrgId, ProjectId, Scope,
 };
 
 use crate::protocol::{ApiError, Reply, Status, ThreadSummary, TrustAsk, TrustChoice, code};
@@ -211,28 +211,34 @@ where
     }
 
     /// `summary` with its project's ask `ask`, when it shows it, and waiting while it does.
-    /// `raising`: the thread is being opened or started, which raises the ask in it.
+    /// `raising`: the organization of the thread being opened or started, which raises the ask
+    /// in it.
     pub(crate) fn asking(
         &self,
         mut summary: ThreadSummary,
         ask: Option<&TrustAsk>,
-        raising: bool,
+        raising: Option<OrgId>,
     ) -> ThreadSummary {
         let Some(ask) = ask else {
             return summary;
         };
         let mut asks = self.asks();
-        if !asks.shows(summary.id, &ask.ask, raising) {
+        if !asks.shows(summary.id, &ask.ask, raising.is_some()) {
             return summary;
         }
-        let raised = raising && !matches!(asks.said.get(&summary.id), Some(Said::Raised(_)));
-        if raising {
+        let raised =
+            raising.filter(|_| !matches!(asks.said.get(&summary.id), Some(Said::Raised(_))));
+        if raising.is_some() {
             asks.set(summary.id, Said::Raised(summary.project));
         }
         drop(asks);
         // It waits for the person from now: lists are told.
-        if raised {
-            self.inner.hub.changed(summary.project, summary.id);
+        if let Some(org) = raised {
+            let at = Located {
+                org,
+                project: summary.project,
+            };
+            self.inner.hub.changed(at, summary.id);
         }
         summary.trust = Some(ask.clone());
         if summary.status == Status::Idle {
@@ -305,7 +311,7 @@ where
         };
         // It waits no more: lists are told.
         for waited in answered.into_iter().chain(std::iter::once(thread)) {
-            self.inner.hub.changed(project, waited);
+            self.inner.hub.changed(scope.located(), waited);
         }
         Ok(Reply::Thread {
             thread: self.summary(scope, thread).await?,
