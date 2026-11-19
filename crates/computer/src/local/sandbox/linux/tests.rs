@@ -7,6 +7,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command as Process;
+use std::time::Duration;
 
 use glave_ports::block_on;
 use glave_ports::computer::{
@@ -15,6 +16,9 @@ use glave_ports::computer::{
 };
 
 use super::landlocked;
+use tokio::io::AsyncWriteExt as _;
+
+use super::super::Prepared;
 use crate::local::sandbox::tests::terminals::AnotherTerminal;
 use crate::local::sandbox::tests::token;
 use crate::local::sandbox_available;
@@ -652,4 +656,76 @@ fn landlock_refuses_the_project_level_and_says_what_to_install() {
         matches!(&refused, Err(ComputerError::Unsupported(why)) if why.contains("install bubblewrap")),
         "{refused:?}"
     );
+}
+
+/// Places in `/tmp` of this test's own, removed when dropped with what is in them.
+struct InTmp(Vec<PathBuf>);
+
+impl Drop for InTmp {
+    fn drop(&mut self) {
+        for place in &self.0 {
+            let _ = std::fs::remove_file(place);
+            let _ = glave_ports::remove_tree(place);
+        }
+    }
+}
+
+/// A place hidden in `/tmp`, where bubblewrap can write, that is gone by the time bubblewrap
+/// mounts over it, bubblewrap makes again on the host to mount over (an empty folder anyone may
+/// enter, an empty file), as tmux's and Emacs's are when they end just as a command starts:
+/// nothing of it is left once the command has ended (#1539).
+#[test]
+fn bubblewrap_leaves_nothing_where_a_place_it_hid_was_gone() {
+    if !bubblewrap() {
+        return;
+    }
+    let dir = scratch("gone");
+    let project = std::fs::canonicalize(dir.join("project")).unwrap();
+    let pid = std::process::id();
+    let folder = PathBuf::from(format!("/tmp/glave-test-gone-{pid}.d"));
+    let file = PathBuf::from(format!("/tmp/glave-test-gone-{pid}"));
+    let places = InTmp(vec![folder.clone(), file.clone()]);
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("socket"), "").unwrap();
+    std::fs::write(&file, "").unwrap();
+    let sandbox = Sandbox {
+        level: SandboxLevel::Project,
+        network: SandboxNetwork::when(true),
+        home: Some(dir.to_path_buf()),
+        glave_home: Some(dir.join(".glave")),
+    };
+    block_on!(async {
+        let prepared = Prepared::new(&sandbox, &project, None, None, &places.0, None)
+            .await
+            .unwrap();
+        let launch = prepared.launch().await.unwrap();
+        // Gone after the look, before bubblewrap mounts over them.
+        std::fs::remove_dir_all(&folder).unwrap();
+        std::fs::remove_file(&file).unwrap();
+        let mut program = glave_process::Program::new(&launch.program);
+        program.args(&launch.args).arg("true").piped_input();
+        let processes = glave_process::Processes::unrecorded();
+        let mut child = processes.spawn(&mut program).await.unwrap();
+        let mut input = child.stdin.take().unwrap();
+        input
+            .write_all(launch.input.as_deref().unwrap())
+            .await
+            .unwrap();
+        drop(input);
+        let ended = tokio::time::timeout(Duration::from_secs(30), child.wait()).await;
+        assert!(ended.unwrap().unwrap().success());
+        let made = places
+            .0
+            .iter()
+            .map(|place| place.symlink_metadata().is_ok());
+        assert_eq!(
+            made.collect::<Vec<_>>(),
+            [true, true],
+            "control: made again"
+        );
+        drop(launch);
+    });
+    for place in &places.0 {
+        assert!(place.symlink_metadata().is_err(), "{}", place.display());
+    }
 }

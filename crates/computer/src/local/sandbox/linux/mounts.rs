@@ -8,8 +8,14 @@
 //! creates in the project, so a command cannot create it; it is removed once no command needs
 //! it any more. Protected folders are mount points while a command runs, so they cannot be
 //! renamed or removed, and `.git` itself is one, so it cannot be moved aside for a new one.
+//!
+//! A place hidden that is gone by the time bubblewrap mounts over it, where bubblewrap can
+//! write (`/tmp`), bubblewrap makes again on the host to mount over: an empty folder anyone may
+//! enter, or an empty file. tmux and Emacs refuse to start in such a `/tmp/tmux-<uid>` or
+//! `/tmp/emacs<uid>`, so what bubblewrap made there is removed once the command ends (#1539).
 
 use std::collections::HashMap;
+use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -107,15 +113,51 @@ impl Mount {
 /// Stand-ins in use, by path, with how many running commands use each.
 pub(super) type StandIns = Arc<Mutex<HashMap<PathBuf, usize>>>;
 
-/// The stand-ins one command uses; when the last command using one ends, it is removed.
+/// The stand-ins one command uses; when the last command using one ends, it is removed. And the
+/// places it hides, as they were, so that what bubblewrap made where one had gone is removed
+/// with it.
 #[derive(Debug)]
 pub(crate) struct Held {
     paths: Vec<PathBuf>,
     stand_ins: StandIns,
+    hidden: Vec<Seen>,
+}
+
+/// A place hidden, as it was when the mounts were planned.
+#[derive(Debug)]
+struct Seen {
+    path: PathBuf,
+    dev: u64,
+    ino: u64,
+}
+
+impl Seen {
+    /// Removes what bubblewrap made where this place was, if it was gone by the time bubblewrap
+    /// mounted over it: an empty folder anyone may enter or an empty read-only file, as
+    /// bubblewrap makes them, that is not what was hidden. A folder with anything in it stays,
+    /// and so does anything else, which is someone's. Blocking.
+    fn remove_made(&self) {
+        let Ok(meta) = std::fs::symlink_metadata(&self.path) else {
+            return;
+        };
+        if (meta.dev(), meta.ino()) == (self.dev, self.ino) {
+            return;
+        }
+        let mode = meta.mode() & 0o7777;
+        if meta.is_dir() && mode == 0o755 {
+            // Only if empty.
+            let _ = std::fs::remove_dir(&self.path);
+        } else if meta.is_file() && mode == 0o444 && meta.len() == 0 {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
 }
 
 impl Drop for Held {
     fn drop(&mut self) {
+        for seen in &self.hidden {
+            seen.remove_made();
+        }
         let Ok(mut counts) = self.stand_ins.lock() else {
             return;
         };
@@ -151,6 +193,7 @@ pub(super) fn plan(
     let mut held = Held {
         paths: Vec::new(),
         stand_ins: Arc::clone(stand_ins),
+        hidden: Vec::new(),
     };
     // glave's own folder needs nothing here: it is emptied wherever the project is (below).
     let kept = kept_read_only(&layout.root, layout.home.as_deref(), None);
@@ -180,8 +223,14 @@ pub(super) fn plan(
             .into_iter()
             .chain(daemon_places(layout)?),
     ) {
-        hide(&real, &mut mounts);
+        held.hidden.extend(hide(&real, &mut mounts));
     }
+    // Only where bubblewrap can write can it make a place again.
+    held.hidden.retain(|seen| {
+        mounts
+            .iter()
+            .any(|mount| matches!(mount, Mount::Writable(folder) if seen.path.starts_with(folder)))
+    });
     // A folder's mount before those inside it, which it would otherwise lie over: glave's
     // folder holds the cache, and the workspace when it is a thread's worktree there, and is
     // itself inside the workspace when that is the home folder. Stable, so of two mounts at one
@@ -358,12 +407,21 @@ pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
         .collect()
 }
 
-/// `path` hidden under the stand-in of its kind; links are left, their targets judged alone.
-fn hide(path: &Path, mounts: &mut Vec<Mount>) {
-    match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => {}
-        Ok(meta) if meta.is_dir() => mounts.push(Mount::HiddenFolder(path.to_owned())),
-        Ok(_) => mounts.push(Mount::HiddenFile(path.to_owned())),
-        Err(_) => {}
+/// `path` hidden under the stand-in of its kind, and what it was; links are left, their targets
+/// judged alone.
+fn hide(path: &Path, mounts: &mut Vec<Mount>) -> Option<Seen> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    if meta.file_type().is_symlink() {
+        return None;
     }
+    mounts.push(if meta.is_dir() {
+        Mount::HiddenFolder(path.to_owned())
+    } else {
+        Mount::HiddenFile(path.to_owned())
+    });
+    Some(Seen {
+        path: path.to_owned(),
+        dev: meta.dev(),
+        ino: meta.ino(),
+    })
 }
