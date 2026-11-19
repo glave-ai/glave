@@ -201,16 +201,26 @@ jobs:
   # archive's third-party notices, and glave built with the app inside (the `web` feature) and
   # its serving tests.
   web-checks:
-    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     defaults:
       run:
         working-directory: web
+    env:
+      # The flags dist sets for a musl target, as linux-checks gives them.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
+        working-directory: .
+      # glave is built for musl here as e2e builds it (below), so the cache this job saves
+      # serves e2e's build.
+      - name: Install musl's standard library and musl-gcc
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
         working-directory: .
       # One build cache for the web jobs: this job saves it (from main), the shards restore it.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -247,7 +257,9 @@ jobs:
         working-directory: .
       - run: npm run build:showcase
       - name: Build glave with the app inside, and test that it serves it
-        run: cargo nextest run -p glave --features web --test cli -E 'test(/^serve::/)'
+        run: >-
+          cargo nextest run -p glave --features web --test cli
+          --target x86_64-unknown-linux-musl -E 'test(/^serve::/)'
         working-directory: .
 
   # End-to-end tests in Chromium and WebKit with axe in light and dark, against the real
@@ -256,11 +268,10 @@ jobs:
   # The tests run in Playwright's own image, which carries the browsers and every system
   # package they need, so no run installs them (installing them with `--with-deps` took
   # minutes, and once 35). The builds stay on the runner, with its toolchain and caches, and
-  # what they make runs in the image: Ubuntu 24.04, as the runner is.
+  # what they make runs in the image, built for musl so the image's glibc never matters.
   e2e:
     name: e2e (${{ matrix.browser }} ${{ matrix.shard }}/2)
-    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -271,7 +282,9 @@ jobs:
       run:
         working-directory: web
     env:
-      GLAVE_BIN: ${{ github.workspace }}/target/debug/glave
+      GLAVE_BIN: ${{ github.workspace }}/target/x86_64-unknown-linux-musl/debug/glave
+      # The flags dist sets for a musl target, as linux-checks gives them.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: -Ctarget-feature=+crt-static -Clink-self-contained=yes
       # At the Playwright version web/ uses (package-lock.json), pinned by digest. When web/
       # moves to another, the tests fail at once and name the image they need.
       PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
@@ -279,6 +292,14 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
+        working-directory: .
+      # glave, and the MCP test server beside it, built for musl, as releases are: static, so
+      # they run in Playwright's image whatever glibc the runner has (#1561).
+      - name: Install musl's standard library and musl-gcc
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
         working-directory: .
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -298,8 +319,9 @@ jobs:
       - name: Build glave with the app inside, and pull Playwright's image
         run: |
           .github/pull-image.sh "$PLAYWRIGHT_IMAGE" &
-          cargo test -p glave --features web --test cli --no-run
-          cargo build -p glave-mcp --features test-server --bin=glave-mcp-test-server
+          cargo test -p glave --features web --test cli --target x86_64-unknown-linux-musl --no-run
+          cargo build -p glave-mcp --features test-server --bin=glave-mcp-test-server \
+            --target x86_64-unknown-linux-musl
           wait $!
         working-directory: .
       # The scripts look for the browsers in node_modules (PLAYWRIGHT_BROWSERS_PATH=0), and the
@@ -338,8 +360,7 @@ jobs:
   web:
     if: always()
     needs: [web-checks, e2e]
-    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: The checks and every end-to-end shard passed
