@@ -1,4 +1,4 @@
-import type { ChangedFile, Outcome, ReplySources, TurnResult } from '@glave/client';
+import type { ChangedFile, Outcome, ReplySources, TurnFiles, TurnResult } from '@glave/client';
 import { type GlzRunStatus, formatDuration, formatMoney, listFormat } from '@glave/glaze';
 
 import type {
@@ -10,6 +10,7 @@ import type {
   ThreadItem,
 } from './conversation';
 import { roomFor } from './files';
+import { type MadeLater, type MadeShown, NO_MADE, byPath, madeShown } from './made';
 import { plural } from './plural';
 import { NO_STEPS, type Steps, type TurnPart, turnParts } from './runs';
 import type { Turn } from './turns';
@@ -74,6 +75,11 @@ export interface TurnResults {
    * room is kept; else none.
    */
   readonly room: readonly ChangedFile[];
+  /**
+   * The files it made for the person, as the server describes them, and until it has, the room
+   * of those its log names (`madeShown`).
+   */
+  readonly made: MadeShown;
   /** The receipt, for a turn that did work. */
   readonly receipt: Receipt | null;
   readonly waiting: readonly Waiting[];
@@ -190,6 +196,19 @@ export interface TurnFacts {
    * as the thread opens.
    */
   readonly changed: ReadonlyMap<number, readonly ChangedFile[]> | null;
+  /**
+   * The files each turn made, and what they leave out, by the `seq` of its start; `null` until the
+   * server has said.
+   */
+  readonly made: ReadonlyMap<number, TurnFiles> | null;
+  /** What later look-overs said each turn made, by the `seq` of its start, before the server
+   * describes it. */
+  readonly madeLater: ReadonlyMap<number, MadeLater>;
+  /**
+   * Whether the server couldn't say what the turns made, the last time it was asked: what it
+   * described before stays, and no room is kept.
+   */
+  readonly madeFailed: boolean;
   /** Each run of calls in a line, and each turn's reply. */
   readonly steps: Steps;
   /** Each model's name as the server gives it, by the id a turn records. */
@@ -199,6 +218,9 @@ export interface TurnFacts {
 const NO_FACTS: TurnFacts = {
   sourced: new Map(),
   changed: new Map(),
+  made: new Map(),
+  madeLater: new Map(),
+  madeFailed: false,
   steps: NO_STEPS,
   models: new Map(),
 };
@@ -209,6 +231,20 @@ function filesOf(turn: Turn, changed: TurnFacts['changed']): readonly ChangedFil
     return null;
   }
   return turn.startSeq === null ? [] : (changed.get(turn.startSeq) ?? []);
+}
+
+/**
+ * The files `turn` made, as the server describes them by the `seq` of its start, and the room of
+ * those its end and later look-overs name that it hasn't described yet (`madeShown`).
+ */
+function madeBy(turn: Turn, told: TurnFacts): MadeShown {
+  if (turn.startSeq === null) {
+    return NO_MADE;
+  }
+  const later = told.madeLater.get(turn.startSeq);
+  const named = byPath([...(turn.result?.made ?? []), ...(later?.files ?? [])]);
+  const left = turn.result?.made_left != null || later?.left === true;
+  return madeShown(named, left, told.made?.get(turn.startSeq), told.madeFailed);
 }
 
 /**
@@ -256,6 +292,7 @@ export function turnResults(
     working,
     files: filesOf(turn, told.changed),
     room: told.changed === null ? roomFor(result?.changed ?? []) : [],
+    made: madeBy(turn, told),
     receipt:
       calls > 0
         ? {
