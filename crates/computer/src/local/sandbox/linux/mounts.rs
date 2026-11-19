@@ -437,8 +437,6 @@ fn hide(path: &Path, mounts: &mut Vec<Mount>) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::PermissionsExt as _;
-
     use glave_ports::testing::TempDir;
 
     use super::*;
