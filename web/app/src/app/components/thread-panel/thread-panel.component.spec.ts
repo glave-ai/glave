@@ -5,6 +5,7 @@ import { fakeMedia } from '@glave/glaze/testing/media';
 
 import { PanelService } from '../../services/panel.service';
 import { ProjectsService } from '../../services/projects.service';
+import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession } from '../../testing/fake-session';
 import { command, event, thread } from '../../testing/fixtures';
@@ -234,5 +235,32 @@ describe('ThreadPanelComponent', () => {
     root.querySelector<HTMLButtonElement>('[data-testid="command-preview"]')?.click();
     await drawn(fixture);
     expect(tabs(root)[2]?.ariaSelected).toBe('true');
+  });
+
+  it('has a tab last for the file the person opened, under its name, chosen as it opens', async () => {
+    const markdown = '| Item | Total |\n|---|---|\n| Flights | 780 |';
+    const fake = worked().answer('file/preview', { preview: { markdown } });
+    const { root, fixture } = await render(fake, WORKED);
+    TestBed.inject(ThreadPanelService).openFile({
+      kind: 'spreadsheet',
+      name: 'Trip budget',
+      file_name: 'budget.csv',
+      media_type: 'text/csv',
+      bytes: 23,
+      sha256: 'b'.repeat(64),
+      previews: true,
+      kept: 'Kept with this chat',
+      sentence: 'Made a spreadsheet: Trip budget',
+    });
+    await drawn(fixture);
+    expect(tabs(root).map((tab) => [tab.textContent.trim(), tab.ariaSelected])).toEqual([
+      ['Overview', 'false'],
+      ['Changes', 'false'],
+      ['Trip budget', 'true'],
+    ]);
+    expect(root.querySelector('[data-testid="file-preview"] table')?.textContent).toContain(
+      'Flights',
+    );
+    await expectAccessible(root);
   });
 });

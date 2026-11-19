@@ -126,6 +126,8 @@ describe('turns', () => {
         estimated: true,
         via: ['OpenRouter (Anthropic)'],
         changed: ['src/lib.rs', 7],
+        made: [{ path: 'plan.pdf', bytes: 9, kept: 'too_large' }, { path: 7 }],
+        made_left: { kind: 'more', files: 2 },
       }),
     ).toEqual({
       outcome: 'completed',
@@ -137,6 +139,8 @@ describe('turns', () => {
       estimated: true,
       via: ['OpenRouter (Anthropic)'],
       changed: ['src/lib.rs'],
+      made: [{ path: 'plan.pdf', bytes: 9, kept: 'too_large' }],
+      made_left: { kind: 'more', files: 2 },
     });
     // Recorded before it held more than its outcome: nothing counted, its cost not reported.
     expect(result({ outcome: 'failed' })).toMatchObject({

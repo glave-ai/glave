@@ -2,6 +2,7 @@ import { Service, computed, effect, inject, linkedSignal, untracked } from '@ang
 import type { ChangedFile, ThreadChanges, ThreadId } from '@glave/client';
 
 import { roomFor } from '../lib/files';
+import { OneAtATime } from '../lib/reads';
 import { SessionService } from './session.service';
 import { ThreadService } from './thread.service';
 
@@ -33,10 +34,8 @@ export class ChangedFilesService {
   });
   /** Counts the reads begun, so an answer that a later one overtook is dropped. */
   private latest = 0;
-  /** Whether a read is in flight. */
-  private reading = false;
-  /** Whether a read was asked for since the one in flight began. */
-  private again = false;
+  /** Its reads, one at a time. */
+  private readonly reads = new OneAtATime(() => this.read());
 
   /** Every file the thread changed, in the order first changed. */
   readonly files = computed<readonly ChangedFile[]>(() => this.changes()?.files ?? []);
@@ -91,26 +90,7 @@ export class ChangedFilesService {
    * however often it was asked meanwhile, so a run of commands ending costs the server two reads.
    */
   async refresh(): Promise<void> {
-    if (this.reading) {
-      this.again = true;
-      return;
-    }
-    this.reading = true;
-    this.again = false;
-    try {
-      do {
-        await this.read();
-      } while (this.asked());
-    } finally {
-      this.reading = false;
-    }
-  }
-
-  /** Whether a read was asked for since the last began, taking it as begun. */
-  private asked(): boolean {
-    const asked = this.again;
-    this.again = false;
-    return asked;
+    return this.reads.run();
   }
 
   /** Reads what the thread changed, once. */

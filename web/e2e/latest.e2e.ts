@@ -1,6 +1,7 @@
 import { type Locator, type Page } from '@playwright/test';
 
-import { MARKDOWN_PROMPT, MARKDOWN_REPLY, THREAD, fakeApi, streamReply } from './fake-api';
+import { THREAD, fakeApi, streamReply } from './fake-api';
+import { MARKDOWN_PROMPT, MARKDOWN_REPLY } from './fake-markdown';
 import { letGo } from './fake-gate';
 import { SIGNED_IN, byTestId, expect, expectAccessible, test, watchForProblems } from './support';
 

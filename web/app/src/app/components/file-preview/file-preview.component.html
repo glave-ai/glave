@@ -1,0 +1,39 @@
+<section class="preview" data-testid="file-preview">
+  <div class="head">
+    <h3 class="title" dir="auto" data-testid="file-preview-title">{{ file().name }}</h3>
+    <button
+      glzButton
+      size="sm"
+      class="beside"
+      data-testid="file-preview-download"
+      (click)="download()"
+    >
+      {{ copy.download }}
+    </button>
+  </div>
+  @if (failed(); as why) {
+    <p class="note" data-testid="file-preview-failed">{{ why }}</p>
+  } @else if (markdown(); as text) {
+    <div class="page" testId="file-preview-markdown" [glzMarkdown]="text"></div>
+    @if (cut(); as left) {
+      <p class="note" data-testid="file-preview-cut">{{ left }}</p>
+    }
+  } @else {
+    <p class="note" data-testid="file-preview-opening">{{ copy.opening }}</p>
+  }
+  <div class="thumb">
+    <button
+      glzButton
+      variant="primary"
+      data-testid="file-preview-download-thumb"
+      (click)="download()"
+    >
+      {{ copy.download }}
+    </button>
+    @if (shared()) {
+      <button glzButton data-testid="file-preview-share" (click)="share()">
+        {{ copy.share }}
+      </button>
+    }
+  </div>
+</section>

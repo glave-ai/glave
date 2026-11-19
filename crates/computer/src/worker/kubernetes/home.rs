@@ -183,13 +183,17 @@ impl PersonComputer {
             Ok(uid) => Ok(uid),
             Err(error) => {
                 let said = self.cluster.logs(&name).await;
+                // glave there starts as the last of what is copied in arrives, and may end, its
+                // fence never holding, before that copy has (its `tar`, killed with the
+                // container, ends 137): why glave ended is what the person hears.
+                let error = self.never_served(saying(error, &said)).await;
                 let _ = self.sleep().await;
-                Err(saying(error, &said))
+                Err(error)
             }
         }
     }
 
-    /// What the person is told when the computer woke but its first connection failed: that
+    /// What the person is told when the computer woke, or was waking, but never served: that
     /// it couldn't start safely, in plain words, when glave there stopped because its fence
     /// never held ([`super::UNFENCED`], waited for up to three seconds, as its container
     /// ends); `error` otherwise. The last lines it printed, with its node's address and how

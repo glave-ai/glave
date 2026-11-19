@@ -33,6 +33,7 @@
     <div testId="thread-markdown" streaming [glzMarkdown]="live.text"></div>
   </glz-message>
 }
+<app-turn-made [made]="turn().made" />
 @if (changes(); as changes) {
   <app-turn-changes [class.glz-settle]="changes.settles" [files]="changes.files" />
 } @else if (room(); as room) {

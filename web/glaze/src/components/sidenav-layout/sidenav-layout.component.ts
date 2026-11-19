@@ -53,6 +53,8 @@ export const GLZ_NARROW = '(max-width: 48rem)';
     // Closed is the class, so before its first binding (a route's page is added a frame before
     // Angular binds it) it is drawn open, as it starts, and nothing moves as it is bound.
     '[class.closed]': 'closed()',
+    // And wide or narrow once bound: before, the styles draw it as the default query says.
+    '[class.wide]': 'wide()',
     '[style.--glz-sidenav-width]': 'widthStyle()',
     '(keydown.escape)': 'escape()',
   },
@@ -90,7 +92,8 @@ export class GlzSidenavLayoutComponent {
   protected readonly closed = computed(() => !this.open());
   protected readonly role = computed(() => (this.modal() ? 'dialog' : null));
   protected readonly ariaModal = computed(() => (this.modal() ? 'true' : null));
-  protected readonly showHandle = computed(() => !this.narrow());
+  /** Whether the screen is wide, so the side nav sits beside the content with its handle. */
+  protected readonly wide = computed(() => !this.narrow());
   /** The narrowest the side nav may be dragged while open, and the widest, in pixels. */
   protected readonly minWidth = 200;
   protected readonly maxWidth = 480;

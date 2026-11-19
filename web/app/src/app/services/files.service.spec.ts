@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type FileReadParams } from '@glave/client';
 
 import { settle } from '@glave/glaze/testing/settle';
+import { onTestFinished } from 'vitest';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { objectUrls } from '../testing/object-urls';
@@ -143,6 +144,82 @@ describe('FilesService', () => {
     // Of the 60 nothing draws, the first 12 let go of go; the one drawn all along stays.
     expect(urls.revoked).toEqual(urls.made.slice(1, 13));
     expect(await files.hold('t1', SHA, 'image/png').url).toBe(urls.made[0]);
+  });
+
+  it('keeps fewer large files nothing draws: at most 32 MB of them', async () => {
+    const urls = objectUrls();
+    const twelve = btoa('a'.repeat(12 * 1024 * 1024));
+    const whole = { media_type: 'application/pdf', bytes: 12 * 1024 * 1024, offset: 0 };
+    const files = setUp(
+      new FakeSession().answer('file/read', { piece: { ...whole, data: twelve } }),
+    );
+    const held = [1, 2, 3].map((n) => files.hold('t1', nth(n), 'application/pdf'));
+    await Promise.all(held.map(({ url }) => url));
+    await Promise.resolve();
+    for (const each of held) {
+      each.release();
+    }
+    await Promise.resolve();
+    // 36 MB nothing draws: the one let go of first goes.
+    expect(urls.revoked).toEqual(urls.made.slice(0, 1));
+  });
+
+  it('saves a file under its name, and lets go of its address a minute after', async () => {
+    const urls = objectUrls();
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const files = setUp(new FakeSession().answer('file/read', inPieces('ok')));
+    const clicked: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicked.push(`${this.download} ${this.href}`);
+    });
+    await files.save('t1', SHA, 'text/csv', 'budget.csv');
+    expect(clicked).toEqual([`budget.csv ${urls.made[0] ?? ''}`]);
+    vi.advanceTimersByTime(59_000);
+    expect(urls.revoked).toEqual([]);
+    vi.advanceTimersByTime(1_000);
+    expect(urls.revoked).toEqual(urls.made);
+  });
+
+  it('opens a file in a tab that can’t reach back to the page, or saves it where none opens', async () => {
+    const urls = objectUrls();
+    const files = setUp(new FakeSession().answer('file/read', inPieces('ok')));
+    const tab = { location: { href: '' }, opener: {} as unknown, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+    onTestFinished(() => {
+      open.mockRestore();
+    });
+    await files.openInTab('t1', SHA, 'application/pdf', 'plan.pdf');
+    expect(tab.opener).toBeNull();
+    expect(tab.location.href).toBe(urls.made[0]);
+    open.mockReturnValue(null);
+    const saved: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      saved.push(this.download);
+    });
+    await files.openInTab('t1', SHA, 'application/pdf', 'plan.pdf');
+    expect(saved).toEqual(['plan.pdf']);
+  });
+
+  it('lets go of a download’s address as the page goes, before its minute is up', async () => {
+    const urls = objectUrls();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const files = setUp(new FakeSession().answer('file/read', inPieces('ok')));
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    await files.save('t1', SHA, 'text/csv', 'budget.csv');
+    TestBed.resetTestingModule();
+    expect(urls.revoked).toEqual(urls.made);
+    vi.runAllTimers();
+    expect(urls.revoked).toEqual(urls.made);
   });
 
   it('reads no further than a piece that does not lead on, or a file larger than any kept', async () => {
