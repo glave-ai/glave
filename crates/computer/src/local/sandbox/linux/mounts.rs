@@ -82,6 +82,8 @@ pub(super) struct Layout {
     pub(super) runtime: Option<PathBuf>,
     /// Where the person's daemons listen ([`daemons`]), hidden whole from bubblewrap's commands.
     pub(super) daemons: Vec<PathBuf>,
+    /// The sessions' folders the person moved out of `/tmp` ([`moved_sessions`]).
+    pub(super) moved_sessions: Vec<PathBuf>,
     /// For a worktree: the repository's shared git folder, where its commits go.
     pub(super) git_common: Option<PathBuf>,
 }
@@ -336,12 +338,32 @@ pub(super) fn daemons(runtime: Option<&Path>, agent: Option<&Path>) -> Vec<PathB
 /// The folders in `tmp` where the user `uid`'s tmux servers, Zellij sessions and Emacs server
 /// listen, by names fixed ahead: each runs what it is sent outside the sandbox.
 pub(super) fn sessions(tmp: &Path, uid: u32) -> [PathBuf; 3] {
-    [
-        format!("tmux-{uid}"),
-        format!("zellij-{uid}"),
-        format!("emacs{uid}"),
-    ]
-    .map(|name| tmp.join(name))
+    [tmux(uid), format!("zellij-{uid}"), emacs(uid)].map(|name| tmp.join(name))
+}
+
+/// The name of the user `uid`'s tmux servers' folder.
+fn tmux(uid: u32) -> String {
+    format!("tmux-{uid}")
+}
+
+/// The name of the user `uid`'s Emacs server's folder.
+fn emacs(uid: u32) -> String {
+    format!("emacs{uid}")
+}
+
+/// The same folders where the person moved them out of `/tmp`: tmux's to `tmux_in` (its
+/// `TMUX_TMPDIR`), Emacs's to `emacs_in` (its `TMPDIR`). Zellij's moves only into the runtime
+/// folder, hidden whole already.
+pub(super) fn moved_sessions(
+    uid: u32,
+    tmux_in: Option<&Path>,
+    emacs_in: Option<&Path>,
+) -> Vec<PathBuf> {
+    let moved_tmux = tmux_in.map(|folder| folder.join(tmux(uid)));
+    moved_tmux
+        .into_iter()
+        .chain(emacs_in.map(|folder| folder.join(emacs(uid))))
+        .collect()
 }
 
 /// `folder`, made first if it is not there, private, as tmux, Zellij and Emacs make their own
@@ -371,6 +393,7 @@ fn daemon_places(layout: &Layout) -> Result<Vec<PathBuf>, String> {
     let in_tmp = listeners(Path::new("/tmp"), uid)?;
     let sessions = (layout.shared_tmp.iter())
         .flat_map(|tmp| sessions(tmp, uid))
+        .chain(layout.moved_sessions.iter().cloned())
         .map(made_private);
     Ok(layout
         .daemons
@@ -378,9 +401,31 @@ fn daemon_places(layout: &Layout) -> Result<Vec<PathBuf>, String> {
         .cloned()
         .chain(sessions)
         .chain(in_tmp)
-        .filter_map(|place| std::fs::canonicalize(place).ok())
+        .filter_map(|place| real_place(&place, uid))
         .filter(|real| !used.iter().any(|used| used.starts_with(real)))
         .collect())
+}
+
+/// The real path of `place`, to hide. Where anyone may make names (`/tmp`, any folder others may
+/// write), only what this user or the system made there, a link included (an ssh agent's is
+/// often one the person put in `/tmp`): another user could put a link at `/tmp/tmux-<uid>` to
+/// `/usr` and have every command's sandbox hide it (#1575), but cannot make one that is the
+/// person's, nor, in a sticky folder, swap what they own. In such a folder that is not sticky,
+/// no link is followed. Elsewhere, where only the system or the person names things, wherever
+/// it leads. Blocking.
+fn real_place(place: &Path, uid: u32) -> Option<PathBuf> {
+    let parent = place
+        .parent()
+        .and_then(|parent| std::fs::metadata(parent).ok());
+    if let Some(parent) = parent.filter(|parent| parent.mode() & 0o002 != 0) {
+        let meta = std::fs::symlink_metadata(place).ok()?;
+        let owned = meta.uid() == uid || meta.uid() == 0;
+        let sticky = parent.mode() & 0o1000 != 0;
+        if !owned || (meta.file_type().is_symlink() && !sticky) {
+            return None;
+        }
+    }
+    std::fs::canonicalize(place).ok()
 }
 
 /// `places` without those inside another of them: hiding the outer one hides them already, and
@@ -441,43 +486,111 @@ mod tests {
 
     use super::*;
 
-    /// A session's folder missing from the shared `/tmp` when a command's mounts are planned is
-    /// made, private as tmux makes its own, and hidden like one that was there: a server the
-    /// person starts in it while the command runs is out of the command's reach (#1572).
-    #[test]
-    fn a_session_s_folder_missing_from_tmp_is_made_private_and_hidden() {
+    /// The folders a test plans in, `tmp`, `project` and `temp`, under the real path returned;
+    /// `tmp` anyone's to write, as `/tmp` is.
+    fn folders() -> (TempDir, PathBuf) {
         let dir = TempDir::new("sessions").unwrap();
         let real = std::fs::canonicalize(dir.path()).unwrap();
         for folder in ["tmp", "project", "temp"] {
             std::fs::create_dir(real.join(folder)).unwrap();
         }
-        let tmp = real.join("tmp");
+        let shared = std::fs::Permissions::from_mode(0o1777);
+        std::fs::set_permissions(real.join("tmp"), shared).unwrap();
+        (dir, real)
+    }
+
+    /// The mounts of a command planned in `dir`'s folders, `tmp` as the shared `/tmp`, `moved`
+    /// as the sessions' folders moved out of it and `daemons` as where daemons listen.
+    fn planned(dir: &Path, moved: Vec<PathBuf>, daemons: Vec<PathBuf>) -> Vec<Mount> {
         let layout = Layout {
-            root: real.join("project"),
+            root: dir.join("project"),
             level: SandboxLevel::Project,
             network: true,
-            base: real.join("base"),
-            empty_file: real.join("base/empty"),
-            empty_folder: real.join("base/empty.d"),
-            shared_tmp: Some(tmp.clone()),
+            base: dir.join("base"),
+            empty_file: dir.join("base/empty"),
+            empty_folder: dir.join("base/empty.d"),
+            shared_tmp: Some(dir.join("tmp")),
             home: None,
             also_hidden: Vec::new(),
             glave_home: None,
             cache: None,
             glave_on_path: None,
             runtime: None,
-            daemons: Vec::new(),
+            daemons,
+            moved_sessions: moved,
             git_common: None,
         };
-        let stand_ins = StandIns::default();
-        let (mounts, _held) = plan(&layout, &real.join("temp"), &stand_ins).unwrap();
+        let (mounts, _held) = plan(&layout, &dir.join("temp"), &StandIns::default()).unwrap();
+        mounts
+    }
+
+    /// Whether `folder` is made, private as tmux makes its own, and hidden in `mounts`.
+    fn hidden_and_private(folder: &Path, mounts: &[Mount]) {
+        let shown = folder.display();
+        let mode = std::fs::metadata(folder).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700, "{shown}");
+        let hidden = Mount::HiddenFolder(folder.to_owned());
+        assert!(mounts.contains(&hidden), "{shown}: {mounts:?}");
+    }
+
+    /// A session's folder missing from the shared `/tmp` when a command's mounts are planned is
+    /// made, private as tmux makes its own, and hidden like one that was there: a server the
+    /// person starts in it while the command runs is out of the command's reach (#1572).
+    #[test]
+    fn a_session_s_folder_missing_from_tmp_is_made_private_and_hidden() {
+        let (_dir, real) = folders();
+        let mounts = planned(&real, Vec::new(), Vec::new());
         let uid = rustix::process::getuid().as_raw();
-        for folder in sessions(&tmp, uid) {
-            let shown = folder.display();
-            let mode = std::fs::metadata(&folder).unwrap().permissions().mode();
-            assert_eq!(mode & 0o777, 0o700, "{shown}");
-            let hidden = Mount::HiddenFolder(folder.clone());
-            assert!(mounts.contains(&hidden), "{shown}: {mounts:?}");
+        for folder in sessions(&real.join("tmp"), uid) {
+            hidden_and_private(&folder, &mounts);
         }
+    }
+
+    /// tmux's folder moved by `TMUX_TMPDIR`, and Emacs's by `TMPDIR`, are made, private, and
+    /// hidden there as those in `/tmp` are (#1575).
+    #[test]
+    fn a_session_s_folder_moved_out_of_tmp_is_hidden_there() {
+        let (_dir, real) = folders();
+        let uid = rustix::process::getuid().as_raw();
+        let (tmux_in, emacs_in) = (real.join("project"), real.join("temp"));
+        let moved = moved_sessions(uid, Some(&tmux_in), Some(&emacs_in));
+        assert_eq!(moved.len(), 2);
+        let mounts = planned(&real, moved.clone(), Vec::new());
+        for folder in &moved {
+            hidden_and_private(folder, &mounts);
+        }
+    }
+
+    /// A link the person put in a shared, sticky folder is followed, and what it leads to
+    /// hidden: their ssh agent's, `/tmp/ssh-agent-<user>`, which another user could not make
+    /// nor swap (#1575).
+    #[test]
+    fn the_person_s_link_to_their_ssh_agent_in_tmp_is_followed_and_hidden() {
+        let (dir, real) = folders();
+        let agent = glave_ports::testing::SocketPath::new(&dir, "agent.sock").unwrap();
+        let _listening = std::os::unix::net::UnixListener::bind(&agent).unwrap();
+        let link = real.join("tmp/ssh-agent-glave");
+        std::os::unix::fs::symlink(&agent, &link).unwrap();
+        let mounts = planned(&real, Vec::new(), vec![link]);
+        let socket = std::fs::canonicalize(&agent).unwrap();
+        assert!(mounts.contains(&Mount::HiddenFile(socket)), "{mounts:?}");
+    }
+
+    /// In a folder anyone may write that is not sticky, where another user could swap a link for
+    /// one of theirs, no link is followed: what it leads to is left as it is.
+    #[test]
+    fn a_link_in_a_shared_folder_that_is_not_sticky_is_never_followed() {
+        let (_dir, real) = folders();
+        let open = std::fs::Permissions::from_mode(0o777);
+        std::fs::set_permissions(real.join("tmp"), open).unwrap();
+        let system = real.join("usr");
+        std::fs::create_dir(&system).unwrap();
+        let uid = rustix::process::getuid().as_raw();
+        let [tmux, ..] = sessions(&real.join("tmp"), uid);
+        std::os::unix::fs::symlink(&system, &tmux).unwrap();
+        let mounts = planned(&real, Vec::new(), Vec::new());
+        let reached = |path: &Path| mounts.iter().any(|mount| mount.path() == path);
+        assert!(!reached(&system), "{mounts:?}");
+        assert!(!reached(&tmux), "{mounts:?}");
     }
 }
