@@ -32,9 +32,13 @@
     "unresolved",
   ],
   // The fonts, which angular.json's `styles` name by package (`@fontsource/…/400.css`), and
-  // knip's Angular plugin looks for as files of this folder.
+  // knip's Angular plugin looks for as files of this folder. And npm, a dev dependency so that
+  // `npm run audit` runs npm 11 from node_modules/.bin whatever npm Node brings (npm 10 falls
+  // back to an advisory endpoint the registry is retiring, #1557); knip takes `npm` in a script
+  // for the npm running it.
   "ignoreDependencies": [
     "@fontsource/atkinson-hyperlegible-mono",
     "@fontsource/atkinson-hyperlegible-next",
+    "npm",
   ],
 }

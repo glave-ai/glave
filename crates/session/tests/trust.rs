@@ -12,11 +12,12 @@ use std::sync::{Arc, Mutex};
 use glave_event::{Auth, AuthMethod, PrincipalId, ThreadId};
 use glave_harness::{Brought, ProjectFolders};
 use glave_ports::{
-    BoxFuture, Caller, Effect, InMemoryTools, ProjectId, Scope, ToolInfo, ToolOutput, ToolSpec,
+    BoxFuture, Caller, Effect, EventLog, InMemoryTools, ProjectId, Scope, ToolInfo, ToolOutput,
+    ToolSpec,
 };
 use glave_session::protocol::{
-    ApiError, NewFolder, Notification, Reply, Request, Status, ThreadSummary, TrustAsk,
-    TrustChoice, TrustItem, code,
+    ApiError, Notification, Reply, Request, Status, ThreadSummary, TrustAsk, TrustChoice,
+    TrustItem, code,
 };
 use glave_session::signin::person;
 use glave_session::{Answering, ListWatch, ProjectTrust, Watched};
@@ -134,12 +135,28 @@ async fn serving(
     answers: usize,
     answering: Answering,
 ) -> (Tested, Seen) {
+    serving_on(
+        dir,
+        repository,
+        (answers, answering),
+        glave_ports::InMemoryLog::new(),
+    )
+    .await
+}
+
+/// [`serving`] on `log`.
+async fn serving_on<L: EventLog + 'static>(
+    dir: &Path,
+    repository: &Arc<Repository>,
+    (answers, answering): (usize, Answering),
+    log: L,
+) -> (Tested<L>, Seen) {
     let answers = (0..answers).map(|_| answer(Some("Done."), None)).collect();
     let mut setup = Setup::new(answers);
     setup.answering = answering;
     setup.project_folders = Some(Arc::clone(repository) as Arc<dyn ProjectFolders>);
     setup.trust = Some(Arc::clone(repository) as Arc<dyn ProjectTrust>);
-    setup.build(dir).await
+    setup.build_on(dir, log).await
 }
 
 fn thread_start(project: ProjectId) -> Request {
@@ -161,7 +178,11 @@ fn summary(reply: Reply) -> ThreadSummary {
     }
 }
 
-async fn opened(server: &Tested, caller: &Caller, thread: ThreadId) -> ThreadSummary {
+async fn opened<L: EventLog + 'static>(
+    server: &Tested<L>,
+    caller: &Caller,
+    thread: ThreadId,
+) -> ThreadSummary {
     summary(
         server
             .request_as(caller, Request::ThreadGet { thread })
@@ -348,7 +369,9 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
     std::fs::create_dir_all(&other).unwrap();
     block_on!(async {
         let repository = Arc::new(Repository::default());
-        let (server, seen) = serving(&dir, &repository, 1, Answering::Clients).await;
+        let log = Shared::default();
+        let answers = (1, Answering::Clients);
+        let (server, seen) = serving_on(&dir, &repository, answers, log.clone()).await;
         // The person glave works for, signed in from another computer, as a host that knows them
         // by that sign-in calls for them.
         let elsewhere = Caller {
@@ -385,29 +408,22 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
         }
         assert!(!repository.is_trusted());
         // Trusted by the person here, it is theirs alone: another person, as a host embedding the
-        // server may call for her, in a project of her own whose folder brings the same, gets
-        // none of it.
+        // server may call for her, in a project of her own whose folder here brings the same,
+        // gets none of it. Naming a folder on this computer is the person here's alone, so hers
+        // is kept in the store as one is.
         let answered = server
             .request(answering(started.id, &ask.ask, TrustChoice::Trust))
             .await;
         assert!(answered.is_ok(), "{answered:?}");
+        let theirs = person("https://id.example.com", "grace").unwrap();
         let grace = Caller {
-            person: Some(person("https://id.example.com", "grace").unwrap()),
+            person: Some(theirs),
             ..Caller::default()
         };
-        let created = Request::ProjectCreate {
-            name: "Hers".into(),
-            folder: Some(NewFolder::Path {
-                path: other.to_string_lossy().into_owned(),
-            }),
-        };
-        let Reply::Project { project, .. } = server.request_as(&grace, created).await.unwrap()
-        else {
-            panic!("a project")
-        };
+        let project = project_at(&server, &log, theirs, ("Hers", &other)).await;
         let hers = summary(
             server
-                .request_as(&grace, thread_start(project.id))
+                .request_as(&grace, thread_start(project))
                 .await
                 .unwrap(),
         );
