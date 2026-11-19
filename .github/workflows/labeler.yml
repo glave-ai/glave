@@ -17,7 +17,6 @@ concurrency:
 
 jobs:
   label:
-    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/labeler@v7

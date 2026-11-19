@@ -179,8 +179,7 @@ jobs:
   linux:
     if: always()
     needs: linux-checks
-    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: The checks passed on glibc and on musl
@@ -378,8 +377,7 @@ jobs:
   # today's config is what's checked in, and the change to the install script still applies to
   # the one dist writes today.
   release-workflow:
-    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -717,8 +715,7 @@ jobs:
   macos:
     if: always() && github.event_name != 'pull_request'
     needs: [macos-run, macos-retry]
-    # 26.04 breaks the e2e container's glibc and the sandbox tests: #1561
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: The checks passed on macOS, at the first try or the retry
