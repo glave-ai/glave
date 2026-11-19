@@ -189,6 +189,7 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     setup.memory = Some(Arc::new(GlaveMemory::start(memories).await.unwrap()));
     setup.browsers = Some(Arc::clone(&browsers));
     setup.identity_provider = true;
+    setup.reader = Some(previews());
     let pusher = glave_push::Pusher::new("mailto:ops@example.com").unwrap();
     let pushing = glave_session::Pushing::new(pusher, Arc::clone(&parts.eraser));
     setup.push = Some(Arc::new(pushing));
@@ -360,6 +361,18 @@ pub(super) fn words_of(name: &str) -> [String; 7] {
         format!("{name}'s fox"),
         format!("{}S_KEY", name.to_uppercase()),
     ]
+}
+
+/// What reads the files a turn makes in the world: each is previewed as its text.
+fn previews() -> glave_ports::ReadMade {
+    Arc::new(|bytes, _| {
+        Box::pin(async move {
+            Some(glave_ports::MadeRead {
+                markdown: Some(String::from_utf8_lossy(&bytes).into_owned()),
+                ..glave_ports::MadeRead::default()
+            })
+        })
+    })
 }
 
 /// A picture `person` has glave draw in their Chats and a sheet it makes there, each call

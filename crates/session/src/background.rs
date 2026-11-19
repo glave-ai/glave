@@ -13,11 +13,11 @@ use glave_event::{Principal, ThreadId};
 use glave_harness::Commands;
 use glave_ports::computer::CommandId;
 use glave_ports::host::PublicOrigin;
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::held::{Slot, Use, finished};
+use crate::held::{MANAGED_WITHIN, Slot, Use, finished};
 use crate::protocol::{ApiError, ListedCommand, Reply, code};
 use crate::server::{Inner, Server, no_thread};
 use crate::words::Sentence;
@@ -149,8 +149,19 @@ where
     }
 
     /// Records what the thread's commands are waiting to have recorded, when no turn holds it,
-    /// with what was made since a turn's mark when the last of them has ended (`looks`).
-    async fn record_idle(&self, thread: ThreadId, looks: bool) {
+    /// with what was made since a turn's mark when the last of them has ended (`looks`). Boxed,
+    /// since a turn's own task calls it once the turn has ended (`held.rs`), whose future would
+    /// otherwise hold its own type.
+    pub(crate) fn record_idle(&self, thread: ThreadId, looks: bool) -> BoxFuture<'_, ()> {
+        Box::pin(self.record_idle_now(thread, looks))
+    }
+
+    async fn record_idle_now(&self, thread: ThreadId, looks: bool) {
+        // After other such work, a change to whether it is shown among them, which would
+        // otherwise find it busy and leave the look to the next turn: waited for, never stopped.
+        if let Some(mut ending) = self.managing(thread, false) {
+            let _ = tokio::time::timeout(MANAGED_WITHIN, ending.wait_for(|ended| *ended)).await;
+        }
         if !matches!(self.lock().get(&thread), Some(Slot::Idle { .. })) {
             return;
         }
@@ -160,9 +171,9 @@ where
                 thread,
                 finish,
                 Use::Manage,
-                move |inner, mut held, _| async move {
+                move |inner, mut held, cancel| async move {
                     let recorded = if looks {
-                        inner.harness.record_ended(&mut held).await
+                        inner.harness.record_ended(&mut held, &cancel).await
                     } else {
                         inner.harness.record_commands(&mut held).await
                     };
