@@ -23,7 +23,7 @@
 
 #![expect(clippy::print_stdout, reason = "a benchmark: its table is its output")]
 
-#[cfg(target_env = "musl")]
+#[cfg(any(target_env = "musl", target_os = "macos"))]
 #[path = "../../cli/src/allocator.rs"]
 mod allocator;
 

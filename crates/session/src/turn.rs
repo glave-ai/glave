@@ -259,7 +259,7 @@ where
                 }
                 // Started by someone else meanwhile: queued to it instead.
                 Err(running)
-                    if queue && running.code == code::TURN_RUNNING && self.is_busy(thread) => {}
+                    if queue && running.code == code::TURN_RUNNING && self.turn_holds(thread) => {}
                 Err(failed) => break Err(failed),
             }
         };

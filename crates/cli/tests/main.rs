@@ -28,6 +28,7 @@ mod postgres;
 mod project;
 mod projects;
 mod providers;
+mod reading;
 mod remote;
 mod search;
 mod secrets;

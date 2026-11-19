@@ -54,16 +54,20 @@ impl Processes {
         Ok(self.waited(program, None, limit, None).await?.status)
     }
 
-    /// [`Processes::output`], with `input` written to its standard input, which is then
-    /// closed.
+    /// [`Processes::output_at_most`], with `input` written to its standard input, which is
+    /// then closed: a helper of glave's own reading a file, say.
     pub async fn output_with(
         &self,
         program: &mut Program,
         input: &[u8],
         limit: Duration,
+        most: usize,
     ) -> Result<Output, ProcessError> {
-        program.piped_input();
-        self.waited(program, Some(input), limit, None).await
+        program
+            .piped_input()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        self.waited(program, Some(input), limit, Some(most)).await
     }
 
     /// Starts `program`, `input` written to it first when there is some, and waits for it
@@ -90,7 +94,8 @@ impl Processes {
 
 /// How `child` ended, with all it printed, or of each of its outputs the first `most` bytes and
 /// one more: `input` written to it and its standard input closed, beside reading both its
-/// outputs, so neither side waits on a full pipe.
+/// outputs, so neither side waits on a full pipe. A program that ends before it has read all of
+/// `input` is answered as it ended, with what it said of why.
 async fn finished(
     child: &mut Child,
     input: Option<&[u8]>,
@@ -100,7 +105,10 @@ async fn finished(
     let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
     let written = async {
         if let (Some(input), Some(mut stdin)) = (input, stdin) {
-            stdin.write_all(input).await?;
+            match stdin.write_all(input).await {
+                Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => {}
+                written => written?,
+            }
         }
         Ok(())
     };
