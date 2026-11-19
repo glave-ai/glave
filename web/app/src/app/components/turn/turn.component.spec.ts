@@ -4,6 +4,7 @@ import type { ChangedFile } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { NO_THOUGHT, type MessageItem } from '../../lib/conversation';
+import { NO_MADE } from '../../lib/made';
 import type { TurnResults } from '../../lib/results';
 import { ChangedFilesService } from '../../services/changed-files.service';
 import { CommandsService } from '../../services/commands.service';
@@ -80,6 +81,7 @@ const RESULTS: TurnResults = {
   working: null,
   files: CHANGED,
   room: [],
+  made: NO_MADE,
   receipt: {
     status: 'done',
     facts: ['4m 02s', 'Claude Haiku 5.5'],
@@ -194,6 +196,12 @@ describe('TurnComponent', () => {
       'via OpenRouter (Anthropic)',
     );
     await expectAccessible(root);
+  });
+
+  it('says what the files it made leave out, in the server’s words, under them', async () => {
+    const note = '1 more file was made than a chat keeps: it stays on the computer';
+    const root = await render({ ...RESULTS, made: { ...NO_MADE, note } });
+    expect(root.querySelector('[data-testid="turn-made-note"]')?.textContent).toBe(note);
   });
 
   it('opened at it from its end’s notification, shows the line above its reply, in view', async () => {

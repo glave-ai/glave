@@ -2,6 +2,7 @@ import { type Page } from '@playwright/test';
 
 import { PROJECT, THREAD, fakeApi } from './fake-api';
 import { FORMATTED } from './fake-formatted';
+import { MORE, madeTheFiles } from './fake-made';
 import { LONG, LONG_TURNS } from './fake-long';
 import { PHOTOS } from './fake-photos';
 import {
@@ -106,6 +107,60 @@ test('nothing moves on opening a thread in a repository when its folder says, la
   await atRest(page);
   expectStill(await feltOn(page));
 });
+
+// Each case says whether the panel sits beside the conversation, and whether its cards are
+// narrow: under the 30rem where a reason keeps three lines, not two.
+for (const [width, height, on, beside, narrow] of [
+  [1280, 1600, 'a wide screen', true, false],
+  // Just wide enough for the panel beside the conversation (past 64rem), with the side nav
+  // open too, which leaves the conversation's column narrow.
+  [1040, 1200, 'a narrower window beside the panel', true, true],
+  [390, 844, 'a phone', false, true],
+] as const) {
+  test(`nothing moves on opening a thread as the files its turn made are described late, on ${on}`, async ({
+    page,
+  }) => {
+    await watchFeel(page);
+    await fakeApi(page);
+    await madeTheFiles(page);
+    await page.setViewportSize({ width, height });
+    const held = await hold(page, '/', 'thread/files');
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    await held.sent;
+    await expect(byTestId(page, 'thread-message').last()).toBeVisible();
+    await expect(byTestId(page, 'panel-panel')).toBeVisible({ visible: beside });
+    // Each card's room is kept, unseen, from the turn's end alone (a line's that gives a reason
+    // among them), and so is the note's, which it says leaves a file out; the turn below stays
+    // where it is.
+    await expect(byTestId(page, 'made-file')).toHaveCount(3);
+    await expect(byTestId(page, 'turn-made-note')).toHaveCount(1);
+    // The cards are clear of 30rem, never at it, so every engine draws the same branch.
+    const card = await cardMeasured(page);
+    expect(Math.abs(card.rem - 30), `a card ${String(card.rem)}rem wide`).toBeGreaterThanOrEqual(2);
+    expect(card.reasonLines).toBe(narrow ? '3' : '2');
+    await atRest(page);
+    held.letGo();
+    await expect(byTestId(page, 'made-file-title').first()).toHaveText('Trip budget');
+    await expect(byTestId(page, 'turn-made-note')).toHaveText(MORE);
+    await atRest(page);
+    expectStill(await feltOn(page));
+  });
+}
+
+/** The first card's width in rem, and the lines its reasons keep there. */
+async function cardMeasured(
+  page: Page,
+): Promise<{ readonly rem: number; readonly reasonLines: string }> {
+  return byTestId(page, 'made-file')
+    .first()
+    .evaluate((file) => {
+      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+      return {
+        rem: file.getBoundingClientRect().width / rem,
+        reasonLines: getComputedStyle(file).getPropertyValue('--app-reason-lines').trim(),
+      };
+    });
+}
 
 test('nothing moves on opening a thread as the images its agent read come in late, or turn out to be gone', async ({
   page,
