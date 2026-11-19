@@ -176,6 +176,7 @@ where
             queue: false,
             // Its thread is unattended for the whole task already, where it is.
             unattended: false,
+            scheduled: schedule.map(|fired| fired.due),
         };
         let stream = self
             .start_turn_with(caller, thread, message, None)

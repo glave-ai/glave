@@ -101,6 +101,7 @@ where
             made_mark,
             home: crate::homes::at_home(bound.as_ref()),
             rebound: bound.filter(|_| moved),
+            reminder: None,
             prefix: crate::prefix::Prefixed::None,
             summary_failed: None,
             keys: crate::keys::Keys::of(&events),

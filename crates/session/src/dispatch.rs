@@ -352,6 +352,7 @@ where
                     },
                     queue: true,
                     unattended,
+                    scheduled: None,
                 };
                 let sent = boxed(|| self.start_turn_with(traced, thread, message, key)).await;
                 return match sent {
@@ -489,6 +490,9 @@ where
             Request::ScheduleList {} => {
                 let listed = boxed(|| self.list_schedules(caller)).await;
                 listed.map(|schedules| Reply::Schedules { schedules })
+            }
+            Request::SchedulePause { schedule, paused } => {
+                boxed(|| self.pause_schedule(caller, schedule, paused)).await
             }
             Request::ScheduleDelete { schedule } => {
                 boxed(|| self.delete_schedule(caller, schedule)).await

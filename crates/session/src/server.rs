@@ -236,6 +236,9 @@ pub(crate) type Glave<P, L, B> = Harness<P, Observed<L>, B, Approvals>;
 
 pub(crate) struct Inner<P, L, B> {
     pub(crate) harness: Glave<P, L, B>,
+    /// The clock the harness reads, held here too for what outlives a request: a watch whose
+    /// caller's sign-in is taken until a time (`access.rs`).
+    pub(crate) clock: Arc<dyn Clock>,
     /// The server's own organization: the local person's, and that of everyone the transport
     /// names no other for (`specs/storage.md`, "Many organizations in one store"). A request
     /// works in its caller's ([`Server::org_of`]), never in this alone.
@@ -360,7 +363,7 @@ where
             log: Observed::new(wiring.log, Arc::clone(&hub)),
             blobs: wiring.blobs,
             approver: approvals.clone(),
-            clock: Box::new(clock),
+            clock: Box::new(Arc::clone(&clock)),
             entropy: wiring.entropy,
             workspace: wiring.workspace,
         };
@@ -380,6 +383,7 @@ where
             inner: Arc::new(Inner {
                 person: harness.settings().person,
                 harness,
+                clock,
                 identity_provider: wiring.identity_provider,
                 models: RwLock::new(catalog),
                 providers: wiring.providers,

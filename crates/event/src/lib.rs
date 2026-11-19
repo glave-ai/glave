@@ -57,8 +57,8 @@ pub use payload::{Caution, Phrase, Risk, Settled, Worded, sentence};
 pub use payload::{Checkout, CommandEnded, CommandEnding, CommandStarted, FolderSource};
 pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
-    ScheduleSkipped, Skipped, TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved,
-    ZoneSet, sealed_under_memory,
+    SchedulePaused, ScheduleSkipped, Skipped, TaskEnded, TaskStarted, When, WorkspaceBound,
+    WorkspaceRemoved, ZoneSet, sealed_under_memory,
 };
 pub use payload::{ConnectionConnected, ConnectionRemoved, SignInClient};
 pub use payload::{CostKind, CreditsAdded, CreditsCharged, CreditsHeld, CreditsLimitSet};
@@ -68,12 +68,12 @@ pub use payload::{
 };
 pub use payload::{FileMade, FileRead, Kept, MadeLeft, MadePreview, Parts, TurnMade};
 pub use payload::{
-    InviteAccepted, InviteCreated, InviteRevoked, OrgRole, OrganizationKind, OrganizationMade,
-    PersonJoined, PersonRemoved, Profile, RoleSet,
+    InviteAccepted, InviteCreated, InviteGiven, InviteRevoked, OrgRole, OrganizationKind,
+    OrganizationMade, PersonJoined, PersonRemoved, Profile, RoleSet,
 };
 pub use payload::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use payload::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use payload::{PushClaimed, PushKeyMade, PushSubscribed, PushUnsubscribed};
 pub use payload::{SecretAdded, SecretRemoved};
-pub use secret::{Secret, serialize_exposed, serialize_exposed_values};
+pub use secret::{Secret, serialize_exposed, serialize_exposed_some, serialize_exposed_values};
 pub use seen::seen;

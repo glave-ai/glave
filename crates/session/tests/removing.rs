@@ -178,7 +178,10 @@ fn someone_removed_has_their_watches_end_at_once_and_comes_back_only_by_an_invit
             role: OrgRole::Admin,
             email: None,
         };
-        let Ok(Reply::Invited { code, .. }) = server.request(invite).await else {
+        let Ok(Reply::Invited {
+            code: Some(code), ..
+        }) = server.request(invite).await
+        else {
             panic!("an invite");
         };
         let accept = Request::InviteAccept {
@@ -528,7 +531,10 @@ fn someone_removed_has_their_schedules_deleted() {
             role: OrgRole::Member,
             email: None,
         };
-        let Ok(Reply::Invited { code, .. }) = server.request(invite).await else {
+        let Ok(Reply::Invited {
+            code: Some(code), ..
+        }) = server.request(invite).await
+        else {
             panic!("an invite");
         };
         let accept = Request::InviteAccept {

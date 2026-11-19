@@ -80,8 +80,8 @@ pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};
 pub use passkey::{PasskeyAdded, PasskeyRemoved, PasskeyUsed};
 pub use people::{
-    InviteAccepted, InviteCreated, InviteRevoked, OrgRole, OrganizationKind, OrganizationMade,
-    PersonJoined, PersonRemoved, Profile, RoleSet,
+    InviteAccepted, InviteCreated, InviteGiven, InviteRevoked, OrgRole, OrganizationKind,
+    OrganizationMade, PersonJoined, PersonRemoved, Profile, RoleSet,
 };
 pub use plan::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use principal::{Principal, PrincipalKind};
@@ -98,7 +98,8 @@ pub use service::{
 pub use signup::{MailAsked, SignupFinished, SignupStarted};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
 pub use task::{
-    Fired, ScheduleCreated, ScheduleDeleted, ScheduleSkipped, Skipped, TaskEnded, TaskStarted, When,
+    Fired, ScheduleCreated, ScheduleDeleted, SchedulePaused, ScheduleSkipped, Skipped, TaskEnded,
+    TaskStarted, When,
 };
 pub use thread::{Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted};
 pub use tool::{
