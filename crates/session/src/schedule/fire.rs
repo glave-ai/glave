@@ -8,12 +8,11 @@
 //! missed runs while no server ran it runs once, as soon as one does, never once per missed
 //! time (systemd's `Persistent=true`).
 
-use std::collections::BTreeSet;
 use std::future::Future;
 use std::time::Duration;
 
 use glave_event::{At, Fired, ScheduleCreated, ScheduleSkipped, Skipped, ThreadId};
-use glave_ports::{BlobStore, Caller, EventLog, Leased, Located, ModelProvider, OrgId};
+use glave_ports::{BlobStore, Caller, EventLog, Leased, Located, ModelProvider};
 use jiff::{SignedDuration, Timestamp};
 
 use super::info::{due, next_fire};
@@ -21,7 +20,7 @@ use crate::choice::Choice;
 use crate::ledger::Scheduled;
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
-use crate::tasks::Work;
+use crate::tasks::{Unstarted, Work};
 
 /// The longest the scheduler sleeps before looking again: schedules made by another process
 /// are found within this.
@@ -54,17 +53,19 @@ where
     pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
         // Threads idle for 30 minutes are let go even when nothing else happens.
         self.let_go_stale().await;
-        // One server fires each organization's schedules: the holder of its lease.
-        let projects = self.task_projects().await?;
-        let mut firing = BTreeSet::new();
-        for org in projects.iter().map(|at| at.org).collect::<BTreeSet<_>>() {
-            if self.fires(org).await? {
-                firing.insert(org);
-            }
+        // One server on the store fires schedules: the holder of its lease.
+        if !self.fires().await? {
+            return Ok(Vec::new());
         }
-        for project in projects.iter().filter(|at| firing.contains(&at.org)) {
-            // A ledger that cannot be read now is read again on the next tick.
-            if let Err(error) = self.catch_up(*project).await {
+        let projects = self.task_projects().await?;
+        for project in &projects {
+            // A ledger that cannot be read now is read again on the next tick; a run left open by
+            // a server that stopped, its task's lease lapsed, is recovered now, not at a start.
+            let read = match self.catch_up(*project).await {
+                Ok(()) => self.recover_in(*project).await.map(|_| ()),
+                failed => failed,
+            };
+            if let Err(error) = read {
                 let project = project.project;
                 tracing::warn!(%error, %project, "could not read the project's schedules");
             }
@@ -73,7 +74,6 @@ where
         let mut due: Vec<(Located, ScheduleCreated, Timestamp)> = self
             .ledgers()
             .iter()
-            .filter(|(at, _)| firing.contains(&at.org))
             .flat_map(|(project, ledger)| {
                 (ledger.schedules.values())
                     .filter(|it| fires_here(it))
@@ -101,22 +101,22 @@ where
         self.working(|_| true) >= self.most_running()
     }
 
-    /// Whether this server fires `org`'s schedules: it takes their lease, or renews it, for
-    /// [`SCHEDULING`]; none while another server holds it.
-    async fn fires(&self, org: OrgId) -> Result<bool, ApiError> {
-        let holder = self.holder()?;
+    /// Whether this server fires the store's schedules: it takes their lease, one for the
+    /// store, or renews it, for [`SCHEDULING`]; none while another server holds it.
+    async fn fires(&self) -> Result<bool, ApiError> {
+        let (holder, own) = (self.holder()?, self.inner.own);
         let taken = self
             .inner
             .leases
-            .acquire(org, Leased::Scheduler, holder, SCHEDULING)
+            .acquire(own, Leased::Scheduler, holder, SCHEDULING)
             .await
             .map_err(|error| ApiError::internal(&error))?;
         let mut scheduling = self.scheduling();
         if let Some(lease) = taken {
-            scheduling.insert(org, lease);
+            scheduling.insert(own, lease);
             Ok(true)
         } else {
-            scheduling.remove(&org);
+            scheduling.remove(&own);
             Ok(false)
         }
     }
@@ -158,14 +158,13 @@ where
     /// than a second from now. A run due now that the task limit holds back is left to the
     /// tick that follows a task ending, or the one at least every minute.
     pub fn next_due(&self) -> Option<Timestamp> {
+        if !self.scheduling().contains_key(&self.inner.own) {
+            return None;
+        }
         let now = self.inner.harness.clock().now();
-        let firing: BTreeSet<OrgId> = self.scheduling().keys().copied().collect();
         let held_back = self.at_task_limit();
-        let next = self
-            .ledgers()
-            .iter()
-            .filter(|(at, _)| firing.contains(&at.org))
-            .flat_map(|(_, ledger)| ledger.schedules.values())
+        let next = (self.ledgers().values())
+            .flat_map(|ledger| ledger.schedules.values())
             .filter(|scheduled| fires_here(scheduled))
             .filter_map(next_fire)
             .filter(|next| *next > now || !held_back)
@@ -176,8 +175,9 @@ where
         Some(next.max(soonest))
     }
 
-    /// Starts `schedule`'s run that was due at `at`: a new turn in its chat in `project`, unless
-    /// the run before is still going there, on this server or another, or someone's turn is.
+    /// Starts `schedule`'s run that was due at `at`: a new turn in its chat in `project`, once
+    /// its claim lands in the ledger (`tasks/run.rs`), unless the run before is still going
+    /// there, on this server or another, or someone's turn is.
     async fn fire(&self, project: Located, schedule: &ScheduleCreated, at: Timestamp) -> Ran {
         let Some(chat) = schedule.thread else {
             return Ran::NotStarted;
@@ -195,27 +195,41 @@ where
         let going =
             (self.ledgers().get(&project)).is_some_and(|ledger| ledger.open.contains_key(&chat));
         let started = if going {
-            Err(crate::held::busy(chat))
+            Err(Unstarted {
+                refused: crate::held::busy(chat),
+                claimed: false,
+            })
         } else {
             let work = Work(schedule.prompt.clone(), Choice::default());
-            let budget = Some(schedule.budget);
-            self.start_task(&caller, chat, work, budget, Some(fired))
+            self.start_run(&caller, chat, work, schedule.budget, fired)
                 .await
         };
-        let why = match started {
-            Ok(_) => return Ran::Started(chat),
-            Err(refused) => skipped_for(&refused),
+        let (why, claimed) = match started {
+            Ok(Some(_)) => return Ran::Started(chat),
+            // Another server's claim landed first.
+            Ok(None) => return Ran::NotStarted,
+            Err(Unstarted { refused, claimed }) => (skipped_for(&refused), claimed),
         };
-        // Once for the same reason as the latest skip: then only held back.
-        let again = self.skipped_for_the_same(project, schedule, &why);
+        // Once for the same reason as the latest skip, then only held back; but a run this
+        // server claimed is settled in the ledger whatever its reason.
+        if !claimed && self.skipped_for_the_same(project, schedule, &why) {
+            self.hold_back(project, schedule, at);
+            return Ran::NotStarted;
+        }
         let skipped = ScheduleSkipped {
             schedule: schedule.schedule,
             due: fired.due,
             why,
         };
-        if again {
-            self.hold_back(project, schedule, at);
-        } else if let Err(error) = self.record_in_ledger(project, &skipped).await {
+        // A run not claimed is recorded only while the ledger shows nothing of it, so servers
+        // on one store record it once.
+        let there = |ledger: &crate::ledger::Ledger| ledger.settled(skipped.schedule, skipped.due);
+        let recorded = if claimed {
+            self.record_in_ledger(project, &skipped).await
+        } else {
+            (self.record_unless(project, &skipped, there).await).map(|_| ())
+        };
+        if let Err(error) = recorded {
             tracing::warn!(%error, schedule = %schedule.schedule, "a skipped run was not recorded");
             self.hold_back(project, schedule, at);
         }

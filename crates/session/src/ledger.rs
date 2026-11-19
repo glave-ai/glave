@@ -106,6 +106,14 @@ impl Ledger {
         self.next.max(1)
     }
 
+    /// Whether `schedule`'s run due at `due` is settled: started (its claim) or skipped, or one
+    /// due later is, or the schedule was paused or deleted meanwhile.
+    pub(crate) fn settled(&self, schedule: ScheduleId, due: At) -> bool {
+        (self.schedules.get(&schedule)).is_none_or(|scheduled| {
+            scheduled.paused || scheduled.last.is_some_and(|last| last >= due)
+        })
+    }
+
     /// Takes in the event at the next `seq`; any other is already in, or not yet.
     fn apply(&mut self, raw: RawEvent) {
         let Some((at, body)) = in_order(&mut self.next, raw) else {
@@ -218,15 +226,35 @@ where
         at: Located,
         payload: &T,
     ) -> Result<(), ApiError> {
+        self.record_unless(at, payload, |_| false).await.map(|_| ())
+    }
+
+    /// Appends `payload` to the ledger of the project `at`, after anything others wrote
+    /// meanwhile, unless `there` says of the ledger, read up to then, that what it records is
+    /// there already: of servers on one store appending it at once, the one whose append lands
+    /// first is the only one that does. Says whether this one did.
+    pub(crate) async fn record_unless<T: Payload>(
+        &self,
+        at: Located,
+        payload: &T,
+        there: impl Fn(&Ledger) -> bool,
+    ) -> Result<bool, ApiError> {
         let ledger = Reserved::Tasks.id();
         // Glave's own: the project's task ledger.
         let scope = own_scope(at);
-        let this = self;
+        let (this, there) = (self, &there);
         let log = self.inner.harness.log();
         let appended = append_retrying(log, &scope, ledger, move || async move {
             this.catch_up(at).await?;
+            let next = {
+                let ledgers = this.ledgers();
+                let read = ledgers.get(&at);
+                if read.is_some_and(there) {
+                    return Ok(None);
+                }
+                read.map_or(1, Ledger::next_seq)
+            };
             let now = this.inner.harness.clock().now();
-            let next = this.ledgers().get(&at).map_or(1, Ledger::next_seq);
             let header = Header {
                 id: EventId::new(now, this.inner.harness.entropy().bytes()?)?,
                 thread: ledger,
@@ -237,12 +265,15 @@ where
             Ok::<_, ApiError>(Some((vec![raw], ())))
         })
         .await?;
+        let Some((events, ())) = appended else {
+            return Ok(false);
+        };
         let mut held = self.ledgers();
         let read = kept(&mut held, at);
-        for raw in appended.into_iter().flat_map(|(events, ())| events) {
+        for raw in events {
             read.apply(raw);
         }
-        Ok(())
+        Ok(true)
     }
 
     /// The projects whose tasks and schedules this server runs: every project its person works
