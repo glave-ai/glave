@@ -8,8 +8,17 @@
 //! creates in the project, so a command cannot create it; it is removed once no command needs
 //! it any more. Protected folders are mount points while a command runs, so they cannot be
 //! renamed or removed, and `.git` itself is one, so it cannot be moved aside for a new one.
+//!
+//! A place hidden that is gone by the time bubblewrap mounts over it, where bubblewrap can
+//! write (`/tmp`), bubblewrap makes again on the host to mount over: an empty folder anyone may
+//! enter, or an empty file. tmux and Emacs refuse to start in such a `/tmp/tmux-<uid>` or
+//! `/tmp/emacs<uid>`, so once the command ends such a folder is made private, as they make
+//! their own, and they start in it (#1539). It is never removed: another command's sandbox may
+//! have mounted its own stand-in over it, and removing a mount point on the host takes away
+//! every namespace's mount on it, leaving that command to reach what listens there next.
 
 use std::collections::HashMap;
+use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -107,15 +116,40 @@ impl Mount {
 /// Stand-ins in use, by path, with how many running commands use each.
 pub(super) type StandIns = Arc<Mutex<HashMap<PathBuf, usize>>>;
 
-/// The stand-ins one command uses; when the last command using one ends, it is removed.
+/// The stand-ins one command uses; when the last command using one ends, it is removed. And the
+/// folders it hides where bubblewrap can write, so that one bubblewrap made again is made private.
 #[derive(Debug)]
 pub(crate) struct Held {
     paths: Vec<PathBuf>,
     stand_ins: StandIns,
+    private: Vec<PathBuf>,
+}
+
+/// The mode bubblewrap makes a folder with: `0755`, under its `umask(0)`.
+const MADE: u32 = 0o755;
+
+/// Makes the folder at `path` private if it is one bubblewrap made where the private folder
+/// hidden there had gone: empty, this user's, and of bubblewrap's mode, which tmux, Emacs and
+/// Neovim refuse. Never removed (see the module's docs). Blocking.
+fn make_private(path: &Path) {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return;
+    };
+    let mine = meta.uid() == rustix::process::getuid().as_raw();
+    if !meta.is_dir() || !mine || meta.mode() & 0o7777 != MADE {
+        return;
+    }
+    let empty = std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none());
+    if empty {
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+    }
 }
 
 impl Drop for Held {
     fn drop(&mut self) {
+        for path in &self.private {
+            make_private(path);
+        }
         let Ok(mut counts) = self.stand_ins.lock() else {
             return;
         };
@@ -151,6 +185,7 @@ pub(super) fn plan(
     let mut held = Held {
         paths: Vec::new(),
         stand_ins: Arc::clone(stand_ins),
+        private: Vec::new(),
     };
     // glave's own folder needs nothing here: it is emptied wherever the project is (below).
     let kept = kept_read_only(&layout.root, layout.home.as_deref(), None);
@@ -180,8 +215,14 @@ pub(super) fn plan(
             .into_iter()
             .chain(daemon_places(layout)?),
     ) {
-        hide(&real, &mut mounts);
+        held.private.extend(hide(&real, &mut mounts));
     }
+    // Only where bubblewrap can write can it make a place again.
+    held.private.retain(|path| {
+        mounts
+            .iter()
+            .any(|mount| matches!(mount, Mount::Writable(folder) if path.starts_with(folder)))
+    });
     // A folder's mount before those inside it, which it would otherwise lie over: glave's
     // folder holds the cache, and the workspace when it is a thread's worktree there, and is
     // itself inside the workspace when that is the home folder. Stable, so of two mounts at one
@@ -358,12 +399,19 @@ pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
         .collect()
 }
 
-/// `path` hidden under the stand-in of its kind; links are left, their targets judged alone.
-fn hide(path: &Path, mounts: &mut Vec<Mount>) {
-    match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => {}
-        Ok(meta) if meta.is_dir() => mounts.push(Mount::HiddenFolder(path.to_owned())),
-        Ok(_) => mounts.push(Mount::HiddenFile(path.to_owned())),
-        Err(_) => {}
+/// `path` hidden under the stand-in of its kind, and `path` again if it is a private folder,
+/// which bubblewrap would make again as one that is not; links are left, their targets judged
+/// alone.
+fn hide(path: &Path, mounts: &mut Vec<Mount>) -> Option<PathBuf> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    if meta.file_type().is_symlink() {
+        return None;
     }
+    if !meta.is_dir() {
+        mounts.push(Mount::HiddenFile(path.to_owned()));
+        return None;
+    }
+    mounts.push(Mount::HiddenFolder(path.to_owned()));
+    // No permission bit for its group or others.
+    (meta.mode().trailing_zeros() >= 6).then(|| path.to_owned())
 }

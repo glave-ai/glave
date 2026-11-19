@@ -98,7 +98,7 @@ where
     /// Whether this server runs as many tasks as policy allows: a run waiting for the person
     /// runs nothing meanwhile, and counts toward no limit.
     fn at_task_limit(&self) -> bool {
-        (self.inner.limits.max_running).is_some_and(|max| self.working(|_| true) >= max)
+        self.working(|_| true) >= self.most_running()
     }
 
     /// Whether this server fires `org`'s schedules: it takes their lease, or renews it, for

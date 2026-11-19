@@ -22,6 +22,12 @@ const LOOKAHEAD_DAYS: u32 = 366 * 5;
 /// times of the hour they repeat come before it, once each.
 const MOST_REPEATED: usize = 24 * 60;
 
+/// The fewest minutes a schedule leaves between two runs: each run is its maker's model calls,
+/// whose credits and budgets cap what one spends, and this caps how often.
+pub(crate) const SHORTEST_GAP: u16 = 5;
+
+const MINUTES_A_DAY: u32 = 24 * 60;
+
 /// The zone's changes of offset looked across for what its clocks show next: two a year for
 /// five years, and room for a zone that changes more.
 const MOST_CHANGES: usize = 64;
@@ -133,6 +139,38 @@ impl Cron {
             (hour, minute) = (0, 0);
         }
         None
+    }
+
+    /// `text` parsed for a schedule, which also never runs twice within [`SHORTEST_GAP`]
+    /// minutes: refused, in plain words, when it would.
+    pub(crate) fn for_a_schedule(text: &str) -> Result<Self, Sentence> {
+        let cron = Self::parse(text)?;
+        if cron.shortest_gap() < u32::from(SHORTEST_GAP) {
+            return Err(Sentence::CronTooOften {
+                minutes: SHORTEST_GAP,
+            });
+        }
+        Ok(cron)
+    }
+
+    /// The fewest minutes between two of its times on the clocks: within a day, and from a
+    /// day's last to the next day's first, as if every day matched.
+    fn shortest_gap(&self) -> u32 {
+        let times: Vec<u32> = (0..24i8)
+            .flat_map(|hour| (0..60i8).map(move |minute| (hour, minute)))
+            .filter(|(hour, minute)| self.matches_time(*hour, *minute))
+            .filter_map(|(hour, minute)| {
+                let (hour, minute) = (u32::try_from(hour).ok()?, u32::try_from(minute).ok()?);
+                Some(hour * 60 + minute)
+            })
+            .collect();
+        let overnight =
+            (times.first().zip(times.last())).map(|(first, last)| first + MINUTES_A_DAY - last);
+        (times.iter().zip(times.iter().skip(1)))
+            .map(|(earlier, later)| later - earlier)
+            .chain(overnight)
+            .min()
+            .unwrap_or(MINUTES_A_DAY)
     }
 
     fn matches_time(&self, hour: i8, minute: i8) -> bool {
@@ -376,6 +414,28 @@ mod tests {
             "@daily",
         ] {
             assert!(Cron::parse(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_schedule_never_runs_twice_within_five_minutes_on_any_day_s_clocks() {
+        let gap = |text| Cron::parse(text).unwrap().shortest_gap();
+        assert_eq!(gap("* * * * *"), 1);
+        assert_eq!(gap("*/2 * * * *"), 2);
+        assert_eq!(gap("0,4 9 * * *"), 4);
+        assert_eq!(gap("*/5 * * * *"), 5);
+        assert_eq!(gap("0 9 * * 1-5"), 24 * 60);
+        // From one day's last time to the next day's first.
+        assert_eq!(gap("0,58 0,23 * * *"), 2);
+        for often in ["* * * * *", "*/2 * * * *", "0,4 9 * * *", "0,58 0,23 * * *"] {
+            assert_eq!(
+                Cron::for_a_schedule(often),
+                Err(Sentence::CronTooOften { minutes: 5 }),
+                "{often}"
+            );
+        }
+        for enough in ["*/5 * * * *", "0 8 * * 1-5", "30 7 1 * *"] {
+            assert!(Cron::for_a_schedule(enough).is_ok(), "{enough}");
         }
     }
 

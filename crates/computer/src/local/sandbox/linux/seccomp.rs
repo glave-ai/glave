@@ -1,7 +1,8 @@
 //! The seccomp filter every sandboxed command runs under, Codex's: no `ptrace` or reading and
 //! writing other processes' memory, no `io_uring` (which can open sockets without `socket`),
 //! and the network by socket family. With the network off, only Unix sockets may be made and
-//! nothing may connect, bind, listen or `sendto` an address (`sendmsg` stays, for socket pairs).
+//! nothing may connect, bind, listen or `sendto` an address (`sendmsg` stays, for socket pairs,
+//! and `getpeername`, below).
 //! With it on, internet sockets may be made, and under bubblewrap Unix sockets too, as Codex
 //! allows them: a program's own, such as Python's forkserver, work, and the person's daemons'
 //! (`docker.sock`, the ssh agent, the session bus) are hidden by mounts instead. Landlock cannot
@@ -32,7 +33,10 @@ const NETWORK: &[i64] = &[
     libc::SYS_accept4,
     libc::SYS_bind,
     libc::SYS_listen,
-    libc::SYS_getpeername,
+    // `getpeername` stays: it only names the other end of a socket already connected, which
+    // nothing here can connect, and bash takes a refusal for its standard input being a remote
+    // shell's connection, so every `bash -c` would read `/etc/bash.bashrc` and `~/.bashrc` and
+    // skip `BASH_ENV` (#1550). On a pipe or `/dev/null` it fails as bash expects (`ENOTSOCK`).
     libc::SYS_getsockname,
     libc::SYS_shutdown,
     libc::SYS_sendto,

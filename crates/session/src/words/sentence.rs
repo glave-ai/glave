@@ -443,6 +443,8 @@ sentences! {
         "this chat works in its project's folder itself, and a task always works on a copy: start the task in a new chat, which gets a copy of its own",
     TooManyTasks { running: usize, most: usize } = "too-many-tasks"
         "{ $running } tasks are running, the most policy allows ([tasks] max_running = { $most }); stop one first",
+    TooManyTasksAtOnce { running: usize, most: usize } = "too-many-tasks-at-once"
+        "{ $running } of your tasks are running, the most at once here ({ $most }); stop one first",
     TaskStopped = "task-stopped" "the task stopped",
     NoTask { thread: String } = "no-task" "no task is running in chat { $thread } in this server",
     CronFields { text: String } = "cron-fields"
@@ -454,6 +456,10 @@ sentences! {
     ScheduleNoPrompt = "schedule-no-prompt" "a schedule needs a prompt",
     TooManySchedules { kept: usize, most: usize } = "too-many-schedules"
         "{ $kept } schedules are kept, the most policy allows ([tasks] max_schedules = { $most }); delete one first",
+    TooManySchedulesKept { kept: usize, most: usize } = "too-many-schedules-kept"
+        "{ $kept } of your schedules are kept, the most here ({ $most }); delete one first",
+    CronTooOften { minutes: u16 } = "cron-too-often"
+        "a schedule runs at most once every { $minutes } minutes: choose times further apart",
     ScheduleNotKept = "schedule-not-kept" "the schedule was not kept",
     NoSchedule { schedule: String } = "no-schedule" "no schedule { $schedule } here",
     ScheduleNoChatToResume = "schedule-no-chat-to-resume"
