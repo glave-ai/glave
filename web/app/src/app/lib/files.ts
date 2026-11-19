@@ -15,6 +15,9 @@ export interface LineMarks {
   readonly removed: (lines: number) => string;
 }
 
+/** A file read back through the server that didn't come back whole; its message says so. */
+export class UnreadableFile extends Error {}
+
 /**
  * Files at `paths` as a change shows them, with nothing counted: what stands in for files whose
  * changes are not read yet, to keep their room.

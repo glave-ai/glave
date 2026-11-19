@@ -42,6 +42,11 @@
         @case ('preview') {
           <app-thread-preview />
         }
+        @case ('file') {
+          @if (facts.file(); as file) {
+            <app-file-preview [file]="file" />
+          }
+        }
       }
     </glz-tab>
   }

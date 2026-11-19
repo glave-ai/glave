@@ -39,6 +39,15 @@
   min-height: 0;
 }
 
+// Before its first binding (a route's page is added a frame before Angular binds it) neither
+// class says how wide the screen is: on a screen `GLZ_NARROW` calls narrow the nav is drawn as it
+// will be bound there, a drawer that starts closed, so the content doesn't move as it is bound.
+@media (width <= 48rem) {
+  :host(:not(.narrow, .wide)) .sidenav {
+    display: none;
+  }
+}
+
 // Narrow screens: the nav slides over the content as a drawer.
 :host(.narrow) .sidenav {
   position: absolute;

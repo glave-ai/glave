@@ -1,0 +1,27 @@
+// Its cards and note are the turn's blocks, spaced by the turn as its others are.
+:host {
+  display: contents;
+}
+
+// The cards and the note, unseen, keeping their room until the server describes them.
+.room {
+  visibility: hidden;
+}
+
+// What the files leave out, in the server's words, under their cards: as wide as the column,
+// which says how many lines it takes.
+.notes {
+  container-type: inline-size;
+}
+
+.note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+// In a narrow column the server's notes take two lines, so their room does too.
+@container (width <= 30rem) {
+  .note {
+    min-block-size: 2lh;
+  }
+}
