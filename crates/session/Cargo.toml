@@ -92,6 +92,10 @@ glave-bucket.workspace = true
 [target.'cfg(target_env = "musl")'.dev-dependencies]
 mimalloc.workspace = true
 
+# glave's counted allocator on macOS, which the budgets benchmark measures on there.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+cap.workspace = true
+
 # The performance budgets in AGENTS.md, here rather than in glave's own package so that
 # building it links no second glave (`budgets.yml`).
 [[bench]]

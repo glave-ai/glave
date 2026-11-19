@@ -433,7 +433,11 @@ impl Client<'_> {
             return;
         };
         for file in &turn.files {
-            printer.status(&format!("{} · {}", &*file.sentence, &*file.kept));
+            let mut line = format!("{} · {}", &*file.sentence, &*file.kept);
+            if let Some(unread) = &file.unread {
+                line = format!("{line} · {}", &**unread);
+            }
+            printer.status(&line);
         }
         if let Some(note) = &turn.note {
             printer.status(note);
