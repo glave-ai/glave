@@ -22,7 +22,7 @@ use std::time::Duration;
 use glave_event::AssetKind;
 use glave_event::{FileMade, MadeLeft, RawEvent, TurnMade};
 use glave_ports::computer::Glob;
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Standing};
 use tokio::time::Instant;
 
 use crate::approval::Approver;
@@ -79,6 +79,25 @@ pub(crate) struct Found {
 /// organization.
 pub(crate) fn looking() -> Shares {
     Shares::new(MOST_LOOKING, LOOKING_PER_ORG)
+}
+
+impl Thread {
+    /// Whether a look over what its last working turn made is owed and may be made now, while it
+    /// is idle: the turn was stopped, or its folder couldn't be looked over, and no command of its
+    /// runs in the background, whose end would make it; archived too, whose files are kept with
+    /// it, but never once deleted, nor on its person's own computer, which looking would wake
+    /// (`made.rs`).
+    pub fn owes_look(&self) -> bool {
+        self.owed_mark().is_some()
+    }
+
+    /// Its mark, when the look it owes may be made now ([`Thread::owes_look`]).
+    pub(crate) fn owed_mark(&self) -> Option<Mark> {
+        let looks = self.home.is_none()
+            && self.standing != Standing::Deleted
+            && !self.commands.any_running();
+        self.made_mark.filter(|mark| mark.owed && looks)
+    }
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
