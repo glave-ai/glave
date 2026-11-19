@@ -1,4 +1,4 @@
-import type { Outcome, TurnResult } from '@glave/client';
+import type { MadeFile, Outcome, TurnResult } from '@glave/client';
 
 import {
   NO_THOUGHT,
@@ -155,7 +155,39 @@ function told(
     ),
     replies: new Set(replies),
   };
-  return { sourced: new Map(), changed: new Map(), steps, models: new Map(), ...more };
+  return {
+    sourced: new Map(),
+    changed: new Map(),
+    made: new Map(),
+    madeLater: new Map(),
+    madeFailed: false,
+    steps,
+    models: new Map(),
+    ...more,
+  };
+}
+
+/** A PDF a turn made, as the server describes it. */
+const PLAN: MadeFile = {
+  kind: 'pdf',
+  name: 'Lisbon plan',
+  file_name: 'plan.pdf',
+  media_type: 'application/pdf',
+  bytes: 9,
+  previews: true,
+  kept: 'Kept with this chat',
+  sentence: 'Made a PDF: Lisbon plan',
+};
+
+/** What `drawn` shows of the files it made: those described, those whose room is kept, its note. */
+function shown(
+  drawn: Turn,
+  facts: TurnFacts,
+): readonly [readonly string[], readonly string[], string | null] {
+  const { made } = turnResults(drawn, null, null, false, 'en-US', facts);
+  const names = (cards: typeof made.files): readonly string[] =>
+    cards.map((card) => card.file.file_name);
+  return [names(made.files), names(made.room), made.note];
 }
 
 /** Each part in a line: a run as its line (`untold` until told) and what it holds, else its key. */
@@ -285,6 +317,71 @@ describe('results', () => {
     const unknown = told([], [], { changed: null });
     const opening = turnResults(turn(items, { startSeq: 7 }), null, null, false, 'en-US', unknown);
     expect(opening.files).toBeNull();
+  });
+
+  it('keeps a card’s room for each file a turn’s end names until the server describes them', () => {
+    const made = [{ path: 'out/plan.pdf', bytes: 9, kept: 'too_large' as const }];
+    const items = [ask, call(8), say(9, 'Done')];
+    const result = turn(items, { startSeq: 7, result: ended('completed', { made }) });
+    expect(shown(result, told([], [], { made: null }))).toEqual([[], ['plan.pdf'], null]);
+    const note = '2 more files were made than a chat keeps: they stay on the computer';
+    const files = { turn: 7, files: [PLAN], note };
+    expect(shown(result, told([], [], { made: new Map([[7, files]]) }))).toEqual([
+      ['plan.pdf'],
+      [],
+      note,
+    ]);
+    expect(shown(turn(items), told([]))).toEqual([[], [], null]);
+  });
+
+  it('keeps room for what later look-overs made and for a note, until the server says', () => {
+    const items = [ask, call(8), say(9, 'Done')];
+    const madeLeft = { kind: 'more' as const, files: 1 };
+    const ending = turn(items, {
+      startSeq: 7,
+      result: ended('completed', { made_left: madeLeft }),
+    });
+    const deck = { path: 'deck.pptx', bytes: 4, kept: 'secret' as const };
+    const later = new Map([[7, { files: [deck], left: false }]]);
+    // The note's room is a line that doesn't collapse, unseen until the server's words fill it.
+    expect(shown(ending, told([], [], { made: null }))).toEqual([[], [], '\u00a0']);
+    expect(shown(ending, told([], [], { made: null, madeLater: later }))).toEqual([
+      [],
+      ['deck.pptx'],
+      '\u00a0',
+    ]);
+    const quiet = turn(items, { startSeq: 7, result: ended('completed') });
+    expect(shown(quiet, told([], [], { made: null, madeLater: later }))).toEqual([
+      [],
+      ['deck.pptx'],
+      null,
+    ]);
+    // A later look-over of a turn the server described keeps its room after the cards drawn.
+    const plan = { path: 'plan.pdf', bytes: 9, kept: 'too_large' as const };
+    const planned = turn(items, { startSeq: 7, result: ended('completed', { made: [plan] }) });
+    const described = new Map([[7, { turn: 7, files: [PLAN] }]]);
+    expect(shown(planned, told([], [], { made: described, madeLater: later }))).toEqual([
+      ['plan.pdf'],
+      ['deck.pptx'],
+      null,
+    ]);
+    expect(shown(ending, told([], [], { made: null, madeLater: later, madeFailed: true }))).toEqual(
+      [[], [], null],
+    );
+  });
+
+  it('keeps the cards drawn when a later read of them fails', () => {
+    const made = [{ path: 'plan.pdf', bytes: 9, kept: 'too_large' as const }];
+    const ending = turn([ask, say(9, 'Done')], {
+      startSeq: 7,
+      result: ended('completed', { made }),
+    });
+    const described = new Map([[7, { turn: 7, files: [PLAN] }]]);
+    expect(shown(ending, told([], [], { made: described, madeFailed: true }))).toEqual([
+      ['plan.pdf'],
+      [],
+      null,
+    ]);
   });
 
   it('says how many commands ran outside the sandbox as the server counted them', () => {

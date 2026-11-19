@@ -29,6 +29,7 @@ import { ThreadService } from '../../services/thread.service';
 import { ThoughtComponent } from '../thought/thought.component';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
 import { TurnChangesComponent } from '../turn-changes/turn-changes.component';
+import { TurnMadeComponent } from '../turn-made/turn-made.component';
 import { TurnPartComponent } from '../turn-part/turn-part.component';
 
 /**
@@ -58,6 +59,7 @@ import { TurnPartComponent } from '../turn-part/turn-part.component';
     GlzMessageComponent,
     GlzStepsComponent,
     GlzWorkingComponent,
+    TurnMadeComponent,
     ThoughtComponent,
     ThreadItemComponent,
     TurnChangesComponent,
