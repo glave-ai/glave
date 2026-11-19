@@ -412,5 +412,6 @@ fn hide(path: &Path, mounts: &mut Vec<Mount>) -> Option<PathBuf> {
         return None;
     }
     mounts.push(Mount::HiddenFolder(path.to_owned()));
-    (meta.mode() & 0o077 == 0).then(|| path.to_owned())
+    // No permission bit for its group or others.
+    (meta.mode().trailing_zeros() >= 6).then(|| path.to_owned())
 }
