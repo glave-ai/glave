@@ -4,7 +4,10 @@
 //! every folder key to one project, found without making one; and all of it with writers racing
 //! each other.
 
+use std::collections::BTreeMap;
+
 use glave_event::{At, Principal, PrincipalId};
+use uuid::Uuid;
 
 use super::{Verdict, ensure, uuid_v7};
 
@@ -89,6 +92,7 @@ pub async fn projects(store: &dyn Projects) -> Verdict {
     renaming(store, org, other_org, &project).await?;
     personal(store, org, other_org, &ada).await?;
     folders(store, org, other_org, &ada).await?;
+    signed_in_remote(store, org, &ada).await?;
     names(store, org, [&ada, &grace]).await?;
     racing::racing(store, OrgId::from_uuid(uuid_v7(1_103)), &linus).await
 }
@@ -345,4 +349,83 @@ async fn folders(store: &dyn Projects, org: OrgId, other_org: OrgId, ada: &Princ
         there == other,
         "folder keys must not lead across organizations",
     )
+}
+
+/// A remote cloned with a token in its url is kept as its repository alone (#1519).
+async fn signed_in_remote(store: &dyn Projects, org: OrgId, ada: &Principal) -> Verdict {
+    let token = crate::testing::any_secret();
+    let signed_in = FolderKey::Remote(format!("https://{token}@example.com/glave/site"));
+    let site = record(23, ProjectKind::Project, ada)?;
+    store
+        .folder(
+            org,
+            &[FolderKey::Path("/code/site".into()), signed_in],
+            &site,
+        )
+        .await
+        .map_err(failed)?;
+    let plain = FolderKey::Remote("https://example.com/glave/site".into());
+    ensure(
+        store.find_folder(org, &[plain]).await.map_err(failed)? == Some(site),
+        "a remote cloned with a token in its url must be kept as its repository alone",
+    )
+}
+
+/// Folder keys as stores kept them before remotes were named alone (#1519), `token` in those a
+/// clone made with one in its url carried, each leading to a project of its own: the rows each
+/// store's migration is tried on.
+pub fn remote_keys_then(token: &str) -> Vec<(String, Uuid)> {
+    let keys = [
+        format!("remote:https://{token}@github.com/o/a"),
+        "remote:https://github.com/o/a".to_owned(),
+        format!("remote:https://x-access-token:{token}@github.com/o/b.git?t={token}#{token}"),
+        format!("remote:https://{token}@github.com/o/b.git"),
+        "remote:ssh://git@example.com:22/o/c".to_owned(),
+        "remote:git@github.com:o/d.git".to_owned(),
+        "remote:https://example.com/o/e@f".to_owned(),
+        "path:/code/a".to_owned(),
+    ];
+    keys.into_iter()
+        .zip(1..)
+        .map(|(key, n)| (key, Uuid::from_u128(n)))
+        .collect()
+}
+
+/// Whether `now`, the folder keys a store holds after its migration from `then`, keeps no
+/// `token`, and names each key as [`FolderKey::stored`] does, once, leading where it led. Where
+/// two came to one, the one named so already keeps its project; between two that were not,
+/// either may.
+pub fn remote_keys_named(then: &[(String, Uuid)], token: &str, now: &[(String, Uuid)]) -> Verdict {
+    ensure(
+        !now.iter().any(|(key, _)| key.contains(token)),
+        "no folder key may keep a token",
+    )?;
+    let mut wanted: BTreeMap<String, Option<Uuid>> = BTreeMap::new();
+    for (key, project) in then {
+        let named = key.strip_prefix("remote:").map_or_else(
+            || key.clone(),
+            |url| FolderKey::Remote(url.to_owned()).stored(),
+        );
+        let plain = *key == named;
+        let led = match wanted.get(&named) {
+            Some(Some(first)) if !plain && then.contains(&(named.clone(), *first)) => Some(*first),
+            Some(_) if !plain => None,
+            _ => Some(*project),
+        };
+        wanted.insert(named, led);
+    }
+    let held: BTreeMap<&str, Uuid> = now.iter().map(|(key, p)| (key.as_str(), *p)).collect();
+    ensure(
+        held.keys().copied().eq(wanted.keys().map(String::as_str)),
+        "every folder key must be named as glave names it now, once",
+    )?;
+    for (key, led) in &wanted {
+        if let Some(project) = led {
+            ensure(
+                held.get(key.as_str()) == Some(project),
+                "a folder key must lead where the key it was named from led",
+            )?;
+        }
+    }
+    Ok(())
 }
