@@ -112,20 +112,51 @@ impl Project {
 }
 
 /// What leads from a folder to its project: its canonical path, or, for a git repository, its
-/// `origin` remote, so another checkout or a clone that moved finds the same project.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// `origin` remote, so another checkout or a clone that moved finds the same project. A remote
+/// is kept, and shown, only as [`FolderKey::stored`] names it: never with what its url carries
+/// for signing in.
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FolderKey {
     Path(String),
     Remote(String),
 }
 
 impl FolderKey {
-    /// The key as stored: `path:<path>` or `remote:<url>`.
+    /// The key as stored: `path:<path>` or `remote:<url>`, the url naming the repository alone,
+    /// without a name and password before its host or a query or fragment after its path, which
+    /// a clone made with a token in its url carries (`https://<token>@host/owner/repo`). The
+    /// store's migration that took them from keys already stored does the same in SQL.
     pub fn stored(&self) -> String {
         match self {
             Self::Path(path) => format!("path:{path}"),
-            Self::Remote(url) => format!("remote:{url}"),
+            Self::Remote(url) => format!("remote:{}", repository(url)),
         }
+    }
+}
+
+/// `url` naming its repository alone: for a url with a scheme (`https://`, `ssh://`), without
+/// the name and password before its host, nor a query or fragment; any other (`git@host:path`,
+/// a folder) as it is, since nothing in it signs in.
+fn repository(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_owned();
+    };
+    let rest = rest.split(['?', '#']).next().unwrap_or_default();
+    let (authority, path) = rest
+        .split_once('/')
+        .map_or((rest, None), |(a, p)| (a, Some(p)));
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    match path {
+        Some(path) => format!("{scheme}://{host}/{path}"),
+        None => format!("{scheme}://{host}"),
+    }
+}
+
+impl fmt::Debug for FolderKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("FolderKey").field(&self.stored()).finish()
     }
 }
 
@@ -258,6 +289,41 @@ pub trait Projects: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::any_secret;
+
+    /// A remote cloned with a token in its url is keyed, and shown, by its repository alone,
+    /// so the token never reaches the store, a log or an error (#1519).
+    #[test]
+    fn a_remote_is_keyed_and_shown_without_what_signs_in() {
+        let token = any_secret();
+        let cases = [
+            (
+                format!("https://{token}@github.com/o/r"),
+                "https://github.com/o/r",
+            ),
+            (
+                format!("https://x-access-token:{token}@github.com/o/r.git"),
+                "https://github.com/o/r.git",
+            ),
+            (
+                format!("https://github.com/o/r?token={token}"),
+                "https://github.com/o/r",
+            ),
+            (format!("https://a@b:{token}@host#{token}"), "https://host"),
+            ("ssh://git@host:22/o/r".to_owned(), "ssh://host:22/o/r"),
+            ("https://host/o/a@b".to_owned(), "https://host/o/a@b"),
+            (
+                "git@github.com:o/r.git".to_owned(),
+                "git@github.com:o/r.git",
+            ),
+            ("/srv/git/r#1".to_owned(), "/srv/git/r#1"),
+        ];
+        for (url, named) in cases {
+            let key = FolderKey::Remote(url);
+            assert_eq!(key.stored(), format!("remote:{named}"));
+            assert!(!format!("{key:?} {key}").contains(&token), "{named}");
+        }
+    }
 
     /// Each refusal's English, as the stores wrote it before it was typed: what the log reads
     /// stays the same, byte for byte.

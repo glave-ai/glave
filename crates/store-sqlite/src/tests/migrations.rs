@@ -101,6 +101,39 @@ fn a_file_saved_at_18_loses_its_unsealed_index_for_the_sealed_one() {
     assert_eq!(unsealed, 0, "the unsealed index is gone");
 }
 
+/// A file saved at 19 kept a remote's folder key as its url was written, a clone's token and
+/// all, which 20 names by its repository alone (#1519).
+#[test]
+fn a_file_saved_at_19_keeps_remotes_by_their_repository_alone() {
+    let (_dir, path) = temp_db("remotes");
+    file_at(19, &path);
+    let token = glave_ports::testing::any_secret();
+    let then = conformance::remote_keys_then(&token);
+    let raw = Connection::open(&path).unwrap();
+    for (key, project) in &then {
+        raw.execute(
+            "INSERT INTO project_folders (org, key, project) VALUES ('o', ?1, ?2)",
+            (key, project.to_string()),
+        )
+        .unwrap();
+    }
+    drop(raw);
+    drop(block_on!(Store::open(&path, file_keys(&path), objects())).unwrap());
+    let raw = Connection::open(&path).unwrap();
+    let mut rows = raw
+        .prepare("SELECT key, project FROM project_folders")
+        .unwrap();
+    let now: Vec<(String, Uuid)> = rows
+        .query_map([], |row| Ok((row.get(0)?, row.get::<_, String>(1)?)))
+        .unwrap()
+        .map(|row| {
+            let (key, project) = row.unwrap();
+            (key, project.parse().unwrap())
+        })
+        .collect();
+    assert_eq!(conformance::remote_keys_named(&then, &token, &now), Ok(()));
+}
+
 #[test]
 fn a_new_file_is_made_at_the_latest_version_and_opens_again() {
     let (_dir, path) = temp_db("fresh");

@@ -31,7 +31,7 @@ pub use memory::{MemoryPlaces, memory_scopes};
 pub use model::{Listening, Script, model_provider};
 pub use objects::objects;
 pub use organizations::organizations;
-pub use projects::projects;
+pub use projects::{projects, remote_keys_named, remote_keys_then};
 pub use search::search;
 pub use stores::{StoreSuite, store_suite};
 pub use threads::thread_views;
