@@ -13,6 +13,7 @@ use glave_ports::search::{MOST_CACHED, SearchCache};
 use glave_ports::{Clock, Objects, OrgId};
 use thiserror::Error;
 use tokio_postgres::Config;
+use tokio_postgres::error::SqlState;
 
 use crate::blobs::PostgresBlobs;
 use crate::directory::PostgresDirectory;
@@ -45,6 +46,21 @@ const OPENS_WITHIN: Duration = Duration::from_secs(30);
 /// How long a call waits for one of the pool's connections to come free: each is held for one
 /// query or transaction, moments, so none free by then means they are stuck behind something.
 const FREE_WITHIN: Duration = Duration::from_secs(30);
+/// How long one query may run, a wait for a lock included: every query glave makes is moments,
+/// one statement of a transaction held for one call, so one still running by then is stuck
+/// behind something, and holds up the calls waiting for its connection as long (#1345).
+/// Bringing the schema up to date has its own, longer limit (`schema::MIGRATES_WITHIN`).
+const QUERIES_WITHIN: Duration = Duration::from_secs(30);
+/// How long a transaction may sit idle between its statements: glave sends them back to back,
+/// with nothing slow between (no upload, no model), so one idle this long was left by a glave
+/// that stopped answering, and holds its locks for nothing.
+const IDLE_WITHIN: Duration = Duration::from_secs(30);
+/// How long a connection may sit quiet before the system asks whether the database is still
+/// there, how often it asks again and how many go unanswered before it gives up: a database
+/// that vanished is found in about a minute, not the system's two hours.
+const KEEPALIVE_IDLE: Duration = Duration::from_secs(30);
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
+const KEEPALIVE_RETRIES: u32 = 3;
 
 /// One Postgres database: the event log, the blobs' records and their keys, through a bounded
 /// connection pool; with the objects that hold the blobs' bytes.
@@ -89,6 +105,7 @@ impl Store {
         if config.get_connect_timeout().is_none() {
             config.connect_timeout(CONNECTS_WITHIN);
         }
+        limited(&mut config);
         let manager = Manager::from_config(
             config,
             crate::tls::connector()?,
@@ -251,6 +268,27 @@ fn principal(text: &str) -> Result<PrincipalId, StoreError> {
         .ok_or_else(|| StoreError::Storage(format!("bad principal id {text:?}")))
 }
 
+/// `config` with glave's limits on every connection it opens: the database stops a query or an
+/// idle transaction past its limit, set after any options the URL gave so they hold whatever it
+/// says, and the system finds a database that vanished in about a minute.
+fn limited(config: &mut Config) {
+    let limits = format!(
+        "-c statement_timeout={} -c idle_in_transaction_session_timeout={}",
+        QUERIES_WITHIN.as_millis(),
+        IDLE_WITHIN.as_millis()
+    );
+    let options = match config.get_options() {
+        Some(given) if !given.is_empty() => format!("{given} {limits}"),
+        _ => limits,
+    };
+    config
+        .options(options)
+        .keepalives(true)
+        .keepalives_idle(KEEPALIVE_IDLE)
+        .keepalives_interval(KEEPALIVE_INTERVAL)
+        .keepalives_retries(KEEPALIVE_RETRIES);
+}
+
 /// Borrows a connection from the pool for work in `org`: row-level security then lets it read
 /// and write `org`'s rows and no other organization's (`specs/storage.md`, "Row-level
 /// security"). Every connection that reads or writes rows is taken here or in [`unscoped`],
@@ -313,11 +351,26 @@ fn unavailable(error: &PoolError) -> String {
 }
 
 /// What the database said, not just that it failed: the driver's own message for a database
-/// error is only "db error".
+/// error is only "db error". A limit that ran out says which and how long it was.
 pub(crate) fn describe(error: &tokio_postgres::Error) -> String {
-    error
-        .as_db_error()
-        .map_or_else(|| error.to_string(), ToString::to_string)
+    match error.as_db_error() {
+        Some(said) if timed_out(said) => format!(
+            "a query ran past its limit of {}, and the database stopped it",
+            glave_ports::spoken(QUERIES_WITHIN)
+        ),
+        Some(said) if said.code() == &SqlState::IDLE_IN_TRANSACTION_SESSION_TIMEOUT => format!(
+            "a transaction sat idle past its limit of {}, and the database closed its connection",
+            glave_ports::spoken(IDLE_WITHIN)
+        ),
+        Some(said) => said.to_string(),
+        None => error.to_string(),
+    }
+}
+
+/// Whether the database stopped a query at its time limit, not for another reason (an
+/// operator's cancel reads the same code).
+pub(crate) fn timed_out(said: &tokio_postgres::error::DbError) -> bool {
+    said.code() == &SqlState::QUERY_CANCELED && said.message().contains("statement timeout")
 }
 
 /// A database failure as a port reports it, through that port's `storage` variant.
