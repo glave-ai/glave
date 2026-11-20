@@ -286,7 +286,7 @@ Decided on 2026-10-23 and built (#641). Web search, the tool beside `web_fetch` 
 ## Project trust
 
 - A project's `.glave/config.toml` and its `.mcp.json` can run commands (MCP servers and hooks). So they are honoured only after the person trusts the project once. glave asks at most once per project, and only when the project brings something that runs commands.
-- Trust decisions are kept in the store, in the trust ledger in the person's personal project (`events.md`, "The trust ledger"), one `trust.decided` per decision about a project, keyed by its canonical root path; the latest about a project holds, so every server on one store reads the same. A clone that moved is recognised by its `origin` remote, read from the repository's config file without running anything. Each item records the exact definition that was answered, so trust is of the content:
+- Trust decisions are kept in the store, in the trust ledger in the person's personal project (`events.md`, "The trust ledger"), one `trust.decided` per decision about a project, keyed by its canonical root path; the latest about a project holds, so every server on one store reads the same. A clone that moved is recognised by its `origin` remote, read from the repository's config file without running anything, and kept by the repository alone, without a name, password, query or fragment its address carries (#1585). Each item records the exact definition that was answered, so trust is of the content:
 
   ```json
   {"path": "/Users/ada/code/app", "remote": "git@example.com:acme/app.git",

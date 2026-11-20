@@ -1726,7 +1726,7 @@
       "oneOf": [
         {
           "additionalProperties": false,
-          "description": "A git repository, by the address it is cloned from: where the folder comes back from.",
+          "description": "A git repository, by the address it is cloned from, without a name, password, query or\nfragment it carries: where the folder comes back from.",
           "properties": {
             "kind": {
               "const": "repository",
