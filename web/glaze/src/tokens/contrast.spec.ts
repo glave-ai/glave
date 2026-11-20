@@ -53,6 +53,11 @@ const CONTROLS_ON = [
   '--glz-surface-card',
   '--glz-surface-overlay',
 ].map((surface) => [surface]);
+/** Where a text field sits too: sunk, or raised. */
+const FIELDS_ON = [
+  ...CONTROLS_ON,
+  ...['--glz-surface-sunken', '--glz-surface-raised'].map((surface) => [surface]),
+];
 
 const PAIRS: readonly Pair[] = [
   ...['--glz-color-text', '--glz-color-text-secondary', '--glz-color-text-muted'].map((color) => ({
@@ -135,9 +140,9 @@ const PAIRS: readonly Pair[] = [
   },
   {
     color: '--glz-color-control-edge',
-    on: CONTROLS_ON,
+    on: FIELDS_ON,
     least: NOT_TEXT,
-    what: 'the edge of a checkbox or radio',
+    what: 'the edge of a checkbox, a radio or a text field',
   },
   ...['--glz-accent', '--glz-color-danger'].map((color) => ({
     color,
