@@ -164,26 +164,27 @@ impl SandboxNetwork {
     }
 }
 
-/// Where a sandbox's commands keep package caches (uv's Pythons, Go's modules, npm's, pip's).
+/// Whom a sandbox's commands run for (`specs/sandbox.md`, "Whose computer").
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SandboxCaches {
-    /// In glave's sandbox cache folder, kept between commands: the person's own.
+pub enum RunsFor {
+    /// The person whose computer it is: package caches kept between commands in glave's
+    /// sandbox cache folder, and the shared `/tmp`.
     #[default]
-    Kept,
-    /// In each command's own temp folder, gone when it ends: for someone other than the person
-    /// whose computer it is, whose commands must neither leave in the kept caches code the
-    /// person's next command runs nor read what the person's commands fetched there (#1469).
-    PerCommand,
+    Owner,
+    /// Someone else whose threads run on it, whose commands must leave nothing the person's
+    /// commands later read or run, and read nothing the person's left: package caches in each
+    /// command's own temp folder (#1469), and a `/tmp` of its own (#1583).
+    SomeoneElse,
 }
 
-impl SandboxCaches {
+impl RunsFor {
     #[expect(
         clippy::trivially_copy_pass_by_ref,
         reason = "serde's skip_serializing_if hands it a reference"
     )]
-    fn is_kept(&self) -> bool {
-        *self == Self::Kept
+    fn is_owner(&self) -> bool {
+        *self == Self::Owner
     }
 }
 
@@ -200,9 +201,9 @@ pub struct Sandbox {
     /// glave's own data folder, which commands may neither read nor write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glave_home: Option<PathBuf>,
-    /// Where its commands keep package caches.
-    #[serde(default, skip_serializing_if = "SandboxCaches::is_kept")]
-    pub caches: SandboxCaches,
+    /// Whom its commands run for.
+    #[serde(default, skip_serializing_if = "RunsFor::is_owner")]
+    pub runs_for: RunsFor,
 }
 
 #[cfg(test)]
@@ -241,7 +242,7 @@ mod tests {
                 network: SandboxNetwork::Off,
                 home: None,
                 glave_home: None,
-                caches: SandboxCaches::Kept,
+                runs_for: RunsFor::Owner,
             }),
             ..plain
         };

@@ -7,7 +7,7 @@ use std::process::{Command as Process, Stdio};
 use std::time::Duration;
 
 use glave_ports::block_on;
-use glave_ports::computer::{Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{RunsFor, Sandbox, SandboxLevel, SandboxNetwork};
 use glave_process::{Child, Processes, Program};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 
@@ -76,7 +76,7 @@ fn a_folder_bubblewrap_made_again_is_made_private_and_stays_hidden() {
         network: SandboxNetwork::when(true),
         home: Some(dir.to_path_buf()),
         glave_home: Some(dir.join(".glave")),
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     let listing = format!(
         "echo ready; read -r _ < go; ls -A '{}' 2>&1; echo listed",

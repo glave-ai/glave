@@ -18,7 +18,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel};
+use glave_ports::computer::{ComputerError, RunsFor, Sandbox, SandboxLevel};
 
 use super::run_temp::RunTemp;
 use super::{
@@ -76,6 +76,7 @@ impl Enforcer {
             .await
             .map_err(|error| ComputerError::Failed(error.to_string()))?
             .map_err(|error| failed(&error))?;
+        let own_tmp = sandbox.runs_for == RunsFor::SomeoneElse;
         let layout = Layout {
             root: root.to_owned(),
             level: sandbox.level,
@@ -83,7 +84,12 @@ impl Enforcer {
             base: folder.base().to_owned(),
             empty_file: folder.empty_file(),
             empty_folder: folder.empty_folder(),
-            shared_tmp: resolved(Some(Path::new("/tmp"))).await,
+            shared_tmp: if own_tmp {
+                None
+            } else {
+                resolved(Some(Path::new("/tmp"))).await
+            },
+            own_tmp,
             home: resolved(sandbox.home.as_deref()).await,
             also_hidden: also_hidden.to_vec(),
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
@@ -276,6 +282,14 @@ fn landlock_plan(layout: &Layout, temp: &Path) -> landlocked::Plan {
     let mut unreadable: Vec<PathBuf> = mounts::hidden_places(layout);
     unreadable.extend(layout.glave_home.iter().cloned());
     unreadable.extend(other_terminals(Path::new("/dev")));
+    // Landlock can't give someone else's commands a `/tmp` of their own: none, then, but
+    // their own temp folder and the project, wherever those are.
+    unreadable.extend(layout.own_tmp.then(|| PathBuf::from("/tmp")));
+    let own: Vec<PathBuf> = if layout.own_tmp {
+        vec![temp.to_owned(), layout.root.clone()]
+    } else {
+        Vec::new()
+    };
     let rereadable = layout
         .glave_home
         .iter()
@@ -283,6 +297,7 @@ fn landlock_plan(layout: &Layout, temp: &Path) -> landlocked::Plan {
         .map(|_| layout.root.clone())
         .chain(layout.cache.iter().cloned())
         .chain(layout.glave_on_path.iter().cloned())
+        .chain(own)
         .collect();
     unreadable.sort();
     unreadable.dedup();

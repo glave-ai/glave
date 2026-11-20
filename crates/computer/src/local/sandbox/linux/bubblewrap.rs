@@ -124,8 +124,9 @@ pub(super) fn args(
         args.push(arg.into());
     }
     for mount in mounts {
-        let (how, from, to) = match mount {
+        let (how, from, to): (&str, &Path, &Path) = match mount {
             Mount::Writable(path) => ("--bind", path, path),
+            Mount::Tmp(temp) => ("--bind", temp, mount.path()),
             Mount::ReadOnly(path) => ("--ro-bind", path, path),
             Mount::HiddenFile(path) => ("--ro-bind", &layout.empty_file, path),
             Mount::HiddenFolder(path) => ("--ro-bind", &layout.empty_folder, path),

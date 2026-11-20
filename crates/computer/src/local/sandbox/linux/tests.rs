@@ -10,8 +10,8 @@ use std::process::Command as Process;
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, ComputerError, Computers, Ending, Environment, Output, Sandbox, SandboxCaches,
-    SandboxLevel, SandboxNetwork, Sources, WorkspaceId,
+    Command, ComputerError, Computers, Ending, Environment, Output, RunsFor, Sandbox, SandboxLevel,
+    SandboxNetwork, Sources, WorkspaceId,
 };
 
 use super::landlocked;
@@ -83,7 +83,7 @@ fn run(
         network: SandboxNetwork::when(network),
         home: Some(dir.to_owned()),
         glave_home: Some(dir.join(".glave")),
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     });
     block_on!(async {
         let computer = computers.create(&Environment::host()).await?;
@@ -529,7 +529,7 @@ fn landlocked(dir: &Path, helper: &Path) -> (LocalComputers, Sandbox, WorkspaceI
         network: SandboxNetwork::Off,
         home: Some(dir.to_path_buf()),
         glave_home: Some(glave_home),
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     let root = dir.join("project");
     let workspace = block_on!(async {
@@ -594,7 +594,7 @@ fn landlock_keeps_glave_on_path_readable() {
         network: SandboxNetwork::Off,
         home: Some(dir.to_path_buf()),
         glave_home: Some(glave_home.clone()),
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     let root = dir.join("project");
     block_on!(async {

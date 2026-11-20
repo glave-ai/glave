@@ -4,7 +4,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::{ComputerError, Sandbox};
+use glave_ports::computer::{ComputerError, RunsFor, Sandbox};
 
 use super::profile::{Places, TEMP_PARAM, profile};
 use super::run_temp::RunTemp;
@@ -83,6 +83,8 @@ impl Enforcer {
             glave_on_path: resolved(reached.glave_on_path).await,
             git_common,
             git_own,
+            shared_tmp: sandbox.runs_for == RunsFor::Owner,
+            person_temp: Some(system_temp.clone()),
         };
         let profile = profile(&places, sandbox.level, sandbox.network);
         let mut args: Vec<OsString> = vec!["-p".into(), profile.text.into()];

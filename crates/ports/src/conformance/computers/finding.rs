@@ -5,8 +5,8 @@ use super::helpers::{Collect, Trip, failed, files};
 use super::{Verdict, ensure};
 use crate::blob::digest;
 use crate::computer::{
-    Command, ComputerError, Computers, EntryKind, Glob, Listing, Sandbox, SandboxCaches,
-    SandboxLevel, SandboxNetwork, Search, WorkspaceId,
+    Command, ComputerError, Computers, EntryKind, Glob, Listing, RunsFor, Sandbox, SandboxLevel,
+    SandboxNetwork, Search, WorkspaceId,
 };
 
 const LIB: &[u8] = b"fn alpha() {}\nfn beta() {}\n";
@@ -224,7 +224,7 @@ pub(super) async fn sandboxed<C: Computers>(computers: &C, here: WorkspaceId) ->
         network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     });
     let output = Collect::new();
     let never = Trip::default();
