@@ -31,6 +31,10 @@ pub(crate) const SCHEMA: Schema<'static> = Schema {
             change: Change::Reshapes,
             sql: REMOTES_NAMED,
         },
+        Migration {
+            change: Change::Adds,
+            sql: LEDGER_INDEX,
+        },
     ],
 };
 
@@ -239,6 +243,13 @@ const REMOTES_NAMED: &str = "
         WHERE r.org = project_folders.org AND r.key = project_folders.key
     ) WHERE (org, key) IN (SELECT org, key FROM remote_keys WHERE named <> key);
     DROP VIEW remote_keys;
+";
+
+/// An index for finding which projects of an organization hold a ledger (`projects_with`), so
+/// each organization reads only its own events of it: the ledgers' ids are the same in every
+/// project, and `events_by_thread` alone would have every page read them all (#1486).
+const LEDGER_INDEX: &str = "
+    CREATE INDEX events_by_ledger ON events (org, thread, project);
 ";
 
 /// Brings the database up to [`SCHEMA`], making it the first time. `file` is where it is kept,
