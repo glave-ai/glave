@@ -449,6 +449,14 @@ where
     ) -> Result<Reply, ApiError> {
         let projects = self.projects_of(caller).await?;
         for project in &projects {
+            // One trimmed for the scheduler is read again whole, for the tasks it finished.
+            let trimmed = self
+                .ledgers()
+                .get(project)
+                .is_some_and(|ledger| ledger.trimmed);
+            if trimmed {
+                self.ledgers().forget(*project);
+            }
             self.catch_up(*project).await?;
         }
         let limit = limit.unwrap_or(20).clamp(1, 500);
