@@ -343,13 +343,14 @@ impl LocalComputers {
         command: &Command,
     ) -> Result<CommandId, ComputerError> {
         let opened = self.registry.workspace(workspace)?;
-        self.background.room(workspace)?;
+        let runs_for = background::runs_for(command);
+        self.background.room(workspace, runs_for)?;
         let id = CommandId::from_uuid(new_id()?);
         let helper = self.helper.as_deref();
         let spawned = command::spawn(&opened, command, helper, None, &NeverCancelled).await?;
         let limit = command.timeout_secs.map(Duration::from_secs);
         let named = (id, command.script.clone());
-        let at = (opened.computer, workspace);
+        let at = (opened.computer, workspace, runs_for);
         match self.background.adopt(named, at, spawned, limit) {
             Ok(id) => Ok(id),
             // Another start took the last place meanwhile.
@@ -357,7 +358,7 @@ impl LocalComputers {
                 spawned.child.stop().await;
                 Err(self
                     .background
-                    .room(workspace)
+                    .room(workspace, runs_for)
                     .err()
                     .unwrap_or_else(|| ComputerError::Refused(Refusal::NoRoom.into())))
             }

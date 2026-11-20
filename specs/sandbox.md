@@ -17,6 +17,7 @@ Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp,
 - Someone else's threads on the server's computer get none of its owner's own instructions, skills or custom commands (#1460, *Whose computer*).
 - Someone else's commands on the server's computer keep their package caches in each command's own temp folder, sharing none with its owner's (#1469, *Whose computer*, *Package caches*).
 - Someone else's commands on the server's computer share no `/tmp` with its owner's: on Linux each gets one of its own, on macOS none; and they read nothing the owner left in `/var/tmp` or, on macOS, the owner's temp folder (#1583, *Whose computer*, *Writes*).
+- Someone else's background commands on the server's computer leave its owner room: theirs run at most 48 of its 64 and keep at most 96 of its 128, forgotten first (#1506, `computers.md`, *Background commands*).
 - The outbound proxy built for #643, wired to nothing, is deleted (#1398): the network is off or on.
 - The project's own files, `.env` among them, are no longer hidden from its commands (owner decision, 2026-11-13, #1397, *Reads*).
 - A computer served with `--tls` keeps its token and key in glave's folder, which its commands neither read nor change, and hides that folder itself too, as one on a socket hides its own (#1502, *Reads*).
