@@ -100,9 +100,9 @@ export function nextOf(schedule: ScheduleInfo, reader: ScheduleReader, now: numb
   return time === null ? null : $localize`:@@repeating.next:Next: ${time}:TIME:`;
 }
 
-/** The parts of a line that it has, between dots. */
-function line(parts: readonly (string | null | undefined)[]): string {
-  return parts.filter((part) => part !== null && part !== undefined && part !== '').join(' · ');
+/** The parts it has, none empty. */
+function present(parts: readonly (string | null | undefined)[]): readonly string[] {
+  return parts.filter((part): part is string => part !== null && part !== undefined && part !== '');
 }
 
 /**
@@ -110,7 +110,7 @@ function line(parts: readonly (string | null | undefined)[]): string {
  * next or that it is paused, and what the server says of it beyond that.
  */
 export function repeatLine(schedule: ScheduleInfo, reader: ScheduleReader, now: number): string {
-  return line([schedule.repeats, nextOf(schedule, reader, now), schedule.note]);
+  return present([schedule.repeats, nextOf(schedule, reader, now), schedule.note]).join(' · ');
 }
 
 /** When `schedule` last ran, on its own clocks; `null` before a run. */
@@ -130,12 +130,11 @@ export function scheduleParts(
   reader: ScheduleReader,
   now: number,
 ): readonly string[] {
-  const parts = [
+  return present([
     schedule.repeats,
     nextOf(schedule, reader, now),
     lastOf(schedule, reader, now),
     schedule.last?.said,
     schedule.note,
-  ];
-  return parts.filter((part): part is string => part !== null && part !== undefined && part !== '');
+  ]);
 }
