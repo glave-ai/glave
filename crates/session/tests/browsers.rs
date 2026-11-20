@@ -117,6 +117,33 @@ fn a_link_signs_one_browser_in_once_for_a_session_that_outlives_a_restart() {
     });
 }
 
+/// A proxy on this computer that rewrites `Host` to the listener's own address forwards a
+/// request from anywhere as though it came from here; what it adds to say where the request
+/// came from says it did not, so neither a link's code nor the local token works through it
+/// (#1487).
+#[test]
+fn a_request_a_proxy_forwarded_is_not_from_this_computer() {
+    block_on!(async {
+        let dir = folder("browsers-proxied");
+        let token = LocalToken::new([8; 32]);
+        let served = serve(&dir, browsers(&dir, &fixed_clock()).await, &token).await;
+        let code = link(&served, &token).await;
+        let mut visitor = Web::new(&served, None).from("203.0.113.9");
+        let refused = visitor.call(&redeem(&code)).await;
+        assert!(refused["result"]["session"].is_null(), "{refused}");
+        let mut owner = Web::new(&served, Some(token.reveal().to_owned())).from("203.0.113.9");
+        let refused = owner.call(&projects()).await;
+        assert!(
+            refused["result"].is_null(),
+            "the local token works only from here"
+        );
+        // The same code still works from this computer.
+        let redeemed = Web::new(&served, None).call(&redeem(&code)).await;
+        assert!(redeemed["result"]["session"].is_string(), "{redeemed}");
+        served.close().await;
+    });
+}
+
 #[test]
 fn signing_other_browsers_out_keeps_this_one() {
     block_on!(async {

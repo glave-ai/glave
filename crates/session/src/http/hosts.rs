@@ -81,12 +81,28 @@ impl ListenerNames {
 /// Which way a request with `headers` from `peer` came in, to a listener with `names` (none
 /// where it checks no names): through the public origin when it came to that name, or to a
 /// listener beyond this computer from elsewhere; else from this computer to the server's own
-/// address when it came from here, and from elsewhere when not.
+/// address when it came from here, and from elsewhere when not. A request a proxy forwarded
+/// ([`proxied`]) never came in here, whatever its `Host` says, as one that rewrites `Host` to
+/// its upstream makes a request from anywhere look like one from this computer (#1487): it
+/// came through the public origin, where there is one, else from elsewhere. A best-effort
+/// signal: a proxy that adds none of these, or a raw TCP forward, still looks like this
+/// computer, so the local token and a link's code stay the wall.
 pub(crate) fn door(names: Option<&ListenerNames>, headers: &HeaderMap, peer: IpAddr) -> Door {
     let host = headers
         .get(header::HOST)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
+    if proxied(headers) {
+        return match names {
+            Some(
+                ListenerNames::Loopback {
+                    origin: Some(_), ..
+                }
+                | ListenerNames::Public(_),
+            ) => Door::Public,
+            Some(ListenerNames::Loopback { origin: None, .. }) | None => Door::Elsewhere,
+        };
+    }
     match names {
         Some(ListenerNames::Loopback {
             origin: Some(origin),
@@ -135,6 +151,16 @@ pub(crate) fn client(
         .and_then(|named| address(String::from_utf8_lossy(named).trim()))
         .map_or(peer, |named| named.to_canonical())
 }
+
+/// Whether a request with `headers` came through a proxy or tunnel: it carries what one adds
+/// to say where the request came from, which a browser never sends itself.
+fn proxied(headers: &HeaderMap) -> bool {
+    PROXIES_ADD.iter().any(|name| headers.contains_key(*name))
+}
+
+/// What proxies and tunnels add to a request they forward: the standard's, the de facto
+/// standard's, one nginx configurations commonly set, and Cloudflare's.
+const PROXIES_ADD: [&str; 4] = ["forwarded", FORWARDED_FOR, "x-real-ip", "cf-connecting-ip"];
 
 /// The address `named` is, written bare or with a port: `203.0.113.7`, `203.0.113.7:4321`,
 /// `2001:db8::1` or `[2001:db8::1]:4321`.
@@ -360,6 +386,31 @@ mod tests {
         assert_eq!(came(beyond.as_ref(), "localhost:443", remote), Door::Public);
         assert_eq!(came(None, "10.0.0.5:8080", remote), Door::Elsewhere);
         assert_eq!(came(None, "127.0.0.1:8080", local), Door::Here);
+    }
+
+    /// A proxy or tunnel on this computer that rewrites `Host` to its upstream hands a request
+    /// from anywhere over as one to the listener's own address; what it adds to say where the
+    /// request came from says it was forwarded, so it never comes in here (#1487).
+    #[test]
+    fn a_forwarded_request_never_comes_in_here_whatever_its_host() {
+        let local = "127.0.0.1".parse::<IpAddr>().unwrap();
+        let origin = PublicOrigin::parse("https://glave.example.com").unwrap();
+        let tunnel = ListenerNames::of("127.0.0.1:4180".parse().unwrap(), Some(&origin));
+        let alone = ListenerNames::of("127.0.0.1:4180".parse().unwrap(), None);
+        let beyond = ListenerNames::of("0.0.0.0:443".parse().unwrap(), Some(&origin));
+        for added in PROXIES_ADD {
+            let mut sent = headers(Some("127.0.0.1:4180"), None);
+            sent.insert(added, "203.0.113.9".parse().unwrap());
+            assert_eq!(door(tunnel.as_ref(), &sent, local), Door::Public, "{added}");
+            assert_eq!(
+                door(alone.as_ref(), &sent, local),
+                Door::Elsewhere,
+                "{added}"
+            );
+            assert_eq!(door(None, &sent, local), Door::Elsewhere, "{added}");
+            sent.insert(header::HOST, "localhost:443".parse().unwrap());
+            assert_eq!(door(beyond.as_ref(), &sent, local), Door::Public, "{added}");
+        }
     }
 
     #[test]
