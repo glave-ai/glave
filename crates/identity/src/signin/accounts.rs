@@ -142,6 +142,15 @@ impl Accounts {
             .map_err(|e| BrowserError::Keep(e.to_string()))
     }
 
+    /// Indexes the passkeys of `person`'s account by their credential ids, as a server starts,
+    /// so those made before the index sign in from its first request.
+    pub async fn index(&self, person: PrincipalId) -> Result<(), BrowserError> {
+        self.browsers(person)
+            .await?
+            .index_passkeys(&self.directory)
+            .await
+    }
+
     /// Records that `person` belongs to `org`, after the organizations they joined before, and
     /// indexes their passkeys again, which an account in no organization lets go of.
     pub async fn join(&self, person: PrincipalId, org: OrgId) -> Result<(), BrowserError> {
@@ -149,10 +158,7 @@ impl Accounts {
             .join(person, org)
             .await
             .map_err(|e| BrowserError::Keep(e.to_string()))?;
-        self.browsers(person)
-            .await?
-            .index_passkeys(&self.directory)
-            .await
+        self.index(person).await
     }
 
     /// Takes `person` out of `org`: their sessions sign them in there no more. Left in no

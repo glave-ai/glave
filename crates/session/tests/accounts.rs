@@ -61,7 +61,11 @@ async fn serve_keeping(
         setup.accounts = Some(Arc::new(accounts.unwrap()));
         setup.origin = Some(origin);
     }
-    let (server, _) = setup.build(dir).await;
+    // On the same store as its accounts, as a server is, so a server started again on it
+    // finds its organization's people.
+    let (server, _) = setup.build_on(dir, store.log()).await;
+    // As a server starts: the passkeys of its organization's people indexed.
+    server.index_passkeys(&[scope().org()]).await.unwrap();
     let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
     (serve_with(server, signin, None).await, directory, outbox)
 }
@@ -668,6 +672,44 @@ fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_t
         assert_eq!(rejoined["email"], json!("grace@example.com"), "{after}");
         let orgs = directory.organizations(grace_id).await.unwrap();
         assert_eq!(orgs, [her_own, scope().org()]);
+        served.close().await;
+    });
+}
+
+/// A passkey made before passkeys were indexed (#1523) signs in on a server just started, with
+/// no session of its person's to open their account first: the server indexes everyone's in
+/// its organizations as it starts.
+#[test]
+fn a_passkey_made_before_the_index_signs_in_on_a_server_just_started() {
+    block_on!(async {
+        let dir = folder("accounts-indexed-at-start");
+        let token = LocalToken::new([24; 32]);
+        let (served, directory, _) = serve_keeping(&dir, true, &token).await;
+        let mut tablet = Authenticator::new(ORIGIN).unwrap();
+        join(
+            &served,
+            invite(&served, &token, OrgRole::Member).await,
+            &mut tablet,
+        )
+        .await;
+        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
+        let listed = Request::PeopleList {
+            after: None,
+            limit: None,
+        };
+        let people = asked(&mut here, &listed).await;
+        let ada: PrincipalId = serde_json::from_value(invited(&people)["id"].clone()).unwrap();
+        served.close().await;
+        // As a store from before the index holds it: her passkey indexed nowhere, though she
+        // is in the organization.
+        let org = scope().org();
+        directory.leave(ada, org).await.unwrap();
+        directory.unlink_email_if_alone(ada).await.unwrap();
+        directory.join(ada, org).await.unwrap();
+
+        let (served, _, _) = serve_keeping(&dir, true, &token).await;
+        let session = sign_in(&served, &mut tablet).await;
+        assert!(session.is_string(), "{session}");
         served.close().await;
     });
 }

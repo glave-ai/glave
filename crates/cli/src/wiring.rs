@@ -167,6 +167,7 @@ pub(crate) async fn wire(
     // Memory is tidied once the server answers the filters its calls keep to.
     let (filters, tidier) = (lined.switch.filters(), lined.switch.clone());
     let tidy_model = settings.model.clone();
+    let accounts = crate::serving::accounts(args, choices, &store).await?;
     let wiring = Wiring {
         // Before the lineup's parts move into the rest.
         rereads: Some(rereading(args, &folder, &setup, &lined, &servers, &projects).await?),
@@ -189,7 +190,7 @@ pub(crate) async fn wire(
         project_folders: Some(Arc::clone(&projects) as Arc<dyn glave_harness::ProjectFolders>),
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
         browsers: crate::serving::browsers(args, choices, &store, identity.person).await?,
-        accounts: crate::serving::accounts(args, choices, &store).await?,
+        accounts: accounts.clone(),
         mail: crate::serving::mail(choices)?,
         push: crate::serving::push(args, choices, constraints, &store)?,
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
@@ -215,6 +216,10 @@ pub(crate) async fn wire(
         )
     };
     let server = Server::new(wiring, settings, scope.org(), answering);
+    // Before anyone signs in: passkeys made before they were indexed sign in at once.
+    if accounts.is_some() {
+        server.index_passkeys(&store.organizations().await?).await?;
+    }
     server.answer_filters(&filters);
     tidy(memory.as_ref(), &tidier, tidy_model);
     let reach = crate::serving::reach(args, choices, &store, identity.person).await?;

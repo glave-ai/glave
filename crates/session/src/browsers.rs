@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use glave_event::{At, AuthMethod, PrincipalId, Secret};
 use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId};
 use jiff::SignedDuration;
 
 use crate::naming::given_name;
@@ -156,6 +156,22 @@ where
             }
         }
         Ok(options(self.browsers()?.get_options()?))
+    }
+
+    /// Indexes the passkeys of everyone in `orgs` who joined with a glave account, as a server
+    /// starts, so a passkey made before the index (#1523), whose account no request has opened
+    /// here yet, signs in from the first request. Each organization's people are read apart
+    /// from what this server keeps. Nothing where the server keeps no glave accounts.
+    pub async fn index_passkeys(&self, orgs: &[OrgId]) -> Result<(), ApiError> {
+        let Some(accounts) = self.inner.accounts.as_deref() else {
+            return Ok(());
+        };
+        for org in orgs {
+            for person in self.people_apart(*org).await?.with_accounts() {
+                accounts.index(person).await?;
+            }
+        }
+        Ok(())
     }
 
     /// Answers `passkey/get`: the browser signed in with a passkey, the local person's or, by

@@ -409,10 +409,14 @@ impl Browsers {
                 state.take(raw);
             }
         }
-        match &self.index {
-            Some(index) if added => self.index_passkeys(index).await,
-            _ => Ok(()),
+        // The passkey is kept whether or not it is indexed now: one that is not is indexed as
+        // the server next starts, or the account next joins an organization or is opened here.
+        if let (Some(index), true) = (&self.index, added)
+            && let Err(error) = self.index_passkeys(index).await
+        {
+            tracing::warn!(%error, "a passkey kept was not indexed yet");
         }
+        Ok(())
     }
 
     /// Reads what the ledger holds past what is known.

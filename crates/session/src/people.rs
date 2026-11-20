@@ -260,6 +260,14 @@ impl People {
             .map(|(person, _)| *person)
     }
 
+    /// Everyone in it who joined with a glave account.
+    pub(crate) fn with_accounts(&self) -> Vec<PrincipalId> {
+        (self.known.iter())
+            .filter(|(_, kept)| kept.joined.issuer.is_none())
+            .map(|(person, _)| *person)
+            .collect()
+    }
+
     /// Whether anyone in it joined with a glave account.
     pub(crate) fn has_accounts(&self) -> bool {
         self.known.values().any(|kept| kept.joined.issuer.is_none())

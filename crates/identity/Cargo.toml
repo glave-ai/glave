@@ -36,6 +36,8 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+# What it went on past without failing, such as a passkey kept but not indexed yet, in the log.
+tracing.workspace = true
 # Each browser session's id: UUID v7.
 uuid.workspace = true
 # Passkeys: registering them and signing in with them (WebAuthn's relying party).
