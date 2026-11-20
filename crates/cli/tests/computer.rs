@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime};
 
 use glave_computer::{Identity, RemoteComputers, Token, connect_tls};
 use glave_ports::computer::{
-    Command, Computers, Ending, Environment, Output, Sandbox, SandboxCaches, SandboxLevel,
+    Command, Computers, Ending, Environment, Output, RunsFor, Sandbox, SandboxLevel,
     SandboxNetwork, Sources,
 };
 use glave_ports::testing::{SocketPath, TempDir, any_secret, read_program};
@@ -209,7 +209,7 @@ fn a_tls_computer_s_token_and_key_are_neither_read_nor_replaced_by_its_sandboxed
             network: SandboxNetwork::Direct,
             home: Some(dir.to_path_buf()),
             glave_home: Some(home.clone()),
-            caches: SandboxCaches::Kept,
+            runs_for: RunsFor::Owner,
         };
         let takes = format!(
             "cat '{0}/token' '{0}/key.pem'; printf forged > '{0}/token'; echo tried",

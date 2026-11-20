@@ -10,8 +10,8 @@ use std::process::Command as Process;
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, ComputerError, Computers, Ending, Environment, Output, Sandbox, SandboxCaches,
-    SandboxLevel, SandboxNetwork, Sources, WorkspaceId,
+    Command, ComputerError, Computers, Ending, Environment, Output, RunsFor, Sandbox, SandboxLevel,
+    SandboxNetwork, Sources, WorkspaceId,
 };
 
 use super::{CACHE_FOLDER, sandbox_available};
@@ -22,6 +22,8 @@ mod toolchains;
 mod nested_repository;
 
 mod own_settings;
+
+mod own_tmp;
 
 mod startup;
 
@@ -128,7 +130,7 @@ fn computers_saying(dir: &Path, said: &[(&str, &str)]) -> (LocalComputers, Sandb
         network: SandboxNetwork::Off,
         home: Some(home),
         glave_home: Some(glave_home),
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     (computers, sandbox)
 }
@@ -230,7 +232,7 @@ fn the_running_glave_is_first_on_every_command_s_path() {
         network: SandboxNetwork::Off,
         home: Some(home.clone()),
         glave_home: Some(glave_home.clone()),
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     let old_first = format!("{}:/usr/bin:/bin", dir.join("old").display());
     block_on!(async {
@@ -552,7 +554,7 @@ fn other_spellings_of_protected_paths_are_protected_too() {
         network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     let project = |name: &str, hooks: bool| {
         let root = dir.join(name);
@@ -729,7 +731,7 @@ fn a_sandboxed_command_cannot_open_the_person_s_keychains() {
         network: SandboxNetwork::Direct,
         home: Some(home),
         glave_home: Some(dir.join("glave")),
-        caches: SandboxCaches::Kept,
+        runs_for: RunsFor::Owner,
     };
     let script = format!(
         "ls '{0}' >/dev/null && echo keychain-listed; cat '{1}' >/dev/null && echo keychain-read; \

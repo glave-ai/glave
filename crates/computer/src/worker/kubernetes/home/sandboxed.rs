@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, ComputerError, Computers as _, Ending, Sandbox, SandboxCaches, SandboxLevel,
-    SandboxNetwork, Sources, WorkspaceId,
+    Command, ComputerError, Computers as _, Ending, RunsFor, Sandbox, SandboxLevel, SandboxNetwork,
+    Sources, WorkspaceId,
 };
 
 use super::super::objects::PERSON_HOME;
@@ -161,7 +161,7 @@ fn glave_s_sandbox_holds_on_a_persons_computer() {
                 network,
                 home: Some(PathBuf::from(PERSON_HOME)),
                 glave_home: Some(PathBuf::from(format!("{PERSON_HOME}/.glave"))),
-                caches: SandboxCaches::Kept,
+                runs_for: RunsFor::Owner,
             })
         };
         let offline = sandbox(SandboxLevel::Project, SandboxNetwork::Off);

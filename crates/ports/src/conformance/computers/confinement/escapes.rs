@@ -5,7 +5,7 @@
 use super::super::helpers::{failed, run, run_quietly};
 use super::{Confinement, LINKED, WRITTEN, outside_unchanged, plain};
 use crate::computer::{
-    Command, ComputerError, Computers, FileWrite, Listing, Sandbox, SandboxCaches, SandboxLevel,
+    Command, ComputerError, Computers, FileWrite, Listing, RunsFor, Sandbox, SandboxLevel,
     SandboxNetwork, is_protected, refuse_protected,
 };
 use crate::conformance::{Verdict, ensure};
@@ -227,7 +227,7 @@ fn guarded(path: &str, content: &[u8]) -> FileWrite {
             network: SandboxNetwork::Off,
             home: None,
             glave_home: None,
-            caches: SandboxCaches::Kept,
+            runs_for: RunsFor::Owner,
         }),
         ..plain(path, content)
     }
