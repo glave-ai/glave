@@ -60,6 +60,19 @@ async fn wake_up(person: &Arc<Person>, home: &WorkspaceInfo) -> u64 {
     }
 }
 
+/// One person's computer woken on leases in memory that take no time: those leases, the people
+/// it is one of (which it lives no longer than), the person, its home and the number of its
+/// wake.
+async fn woken_on_leases() -> (Arc<Slow>, People, Arc<Person>, WorkspaceInfo, u64) {
+    let slow = slow(Duration::ZERO, Duration::ZERO);
+    let people = people(leasing(&(Arc::clone(&slow) as Arc<dyn Leases>)));
+    let (org, id, key) = someone();
+    let person = people.person(org, id).unwrap();
+    let home = planned_home(&key).unwrap();
+    let wake = wake_up(&person, &home).await;
+    (slow, people, person, home, wake)
+}
+
 /// The order of #1387: a call found the computer gone on its own, removed what was left, let
 /// go of its lease and woke it again; the last wake's renewal came due while the new wake was
 /// still reaching it, found its lease let go of, and stopped the new wake.
@@ -67,12 +80,7 @@ async fn wake_up(person: &Arc<Person>, home: &WorkspaceInfo) -> u64 {
 fn the_renewal_left_from_the_last_wake_never_stops_the_next() {
     block_on!(async {
         tokio::time::pause();
-        let slow = slow(Duration::ZERO, Duration::ZERO);
-        let people = people(leasing(&(Arc::clone(&slow) as Arc<dyn Leases>)));
-        let (org, id, key) = someone();
-        let person = people.person(org, id).unwrap();
-        let home = planned_home(&key).unwrap();
-        let first = wake_up(&person, &home).await;
+        let (slow, _people, person, home, first) = woken_on_leases().await;
         slept(&person, first, &home).await;
         start(&person, |_| std::future::pending());
         tokio::time::sleep(lease::RENEW * 2).await;
@@ -90,12 +98,7 @@ fn the_renewal_left_from_the_last_wake_never_stops_the_next() {
 fn a_long_removal_keeps_the_computer_s_lease() {
     block_on!(async {
         tokio::time::pause();
-        let slow = slow(Duration::ZERO, Duration::ZERO);
-        let people = people(leasing(&(Arc::clone(&slow) as Arc<dyn Leases>)));
-        let (org, id, key) = someone();
-        let person = people.person(org, id).unwrap();
-        let home = planned_home(&key).unwrap();
-        let wake = wake_up(&person, &home).await;
+        let (slow, _people, person, _home, wake) = woken_on_leases().await;
         if let Some(renewal) = person.renewing.lock().unwrap().take() {
             renewal.abort();
         }
