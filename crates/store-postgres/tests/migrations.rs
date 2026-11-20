@@ -6,10 +6,11 @@
 
 use std::sync::Arc;
 
-use glave_ports::conformance::{StoreSuite, store_suite};
+use glave_ports::conformance::{self, StoreSuite, store_suite};
 use glave_ports::migrations::{Change, Migration, Schema};
 use glave_store_postgres::{SCHEMA, Store, StoreError, migrate};
 use tokio_postgres::NoTls;
+use uuid::Uuid;
 
 use crate::support::{Scratch, block_on};
 
@@ -80,6 +81,44 @@ fn a_database_of_each_earlier_version_is_brought_up_to_date_keeping_what_it_held
             });
         }
     }
+}
+
+/// A database at 21 kept a remote's folder key as its url was written, a clone's token and all,
+/// which 22 names by its repository alone, in every organization (#1519).
+#[test]
+fn a_database_at_21_keeps_remotes_by_their_repository_alone() {
+    block_on!(async {
+        let Some(scratch) = Scratch::new("remotes").await else {
+            return;
+        };
+        at(&scratch, 21).await;
+        let token = glave_ports::testing::any_secret();
+        let then = conformance::remote_keys_then(&token);
+        let folders = format!("{}.project_folders", scratch.schema);
+        let insert = format!("INSERT INTO {folders} (org, key, project) VALUES ($1, $2, $3)");
+        let orgs = [Uuid::from_u128(1), Uuid::from_u128(2)];
+        for (org, (key, project)) in orgs
+            .iter()
+            .flat_map(|org| then.iter().map(move |row| (org, row)))
+        {
+            scratch
+                .admin
+                .execute(&insert, &[org, key, project])
+                .await
+                .unwrap();
+        }
+        drop(scratch.store().await.unwrap());
+        let mut verdicts = Vec::new();
+        for org in orgs {
+            let read = format!("SELECT key, project FROM {folders} WHERE org = $1");
+            let rows = scratch.admin.query(&read, &[&org]).await.unwrap();
+            let now: Vec<(String, Uuid)> =
+                rows.iter().map(|row| (row.get(0), row.get(1))).collect();
+            verdicts.push(conformance::remote_keys_named(&then, &token, &now));
+        }
+        scratch.drop_schema().await;
+        assert_eq!(verdicts, [Ok(()), Ok(())]);
+    });
 }
 
 /// Servers starting at once on a new database, and on one of the baseline: one migrates it,

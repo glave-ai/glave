@@ -17,10 +17,16 @@ use crate::store::{StoreError, describe};
 pub const SCHEMA: Schema<'static> = Schema {
     baseline: 20,
     made: BASELINE,
-    migrations: &[Migration {
-        change: Change::Adds,
-        sql: SEALED_INDEX,
-    }],
+    migrations: &[
+        Migration {
+            change: Change::Adds,
+            sql: SEALED_INDEX,
+        },
+        Migration {
+            change: Change::Reshapes,
+            sql: REMOTES_NAMED,
+        },
+    ],
 };
 
 /// How long a server waits for another to finish bringing the database up to date: minutes,
@@ -231,6 +237,46 @@ const SEALED_INDEX: &str = "
     ALTER TABLE event_search FORCE ROW LEVEL SECURITY;
     CREATE POLICY glave_org ON event_search USING (org = glave_org())
         WITH CHECK (org = glave_org());
+";
+
+/// 22: each folder key of a remote names its repository alone, as `FolderKey::stored` does,
+/// without the name and password before its host or the query or fragment after its path that a
+/// clone made with a token in its url carries (#1519). Where two keys come to one, a key that
+/// was already plain is kept, else the first in order; the folder's path still leads to its
+/// project. Every organization's keys at once, so row-level security, which shows none while no
+/// organization is set, is lifted from the table for the transaction's length.
+const REMOTES_NAMED: &str = "
+    ALTER TABLE project_folders NO FORCE ROW LEVEL SECURITY;
+
+    CREATE VIEW remote_keys AS
+    SELECT org, key,
+        'remote:' || scheme || '://' || regexp_replace(authority, '^.*@', '')
+            || substr(rest, length(authority) + 1) AS named
+    FROM (
+        SELECT org, key, scheme, rest, split_part(rest, '/', 1) AS authority
+        FROM (
+            SELECT org, key, scheme,
+                split_part(split_part(substr(url, length(scheme) + 4), '?', 1), '#', 1) AS rest
+            FROM (
+                SELECT org, key, url, split_part(url, '://', 1) AS scheme
+                FROM (
+                    SELECT org, key, substr(key, 8) AS url FROM project_folders
+                    WHERE key LIKE 'remote:%://%'
+                ) AS remotes
+            ) AS schemes
+        ) AS rests
+    ) AS authorities;
+
+    DELETE FROM project_folders WHERE (org, key) IN (
+        SELECT signed.org, signed.key FROM remote_keys AS signed JOIN remote_keys AS other
+            ON other.org = signed.org AND other.named = signed.named AND other.key <> signed.key
+        WHERE signed.named <> signed.key AND (other.named = other.key OR other.key < signed.key)
+    );
+    UPDATE project_folders AS folder SET key = r.named FROM remote_keys AS r
+    WHERE r.org = folder.org AND r.key = folder.key AND r.named <> r.key;
+    DROP VIEW remote_keys;
+
+    ALTER TABLE project_folders FORCE ROW LEVEL SECURITY;
 ";
 
 /// Refuses a connection whose role row-level security does not bind: a superuser, or a role
