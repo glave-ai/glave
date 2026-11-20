@@ -220,6 +220,27 @@ export async function forgetFelt(page: Page): Promise<void> {
 }
 
 /**
+ * Waits, as long as an expectation does, until the watch on `page` holds its first and largest
+ * contentful paints. The browser reports each once the frame is presented, which can come after
+ * the content shows to Playwright, the more so with other browsers drawing beside it (#1287); as
+ * web-vitals does, the measurement takes them whenever they come. Their times are when the frames
+ * were presented, whenever they are read, so waiting changes no number, and a paint never
+ * reported still fails, after the wait.
+ */
+export async function paintsReported(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const seen = (window as Watched).feel?.seen();
+          return (seen?.firstPaint ?? null) !== null && (seen?.largestPaint ?? null) !== null;
+        }),
+      { message: 'the browser reported the first and largest contentful paints' },
+    )
+    .toBe(true);
+}
+
+/**
  * What the person has felt on `page` since it loaded or last forgot, noted on the test's report;
  * fails when `watchFeel` did not watch it.
  */
