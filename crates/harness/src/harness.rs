@@ -439,23 +439,6 @@ where
         self
     }
 
-    /// Offers `web_fetch` from `web`, right after the built-in tools, to the threads of the person
-    /// the harness works for whose project sets up none of its own; none leaves it to the other
-    /// sources. Everyone else's get [`Harness::with_others_web`]'s.
-    #[must_use]
-    pub fn with_web(self, web: Option<Arc<dyn ToolSource>>) -> Self {
-        self.change_defaults(|defaults| defaults.web = web);
-        self
-    }
-
-    /// Offers `web` as `web_fetch` to the threads of anyone but the person the harness works
-    /// for: one that reaches no private address (#1507).
-    #[must_use]
-    pub fn with_others_web(self, web: Option<Arc<dyn ToolSource>>) -> Self {
-        self.change_defaults(|defaults| defaults.others_web = web);
-        self
-    }
-
     /// Offers `skills` to its threads, those on this computer's and glave's own; a thread on a
     /// person's own computer is offered what is found there, with glave's own.
     #[must_use]

@@ -96,6 +96,23 @@ where
             .unwrap_or_else(PoisonError::into_inner) = Arc::new(defaults);
     }
 
+    /// Offers `web_fetch` from `web`, right after the built-in tools, to the threads of the person
+    /// the harness works for whose project sets up none of its own; none leaves it to the other
+    /// sources. Everyone else's get [`Harness::with_others_web`]'s.
+    #[must_use]
+    pub fn with_web(self, web: Option<Arc<dyn ToolSource>>) -> Self {
+        self.change_defaults(|defaults| defaults.web = web);
+        self
+    }
+
+    /// Offers `web` as `web_fetch` to the threads of anyone but the person the harness works
+    /// for: one that reaches no private address (#1507).
+    #[must_use]
+    pub fn with_others_web(self, web: Option<Arc<dyn ToolSource>>) -> Self {
+        self.change_defaults(|defaults| defaults.others_web = web);
+        self
+    }
+
     /// The defaults as `change` changes them, from each thread's next turn on.
     pub(crate) fn change_defaults(&self, change: impl FnOnce(&mut Defaults)) {
         let mut defaults = Defaults::clone(&self.defaults());
