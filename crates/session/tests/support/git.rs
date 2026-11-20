@@ -15,6 +15,19 @@ pub(crate) fn sh(dir: &Path, script: &str) {
     assert!(ran.success(), "{script}");
 }
 
+/// Gives the repository at `dir` an `origin` at `url`, which may hold a token: a failure
+/// never prints it.
+pub(crate) fn origin(dir: &Path, url: &str) {
+    let ran = Command::new("git")
+        .args(["remote", "add", "origin", url])
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .status()
+        .unwrap();
+    assert!(ran.success(), "git couldn't add the origin");
+}
+
 /// A repository at `dir/name` with one commit holding `AGENTS.md`.
 pub(crate) fn repository(dir: &Path, name: &str) -> PathBuf {
     let repo = dir.join(name);

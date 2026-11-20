@@ -513,9 +513,9 @@ fn the_folder_glave_runs_in_becomes_its_project_s_folder_from_its_repository() {
     let dir = folder("projects-keep");
     let repo = repository(&dir.with_extension("repos"), "app");
     let token = fake_secret("ghp_");
-    sh(
+    origin(
         &repo,
-        &format!("git remote add origin https://x-access-token:{token}@example.com/acme/app.git"),
+        &format!("https://x-access-token:{token}@example.com/acme/app.git"),
     );
     block_on!(async {
         let server = Setup::new(Vec::new()).build(&dir).await.0;
