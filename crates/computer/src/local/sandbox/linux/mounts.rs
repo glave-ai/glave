@@ -111,7 +111,8 @@ pub(super) enum Mount {
 }
 
 impl Mount {
-    fn path(&self) -> &Path {
+    /// Where it is mounted.
+    pub(super) fn path(&self) -> &Path {
         match self {
             Self::Writable(path)
             | Self::ReadOnly(path)
