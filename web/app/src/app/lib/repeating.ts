@@ -112,3 +112,30 @@ function line(parts: readonly (string | null | undefined)[]): string {
 export function repeatLine(schedule: ScheduleInfo, reader: ScheduleReader, now: number): string {
   return line([schedule.repeats, nextOf(schedule, reader, now), schedule.note]);
 }
+
+/** When `schedule` last ran, on its own clocks; `null` before a run. */
+export function lastOf(schedule: ScheduleInfo, reader: ScheduleReader, now: number): string | null {
+  const last = schedule.last ?? null;
+  const time = last === null ? null : runAt(last.due, schedule.zone, reader, now);
+  return time === null ? null : $localize`:@@repeating.last:Last: ${time}:TIME:`;
+}
+
+/**
+ * A schedule as the Repeating list says it, a part each: when it repeats in the server's words,
+ * its next run or that it is paused, its last run, what came of it in the server's words as they
+ * are, and what the server says beyond that.
+ */
+export function scheduleParts(
+  schedule: ScheduleInfo,
+  reader: ScheduleReader,
+  now: number,
+): readonly string[] {
+  const parts = [
+    schedule.repeats,
+    nextOf(schedule, reader, now),
+    lastOf(schedule, reader, now),
+    schedule.last?.said,
+    schedule.note,
+  ];
+  return parts.filter((part): part is string => part !== null && part !== undefined && part !== '');
+}

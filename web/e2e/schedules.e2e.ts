@@ -141,6 +141,38 @@ for (const view of VIEWS) {
       expect(problems()).toEqual([]);
     });
 
+    test('Tasks lists what repeats above what runs now, and pauses and removes it', async ({
+      page,
+    }) => {
+      const phone = view.name === 'phone';
+      const problems = watchForProblems(page);
+      await fakeApi(page);
+      const server = await schedules(page, { existing: true });
+      await page.goto(`/tasks${SIGNED_IN}`);
+      await expect(byTestId(page, 'repeating-name')).toHaveText('Morning email summary');
+      const parts = byTestId(page, 'repeating-part');
+      // The last run's words are the server's, a part of their own.
+      await expect(parts).toHaveText([REPEATS, /^Next: /u, /^Last: /u, 'Done']);
+      await expect(byTestId(page, 'tasks-running')).toHaveText('Running now');
+      // On a phone, a line for each part; beside a wide page, one line.
+      const [first, second] = [await parts.nth(0).boundingBox(), await parts.nth(1).boundingBox()];
+      expect((first?.y ?? 0) < (second?.y ?? 0)).toBe(phone);
+      await expectAccessible(page);
+      await byTestId(page, 'repeating-pause').click();
+      await expect(parts.nth(1)).toHaveText('Paused');
+      await expect(byTestId(page, 'repeating-pause')).toHaveText('Resume');
+      expect(server.paused).toBe(true);
+      await byTestId(page, 'repeating-remove').click();
+      await expect(byTestId(page, 'repeating-confirm')).toContainText(
+        'Stop repeating Morning email summary?',
+      );
+      await byTestId(page, 'repeating-confirm-ok').click();
+      await expect(byTestId(page, 'repeating-none')).toHaveText('Nothing repeats now.');
+      await expect(byTestId(page, 'repeating-heading')).toBeFocused();
+      expect(server.removed).toBe(true);
+      expect(problems()).toEqual([]);
+    });
+
     test('a repeat the server refuses after the yes folds away, its call saying how it went', async ({
       page,
     }) => {

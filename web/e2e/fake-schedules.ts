@@ -326,6 +326,10 @@ const ANSWERS: Answers<Kept> = {
         }
       : undefined;
   },
+  'schedule/list': (_, kept) => {
+    const schedule = scheduleOf(kept);
+    return { schedules: schedule === null ? [] : [schedule] };
+  },
   'schedule/pause': ({ paused }, kept) => {
     kept.paused = paused;
     return { schedule: info(paused) };
@@ -349,8 +353,8 @@ const ANSWERS: Answers<Kept> = {
  * weekday at 8, or a shape with no plain words), recorded as the server records it; "Repeat it"
  * makes the schedule and its own chat, which the lists' watch is told of, or with `outcome`
  * `refused` the server refuses it; "Not now" makes nothing. `existing`, the schedule and its
- * chat, which ran last Friday and this morning, are there from the start. The schedule pauses,
- * resumes and goes as asked. Each time zone the page gives is kept in `zones`.
+ * chat, which ran last Friday and this morning, are there from the start. The schedule is
+ * listed, and pauses, resumes and goes as asked. Each time zone the page gives is kept in `zones`.
  */
 export async function schedules(
   page: Page,

@@ -85,6 +85,19 @@ test('nothing moves on opening a schedule’s chat: its line under its title com
   expectStill(await feltOn(page));
 });
 
+test('nothing moves on opening Tasks: what repeats and what runs come in together, once the schedules are read', async ({
+  page,
+}) => {
+  await watchFeel(page);
+  await fakeApi(page);
+  await schedules(page, { existing: true });
+  await page.goto(`/tasks${SIGNED_IN}`);
+  await expect(byTestId(page, 'repeating-schedule')).toBeVisible();
+  await expect(byTestId(page, 'task').first()).toBeVisible();
+  await atRest(page);
+  expectStill(await feltOn(page));
+});
+
 for (const late of ['project/list', 'thread/list'] as const) {
   test(`nothing moves on opening a thread when ${late} answers late`, async ({ page }) => {
     await watchFeel(page);

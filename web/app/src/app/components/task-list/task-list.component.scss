@@ -27,6 +27,11 @@
   font-size: var(--glz-text-sm);
 }
 
+.nothing {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
 .error {
   color: var(--glz-color-danger);
 }

@@ -7,5 +7,18 @@
     </button>
   </div>
   <p class="intro">{{ copy.intro }}</p>
-  <app-task-list />
+  <app-repeating-list />
+  <!-- Drawn once the schedules are read, with what repeats above, so nothing under it moves. -->
+  @if (ready()) {
+    <section class="glz-stack glz-gap-3" aria-labelledby="tasks-running">
+      <h2 id="tasks-running" data-testid="tasks-running">{{ copy.running }}</h2>
+      <app-task-list />
+    </section>
+    @if (finished()) {
+      <section class="glz-stack glz-gap-3" aria-labelledby="tasks-finished">
+        <h2 id="tasks-finished" data-testid="tasks-finished">{{ copy.finished }}</h2>
+        <app-task-list finished />
+      </section>
+    }
+  }
 </div>
