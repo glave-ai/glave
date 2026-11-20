@@ -14,6 +14,7 @@ import {
   expectStill,
   feltOn,
   forgetFelt,
+  paintsReported,
   watchFeel,
 } from './feel';
 import { SIGNED_IN, atRest, builtChunk, byTestId, expect, hold, test } from './support';
@@ -38,6 +39,7 @@ async function opening(page: Page, path: string, shown: string): Promise<Felt> {
   await expect(byTestId(page, shown).last()).toBeVisible();
   await expect(byTestId(page, 'nav-thread').first()).toBeVisible();
   await atRest(page);
+  await paintsReported(page);
   return feltOn(page);
 }
 
@@ -50,6 +52,55 @@ for (const opened of OPENED) {
     expectStill(await opening(page, opened.path, opened.shown));
   });
 }
+
+/**
+ * Holds back the paint entries the page's observers are given, as a browser busy presenting
+ * frames does, delivering them `late` ms after it reports them (#1287).
+ */
+function paintsReportedLate(late: number): void {
+  const Observer = PerformanceObserver;
+  class Late extends Observer {
+    private paints = false;
+
+    constructor(callback: PerformanceObserverCallback) {
+      super((list, observer) => {
+        const entries = list.getEntries();
+        const given: PerformanceObserverEntryList = {
+          getEntries: () => entries,
+          getEntriesByName: (name, type) =>
+            entries.filter(
+              (entry) => entry.name === name && (type ?? entry.entryType) === entry.entryType,
+            ),
+          getEntriesByType: (type) => entries.filter((entry) => entry.entryType === type),
+        };
+        if (this.paints) {
+          setTimeout(() => {
+            callback(given, observer);
+          }, late);
+        } else {
+          callback(given, observer);
+        }
+      });
+    }
+
+    override observe(options?: PerformanceObserverInit): void {
+      this.paints = options?.type === 'paint' || options?.type === 'largest-contentful-paint';
+      super.observe(options);
+    }
+
+    override takeRecords(): PerformanceEntryList {
+      return this.paints ? [] : super.takeRecords();
+    }
+  }
+  window.PerformanceObserver = Late;
+}
+
+test('a first paint the browser reports late is measured as it comes, never taken for none', async ({
+  page,
+}) => {
+  await page.addInitScript(paintsReportedLate, 500);
+  expectShownSoon(await opening(page, '/', 'nav-thread'));
+});
 
 test('a thread of 10,000 events opens at its end soon, and the turns before come in above as the person goes back, nothing moving', async ({
   page,
