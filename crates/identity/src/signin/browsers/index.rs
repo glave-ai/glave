@@ -20,8 +20,8 @@ pub(crate) fn passkey_key(credential: &[u8]) -> Result<IdentityKey, BrowserError
 
 impl Browsers {
     /// Indexes every passkey of this glave account in `index`, so each leads to the account:
-    /// those it had before the index, and those added since. Linking one already linked
-    /// changes nothing.
+    /// those it had before the index, and those added since. One indexed already is left as it
+    /// is.
     pub(crate) async fn index_passkeys(
         &self,
         index: &Arc<dyn Directory>,
@@ -35,11 +35,13 @@ impl Browsers {
             .iter()
             .map(|kept| kept.credential.cred_id().as_slice().to_vec())
             .collect();
+        let failed = |e: glave_ports::DirectoryError| BrowserError::Keep(e.to_string());
         for credential in credentials {
-            index
-                .link(&passkey_key(&credential)?, person)
-                .await
-                .map_err(|e| BrowserError::Keep(e.to_string()))?;
+            let key = passkey_key(&credential)?;
+            // One indexed already is only read, so a start after the first writes nothing.
+            if index.find(&key).await.map_err(failed)? != Some(person) {
+                index.link(&key, person).await.map_err(failed)?;
+            }
         }
         Ok(())
     }

@@ -22,6 +22,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::signups::linked;
+
+mod indexing;
 use crate::support::issuer::fixed_clock;
 use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, make_passkey, serve_with};
 use crate::support::*;
@@ -37,6 +39,16 @@ async fn serve_keeping(
     dir: &Path,
     reached: bool,
     token: &LocalToken,
+) -> (Served, Arc<dyn Directory>, Arc<Outbox>) {
+    serve_through(dir, reached, token, |directory| directory).await
+}
+
+/// [`serve_keeping`], its accounts reaching the directory through what `through` makes of it.
+async fn serve_through(
+    dir: &Path,
+    reached: bool,
+    token: &LocalToken,
+    through: impl FnOnce(Arc<dyn Directory>) -> Arc<dyn Directory>,
 ) -> (Served, Arc<dyn Directory>, Arc<Outbox>) {
     let store = sqlite(&dir.join("sign-ins.db")).await;
     let directory: Arc<dyn Directory> = Arc::new(store.directory());
@@ -56,7 +68,7 @@ async fn serve_keeping(
     let outbox = Arc::new(Outbox::default());
     setup.mail = Some(Arc::clone(&outbox) as Arc<dyn Mailer>);
     if reached {
-        let directory = Arc::clone(&directory);
+        let directory = through(Arc::clone(&directory));
         let accounts = Accounts::new(store.log(), directory, server, &origin, Arc::new(clock));
         setup.accounts = Some(Arc::new(accounts.unwrap()));
         setup.origin = Some(origin);
@@ -65,7 +77,7 @@ async fn serve_keeping(
     // finds its organization's people.
     let (server, _) = setup.build_on(dir, store.log()).await;
     // As a server starts: the passkeys of its organization's people indexed.
-    server.index_passkeys(&[scope().org()]).await.unwrap();
+    server.index_passkeys(&[scope().org()]).await;
     let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
     (serve_with(server, signin, None).await, directory, outbox)
 }
@@ -672,44 +684,6 @@ fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_t
         assert_eq!(rejoined["email"], json!("grace@example.com"), "{after}");
         let orgs = directory.organizations(grace_id).await.unwrap();
         assert_eq!(orgs, [her_own, scope().org()]);
-        served.close().await;
-    });
-}
-
-/// A passkey made before passkeys were indexed (#1523) signs in on a server just started, with
-/// no session of its person's to open their account first: the server indexes everyone's in
-/// its organizations as it starts.
-#[test]
-fn a_passkey_made_before_the_index_signs_in_on_a_server_just_started() {
-    block_on!(async {
-        let dir = folder("accounts-indexed-at-start");
-        let token = LocalToken::new([24; 32]);
-        let (served, directory, _) = serve_keeping(&dir, true, &token).await;
-        let mut tablet = Authenticator::new(ORIGIN).unwrap();
-        join(
-            &served,
-            invite(&served, &token, OrgRole::Member).await,
-            &mut tablet,
-        )
-        .await;
-        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
-        let listed = Request::PeopleList {
-            after: None,
-            limit: None,
-        };
-        let people = asked(&mut here, &listed).await;
-        let ada: PrincipalId = serde_json::from_value(invited(&people)["id"].clone()).unwrap();
-        served.close().await;
-        // As a store from before the index holds it: her passkey indexed nowhere, though she
-        // is in the organization.
-        let org = scope().org();
-        directory.leave(ada, org).await.unwrap();
-        directory.unlink_email_if_alone(ada).await.unwrap();
-        directory.join(ada, org).await.unwrap();
-
-        let (served, _, _) = serve_keeping(&dir, true, &token).await;
-        let session = sign_in(&served, &mut tablet).await;
-        assert!(session.is_string(), "{session}");
         served.close().await;
     });
 }

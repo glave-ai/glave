@@ -218,7 +218,7 @@ pub(crate) async fn wire(
     let server = Server::new(wiring, settings, scope.org(), answering);
     // Before anyone signs in: passkeys made before they were indexed sign in at once.
     if accounts.is_some() {
-        server.index_passkeys(&store.organizations().await?).await?;
+        server.index_passkeys(&store.organizations().await?).await;
     }
     server.answer_filters(&filters);
     tidy(memory.as_ref(), &tidier, tidy_model);
