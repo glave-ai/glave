@@ -321,7 +321,7 @@ fn forgetting_destroys_the_key_so_no_version_can_be_opened() {
         let live = memories.list(&on(shared())).await.unwrap();
         assert_eq!(live, std::slice::from_ref(&kept));
         assert!(kit.store.keys().rotation_due(&shared()).await.unwrap());
-        let done = memories.housekeep(&[shared(), inbox()]).await.unwrap();
+        let done = memories.housekeep_in(shared().org()).await.unwrap();
         assert_eq!(done.rotated, 1, "housekeeping rotates the project key");
         assert!(!kit.store.keys().rotation_due(&shared()).await.unwrap());
         // A fresh process reads the same: the memory is gone, the other kept.
@@ -345,7 +345,7 @@ fn retention_forgets_by_glave_which_can_be_restored_until_the_key_goes() {
                 .unwrap(),
         );
         kit.clock.advance_millis(2 * 86_400_000);
-        let done = memories.housekeep(&[shared()]).await.unwrap();
+        let done = memories.housekeep_in(shared().org()).await.unwrap();
         assert_eq!(done.forgotten, 1);
         assert_eq!(memories.list(&on(shared())).await.unwrap().len(), 0);
         let restored = memories.restore(&mine, old.memory).await.unwrap();
@@ -359,11 +359,12 @@ fn retention_forgets_by_glave_which_can_be_restored_until_the_key_goes() {
     });
 }
 
-/// Erasure reaches every project with memories, not only the ones housekeeping is given (#1486):
-/// in a project no pass has in use, what glave forgot is erased once due and the project key
-/// rotated after a forget, by the organization's pass, so backups lose them too.
+/// One pass housekeeps every project with memories, not only the ones a run has in use
+/// (#1486): in a project none has, a memory past the retention is forgotten by glave, what glave
+/// forgot is erased once due, and the project key rotated after a forget, so backups lose them
+/// too.
 #[test]
-fn every_project_with_memories_is_erased_on_time_not_only_those_in_use() {
+fn every_project_with_memories_is_housekept_not_only_those_in_use() {
     block_on!(async {
         let day = 86_400_000;
         let kit = Kit::new();
@@ -378,7 +379,8 @@ fn every_project_with_memories_is_erased_on_time_not_only_those_in_use() {
                 .unwrap(),
         );
         kit.clock.advance_millis(2 * day);
-        let forgot = memories.housekeep(&[shared()]).await.unwrap();
+        // The organization's pass, which no run's projects in use limit.
+        let forgot = memories.housekeep_in(shared().org()).await.unwrap();
         assert_eq!(forgot.forgotten, 1, "glave forgets it for retention");
         let gone = saved(
             memories
@@ -388,11 +390,8 @@ fn every_project_with_memories_is_erased_on_time_not_only_those_in_use() {
         );
         memories.forget(&mine, gone.memory).await.unwrap();
         kit.clock.advance_millis(31 * day);
-        // As the server housekept: only the person's own project and the one it started in.
-        let elsewhere = memories.housekeep(&[inbox()]).await.unwrap();
-        assert_eq!(elsewhere.erased, 0, "the project not in use is left");
         assert!(kit.store.keys().rotation_due(&shared()).await.unwrap());
-        let done = memories.erase_due_in(shared().org()).await.unwrap();
+        let done = memories.housekeep_in(shared().org()).await.unwrap();
         assert!(done.erased >= 1, "what glave forgot, erased once due");
         assert!(!kit.store.keys().rotation_due(&shared()).await.unwrap());
         let restored = memories.restore(&mine, old.memory).await;

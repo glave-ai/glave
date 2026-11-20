@@ -3,6 +3,7 @@
 //! `glave memory`, which lists, edits, moves and forgets memories from the terminal, through the person's
 //! server (`reach.rs`), as the app does.
 
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use anyhow::Context as _;
 use glave_event::{MemoryId, MemoryScope, PrincipalId};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier};
 use glave_ports::memories::{Control, Memory, Remembered};
-use glave_ports::{ModelProvider, OsEntropy, ProjectId, Scope, SystemClock};
+use glave_ports::{ModelProvider, OrgId, OsEntropy, ProjectId, Scope, SystemClock};
 use glave_session::protocol::{Reply, Request};
 
 use crate::data::{Data, DataLog};
@@ -39,6 +40,9 @@ pub(crate) struct Running {
     pub memory: Arc<GlaveMemory<DataLog>>,
     pub scopes: Vec<Scope>,
     pub person: PrincipalId,
+    /// Whether it housekeeps as it starts and ends: not on the person's server, whose daily job
+    /// housekeeps every organization ([`crate::args::Args::housekeeps_memory`]).
+    housekeeps: bool,
     /// Where what fails in its housekeeping is said.
     said: Said,
 }
@@ -57,11 +61,23 @@ impl Running {
         self.memory.tidy_soon(Some(self.person), &self.scopes);
     }
 
-    /// Housekeeping: retention, erasure that is due, and rotating project keys once keys were
+    /// Housekeeping in the organization of each of this run's projects, every project there with
+    /// memories: retention, erasure that is due, and rotating project keys once keys were
     /// destroyed. Failures are reported, never fatal, but someone must act on them: erasure
     /// that is due waits on them.
     pub(crate) async fn housekeep(&self) {
-        if let Err(error) = self.memory.memories().housekeep(&self.scopes).await {
+        if !self.housekeeps {
+            return;
+        }
+        let orgs: BTreeSet<OrgId> = self.scopes.iter().copied().map(Scope::org).collect();
+        for org in orgs {
+            self.housekeep_in(org).await;
+        }
+    }
+
+    /// [`Running::housekeep`] in `org`.
+    async fn housekeep_in(&self, org: OrgId) {
+        if let Err(error) = self.memory.memories().housekeep_in(org).await {
             self.said.failed("memory housekeeping failed", &error);
         }
     }
@@ -73,10 +89,11 @@ pub(crate) async fn start_for(
     setup: &Setup,
     person: PrincipalId,
     scope: Scope,
+    housekeeps: bool,
 ) -> anyhow::Result<Option<Running>> {
     let settings =
         glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
-    start(store, &settings, person, scope, setup.said).await
+    start(store, &settings, (person, scope), housekeeps, setup.said).await
 }
 
 /// Starts memory for `person`, tidied in `scope` and their own, when `settings` turn it on:
@@ -85,8 +102,8 @@ pub(crate) async fn start_for(
 async fn start(
     store: &Data,
     settings: &MemorySettings,
-    person: PrincipalId,
-    scope: Scope,
+    (person, scope): (PrincipalId, Scope),
+    housekeeps: bool,
     said: Said,
 ) -> anyhow::Result<Option<Running>> {
     if !settings.on {
@@ -116,6 +133,7 @@ async fn start(
         memory: Arc::new(memory),
         scopes: vec![personal, scope],
         person,
+        housekeeps,
         said,
     };
     running.housekeep().await;

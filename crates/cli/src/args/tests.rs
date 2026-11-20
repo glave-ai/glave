@@ -228,3 +228,17 @@ fn errors_are_explained() {
     assert!(parse_words(&["--bogus"]).is_err());
     assert_eq!(parse_words(&["--", "--yes"]).unwrap().prompt, "--yes");
 }
+
+/// The person's server runs no memory housekeeping as it starts or ends: its daily job
+/// housekeeps every organization. Glave run alone, or a program's own server over stdio, which
+/// have no daily job, housekeep their own.
+#[test]
+fn only_a_run_without_the_person_s_server_housekeeps_memory_itself() {
+    assert!(!parse_words(&["serve"]).unwrap().housekeeps_memory());
+    assert!(
+        parse_words(&["serve", "--stdio"])
+            .unwrap()
+            .housekeeps_memory()
+    );
+    assert!(parse_words(&["go"]).unwrap().housekeeps_memory());
+}
