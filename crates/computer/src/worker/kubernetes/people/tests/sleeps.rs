@@ -4,6 +4,7 @@
 //! that comes as the computer sleeps waits for that sleep to let go of the lease, then wakes
 //! it; and a turn takes a free lease, but never as the computer is put to sleep.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -15,6 +16,7 @@ use glave_ports::{
 
 use super::super::super::Kubernetes;
 use super::super::lease::{self, Leasing};
+use super::super::renewed::{removed_then_let_go, renewed_through};
 use super::super::{
     People, Person, State, holds, planned_home, renew_while_awake, slept, start, woken,
 };
@@ -59,6 +61,19 @@ async fn wake_up(person: &Arc<Person>, home: &WorkspaceInfo) -> u64 {
     }
 }
 
+/// One person's computer woken on leases in memory that take no time: those leases, the people
+/// it is one of (which it lives no longer than), the person, its home and the number of its
+/// wake.
+async fn woken_on_leases() -> (Arc<Slow>, People, Arc<Person>, WorkspaceInfo, u64) {
+    let slow = slow(Duration::ZERO, Duration::ZERO);
+    let people = people(leasing(&(Arc::clone(&slow) as Arc<dyn Leases>)));
+    let (org, id, key) = someone();
+    let person = people.person(org, id).unwrap();
+    let home = planned_home(&key).unwrap();
+    let wake = wake_up(&person, &home).await;
+    (slow, people, person, home, wake)
+}
+
 /// The order of #1387: a call found the computer gone on its own, removed what was left, let
 /// go of its lease and woke it again; the last wake's renewal came due while the new wake was
 /// still reaching it, found its lease let go of, and stopped the new wake.
@@ -66,12 +81,7 @@ async fn wake_up(person: &Arc<Person>, home: &WorkspaceInfo) -> u64 {
 fn the_renewal_left_from_the_last_wake_never_stops_the_next() {
     block_on!(async {
         tokio::time::pause();
-        let slow = slow(Duration::ZERO, Duration::ZERO);
-        let people = people(leasing(&(Arc::clone(&slow) as Arc<dyn Leases>)));
-        let (org, id, key) = someone();
-        let person = people.person(org, id).unwrap();
-        let home = planned_home(&key).unwrap();
-        let first = wake_up(&person, &home).await;
+        let (slow, _people, person, home, first) = woken_on_leases().await;
         slept(&person, first, &home).await;
         start(&person, |_| std::future::pending());
         tokio::time::sleep(lease::RENEW * 2).await;
@@ -79,6 +89,55 @@ fn the_renewal_left_from_the_last_wake_never_stops_the_next() {
         assert!(matches!(now, State::Waking(_)), "still waking: {now:?}");
         let renewed = *slow.renewed.lock().unwrap();
         assert_eq!(renewed, 0, "nothing renewed for a wake that ended");
+    });
+}
+
+/// A removal that outlasts the lease keeps it this server's (#1392): with nothing else renewing
+/// it, as when the renewal that found the computer gone is the one removing it, work done under
+/// the lease renews it all the while, where the same wait alone lets it lapse.
+#[test]
+fn a_long_removal_keeps_the_computer_s_lease() {
+    block_on!(async {
+        tokio::time::pause();
+        let (slow, _people, person, _home, wake) = woken_on_leases().await;
+        if let Some(renewal) = person.renewing.lock().unwrap().take() {
+            renewal.abort();
+        }
+        let long = lease::LEASE * 3;
+        let kept = renewed_through(&person, wake, tokio::time::sleep(long)).await;
+        assert!(kept.is_some(), "the lease held all through");
+        assert!(holds(&person), "still this server's");
+        let renewed = *slow.renewed.lock().unwrap();
+        assert!(renewed >= 8, "renewed as it went: {renewed}");
+        tokio::time::sleep(long).await;
+        assert!(
+            !holds(&person),
+            "control: the same wait unrenewed lets it lapse"
+        );
+    });
+}
+
+/// A removal whose lease the store stops renewing stops by the time that lease lapses here, never
+/// after, whenever the next renewal was due: the store lets it lapse a few seconds later, and
+/// another server may wake the computer then (#1392). Nor is a lease no longer surely this
+/// server's let go of.
+#[test]
+fn a_removal_whose_lease_goes_unrenewed_stops_by_its_lapse_and_lets_nothing_go() {
+    block_on!(async {
+        tokio::time::pause();
+        let (slow, _people, person, _home, wake) = woken_on_leases().await;
+        if let Some(renewal) = person.renewing.lock().unwrap().take() {
+            renewal.abort();
+        }
+        slow.failing.store(true, Ordering::SeqCst);
+        let (_, held) = person.held.lock().unwrap().unwrap();
+        let removal = tokio::time::sleep(lease::LEASE * 3);
+        removed_then_let_go(&person, wake, &held, removal).await;
+        // By its lapse, give or take the millisecond a timer rounds up to.
+        let lapse = held.until + Duration::from_millis(1);
+        assert!(tokio::time::Instant::now() <= lapse, "stopped by its lapse");
+        assert!(!holds(&person), "no longer surely this server's");
+        assert_eq!(*slow.released.lock().unwrap(), 0, "nothing let go of");
     });
 }
 
@@ -90,6 +149,8 @@ struct Slow {
     releasing: Duration,
     renewed: Mutex<usize>,
     released: Mutex<usize>,
+    /// Whether every renewal fails, as a store that can't be reached.
+    failing: AtomicBool,
 }
 
 fn slow(renewing: Duration, releasing: Duration) -> Arc<Slow> {
@@ -99,6 +160,7 @@ fn slow(renewing: Duration, releasing: Duration) -> Arc<Slow> {
         releasing,
         renewed: Mutex::new(0),
         released: Mutex::new(0),
+        failing: AtomicBool::new(false),
     })
 }
 
@@ -121,6 +183,9 @@ impl Leases for Slow {
         Box::pin(async move {
             tokio::time::sleep(self.renewing).await;
             *self.renewed.lock().unwrap() += 1;
+            if self.failing.load(Ordering::SeqCst) {
+                return Err(LeaseError::Storage("unreachable".into()));
+            }
             self.leases.renew(lease, ttl).await
         })
     }
