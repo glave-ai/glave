@@ -47,7 +47,8 @@
   --glz-color-border-strong: light-dark(#d3d3d3, #3a3c40);
   --glz-color-divider: light-dark(#f0f0f0, #232528);
 
-  /* The edge of a checkbox or radio: the lightest grey that keeps 3:1 on every surface it sits on. */
+  /* The edge of a control a person fills or picks (a text field, a select, a checkbox, a radio):
+     the lightest grey that keeps 3:1 on every surface it sits on. */
   --glz-color-control-edge: light-dark(#8c8c8c, #6b6d71);
 
   /* Focus: its own quiet blue, never the accent, shown on :focus-visible only. */
