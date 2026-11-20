@@ -160,9 +160,9 @@ Decided 2026-10-29 (#424).
 - **An invite gives no more than its maker may give when it is opened.** An Admin who is made a Member, or an Owner made an Admin, leaves their invites unable to give what they no longer could.
 - **Invites are listed and revoked** by anyone whose role permits inviting: the ones waiting, with their role, who made them and when they expire, never their code. At most 1,000 wait at once.
 - **The five deployments** (`deployments.md`):
-  1. *Laptop:* no one else can reach the server, so an invite is refused, saying so; nothing appears. With its origin set to `http://localhost:<port>`, as 2: an invite's link opens in another browser on the computer, which makes a passkey there.
-  2. *Own server:* where it is reached from elsewhere (its public origin), the owner invites someone, who makes a passkey there.
-  3. *Glave Cloud, personal:* invites with glave accounts, as 2, to an organization someone created, never to a personal space; someone already signed in gains one more organization.
+  1. *Laptop:* no one else can reach the server, so an invite is refused, saying so; nothing appears. With its origin set to `http://localhost:<port>`, for people who share the computer: an invite's link opens in another browser on the computer, which makes a passkey there.
+  2. *Own server:* none: a person's own server is personal, its owner alone (owner decision, 2026-11-16). *Decided*; where it is reached from elsewhere the owner can still invite someone, who makes a passkey there (#424): a gap, the code and its tests to follow (#1553).
+  3. *Glave Cloud, personal:* invites with glave accounts, a link that makes a passkey, to an organization someone created, never to a personal space; someone already signed in gains one more organization.
   4. *Glave Cloud, enterprise:* invites through the company login, as 5.
   5. *Enterprise, self-hosted:* invites through the identity provider. Anyone the provider lets in can still sign in as a Member without one; an invite is how someone arrives as an Admin, or before they have signed in once.
 
