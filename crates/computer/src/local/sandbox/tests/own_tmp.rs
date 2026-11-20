@@ -2,6 +2,7 @@
 //! on Linux each gets one of its own, on macOS none at all; and they read nothing the person
 //! left in `/var/tmp` or, on macOS, in the person's own temp folder.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use glave_ports::block_on;
@@ -44,10 +45,10 @@ fn someone_else_s_commands_share_no_tmp_with_the_person_s() {
     let mut left = vec![PathBuf::from(&owners), PathBuf::from(&theirs)];
     left.extend(elsewhere.iter().cloned());
     let _left = Left(left);
-    let read_elsewhere = elsewhere
-        .iter()
-        .map(|file| format!("cat '{}' 2>/dev/null;", file.display()))
-        .collect::<String>();
+    let mut read_elsewhere = String::new();
+    for file in &elsewhere {
+        let _ = write!(read_elsewhere, "cat '{}' 2>/dev/null; ", file.display());
+    }
     let said = block_on!(async {
         let (computers, owner) = computers(&dir);
         let someone = Sandbox {
