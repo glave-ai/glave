@@ -122,7 +122,18 @@ fn a_browser_signed_in_on_one_server_is_signed_in_on_another_on_the_same_store()
         first.end(&session.id).await.unwrap();
         assert!(
             second.verify(session.token.expose(), true).await.is_ok(),
-            "until it looks again"
+            "taken a moment longer, until it reads again"
+        );
+        assert!(second.signed_in(&session.id));
+        // Signed out through the first, it ends on the second within moments, not a day (#1485).
+        later(&clock, SignedDuration::from_secs(30));
+        assert!(matches!(
+            second.verify(session.token.expose(), true).await,
+            Err(BrowserError::Ended)
+        ));
+        assert!(
+            !second.signed_in(&session.id),
+            "and the watches there see it"
         );
         second.end_others(Some(&other.id)).await.unwrap();
         assert_eq!(
