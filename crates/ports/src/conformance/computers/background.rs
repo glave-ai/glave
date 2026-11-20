@@ -10,7 +10,7 @@ use super::helpers::{failed, run, run_quietly};
 use super::{Verdict, ensure};
 use crate::computer::{
     Command, CommandId, ComputerError, ComputerId, Computers, Ending, KEPT_OUTPUT, MAX_BACKGROUND,
-    OnTimeout, Sandbox, SandboxLevel, SandboxNetwork, Sources, WorkspaceId,
+    OnTimeout, Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork, Sources, WorkspaceId,
 };
 
 /// How long the suite gives a command in the background to do what it must do soon.
@@ -297,6 +297,7 @@ async fn sandboxed<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
         network: SandboxNetwork::Off,
         home: None,
         glave_home: None,
+        caches: SandboxCaches::Kept,
     });
     let id = match computers.start(here, &command).await {
         Err(ComputerError::Unsupported(_)) => return Ok(()),
