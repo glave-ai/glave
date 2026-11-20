@@ -1,5 +1,5 @@
 use glave_ports::block_on;
-use glave_ports::computer::{SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{SandboxCaches, SandboxLevel, SandboxNetwork};
 use glave_ports::testing::TempDir;
 
 use super::*;
@@ -159,6 +159,7 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
             network: SandboxNetwork::Off,
             home: None,
             glave_home: None,
+            caches: SandboxCaches::Kept,
         });
         let started = std::time::Instant::now();
         let mut n = 0usize;

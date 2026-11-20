@@ -14,7 +14,7 @@ use glave_event::{
     Body, ComputerKind, Part, PrincipalId, RemovedReason, ThreadId, WorkspaceRemoved, decode,
 };
 use glave_harness::{Homes, Skill, SkillSource, Skills};
-use glave_ports::computer::{DiskUse, Sandbox, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{DiskUse, Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork};
 use glave_ports::{Message, ProjectId};
 use glave_session::Answering;
 
@@ -51,6 +51,7 @@ fn the_server_says_how_commands_stand_on_a_person_s_computer_not_on_its_own() {
                     network: SandboxNetwork::Direct,
                     home: None,
                     glave_home: None,
+                    caches: SandboxCaches::Kept,
                 }),
                 json!(null),
             ),

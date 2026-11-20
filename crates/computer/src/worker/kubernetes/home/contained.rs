@@ -15,7 +15,7 @@ use std::time::Duration;
 use glave_ports::block_on;
 use glave_ports::computer::{
     Command, CommandId, ComputerId, Computers as _, Ending, Environment, Image, Limits, Sandbox,
-    SandboxLevel, SandboxNetwork, Sources, WorkspaceId,
+    SandboxCaches, SandboxLevel, SandboxNetwork, Sources, WorkspaceId,
 };
 use k8s_openapi::api::core::v1::{Node, Pod, Service};
 use k8s_openapi::api::discovery::v1::EndpointSlice;
@@ -342,6 +342,7 @@ async fn sandboxed(
         network: SandboxNetwork::Direct,
         home: Some(PathBuf::from(PERSON_HOME)),
         glave_home: Some(PathBuf::from(format!("{PERSON_HOME}/.glave"))),
+        caches: SandboxCaches::Kept,
     });
     let output = Tail::default();
     let finished = computers

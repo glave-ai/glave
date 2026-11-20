@@ -16,7 +16,7 @@ use glave_harness::{
     ProjectFolders, Settled, Thread,
 };
 use glave_ports::Caller;
-use glave_ports::computer::{Sandbox, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork};
 use glave_ports::settings::{Hook, Hooks, Judge, Protections};
 use glave_ports::{
     BoxFuture, Effect, InMemoryBlobs, InMemoryLog, InMemoryTools, ProjectId, Purpose, ToolInfo,
@@ -428,6 +428,7 @@ fn a_project_that_gives_full_access_runs_its_commands_without_the_sandbox_once_t
             network: SandboxNetwork::Off,
             home: Some(base.to_path_buf()),
             glave_home: Some(base.join(".glave")),
+            caches: SandboxCaches::Kept,
         };
         let workspace = workspace(&project_dir)
             .await
@@ -480,6 +481,7 @@ fn a_project_that_takes_the_network_offers_its_commands_the_ask_for_it() {
             network: SandboxNetwork::Direct,
             home: Some(base.to_path_buf()),
             glave_home: Some(base.join(".glave")),
+            caches: SandboxCaches::Kept,
         };
         let workspace = workspace(&project_dir)
             .await

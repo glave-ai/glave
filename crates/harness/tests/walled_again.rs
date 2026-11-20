@@ -7,7 +7,9 @@ use std::process::Command;
 use glave_computer::LocalComputers;
 use glave_event::{Forge, RemovedReason, Secret, StopReason, WorkspaceRemoved};
 use glave_harness::{AllowAll, Place, Workspace, record_removed};
-use glave_ports::computer::{CredentialHost, GitCredential, Sandbox, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{
+    CredentialHost, GitCredential, Sandbox, SandboxCaches, SandboxLevel, SandboxNetwork,
+};
 use glave_ports::secrets::{Known, KnownSecrets};
 use glave_ports::testing::{FixedGitCredentials, TempDir, any_secret};
 use glave_ports::{Caller, Clock as _, InMemoryLog, SystemClock};
@@ -45,6 +47,7 @@ async fn persons_workspace(
         network: SandboxNetwork::when(false),
         home: Some(base.to_owned()),
         glave_home: Some(base.join(".glave")),
+        caches: SandboxCaches::Kept,
     };
     let known = KnownSecrets::default();
     known.set(vec![Known::new(
@@ -158,5 +161,90 @@ fn someone_else_s_worktree_made_again_gets_none_of_the_person_s_secrets_or_sign_
             said.contains("no-helper"),
             "no sign-in of the person's: {said}"
         );
+    });
+}
+
+/// Someone else's commands on the person's computer share no package cache with the person's
+/// (#1469): they read nothing the person's commands kept there, and nothing they leave is
+/// found by the person's next command, which would run it as the person.
+#[test]
+fn someone_else_s_commands_share_no_cache_with_the_person_s() {
+    if !glave_computer::sandbox_available() {
+        assert!(std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none());
+        return;
+    }
+    let base = TempDir::outside_temp("walled-caches").unwrap();
+    let repo = base.join("app");
+    std::fs::create_dir_all(&repo).unwrap();
+    sh(&repo, "git init -q --initial-branch=main");
+    let worktrees = base.join("worktrees");
+    let glave_home = base.join(".glave");
+    std::fs::create_dir_all(&glave_home).unwrap();
+    let kept = std::fs::canonicalize(&glave_home)
+        .unwrap()
+        .join("sandbox-cache/xdg");
+    let kept = kept.display();
+    let runs = |command: String| {
+        answer(
+            None,
+            vec![("bash", json!({ "command": command }))],
+            StopReason::ToolUse,
+        )
+    };
+    let answers = vec![
+        runs(format!(
+            "mkdir -p \"$XDG_CACHE_HOME\" && echo fetched > \"$XDG_CACHE_HOME/kept\" && \
+             [ \"$XDG_CACHE_HOME\" = '{kept}' ] && echo kept-there"
+        )),
+        answer(Some("Kept."), vec![], StopReason::EndTurn),
+        runs(format!(
+            "cat '{kept}/kept' 2>/dev/null || echo read-nothing; \
+             mkdir -p \"$XDG_CACHE_HOME\" && echo planted > \"$XDG_CACHE_HOME/tool\"; \
+             echo planted > '{kept}/tool' 2>/dev/null || echo wrote-nothing"
+        )),
+        answer(Some("Tried."), vec![], StopReason::EndTurn),
+        runs(format!(
+            "cat '{kept}/tool' 2>/dev/null || echo found-nothing"
+        )),
+        answer(Some("Looked."), vec![], StopReason::EndTurn),
+    ];
+    block_on!(async {
+        let workspace = persons_workspace(&base, &repo, &worktrees).await;
+        let (harness, _) = harness_with(
+            workspace,
+            answers,
+            AllowAll,
+            InMemoryLog::new(),
+            1,
+            in_the_sandbox(),
+        );
+        let person = Caller::default();
+        let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
+        let grace = Caller {
+            person: Some(someone.unwrap()),
+            ..Caller::default()
+        };
+        let place = || Place::Folder(repo.to_string_lossy().into_owned());
+        let cancel = glave_harness::Cancel::new();
+        let mut said = Vec::new();
+        for (caller, asked) in [(&person, "keep"), (&grace, "plant"), (&person, "look")] {
+            let mut thread = harness
+                .start_thread_in(scope(), caller, place())
+                .await
+                .unwrap();
+            harness
+                .run_turn_as(&mut thread, asked, caller, &cancel, &mut |_| {})
+                .await
+                .unwrap();
+            said.push(results(thread.messages()).join("\n"));
+        }
+        assert!(
+            said[0].contains("kept-there"),
+            "the person's cache: {}",
+            said[0]
+        );
+        assert!(said[1].contains("read-nothing"), "{}", said[1]);
+        assert!(said[1].contains("wrote-nothing"), "{}", said[1]);
+        assert!(said[2].contains("found-nothing"), "{}", said[2]);
     });
 }
