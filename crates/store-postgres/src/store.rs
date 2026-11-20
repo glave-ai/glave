@@ -61,6 +61,10 @@ const IDLE_WITHIN: Duration = Duration::from_secs(30);
 const KEEPALIVE_IDLE: Duration = Duration::from_secs(30);
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
 const KEEPALIVE_RETRIES: u32 = 3;
+/// How long what glave sent may go unacknowledged before the system gives the connection up
+/// (Linux): a database that vanishes in the middle of a request is noticed in a minute, where
+/// keepalives only ask a quiet connection.
+const UNACKNOWLEDGED_WITHIN: Duration = Duration::from_secs(60);
 
 /// One Postgres database: the event log, the blobs' records and their keys, through a bounded
 /// connection pool; with the objects that hold the blobs' bytes.
@@ -105,6 +109,7 @@ impl Store {
         if config.get_connect_timeout().is_none() {
             config.connect_timeout(CONNECTS_WITHIN);
         }
+        let chosen = chose_query_limit(&config);
         limited(&mut config);
         let manager = Manager::from_config(
             config,
@@ -124,6 +129,7 @@ impl Store {
             .await
             .map_err(|e| StoreError::Connect(unavailable(&e)))?;
         schema::refuse_bypassing(&client).await?;
+        queries_limited(&client, chosen).await?;
         schema::migrate(&mut client, &schema::SCHEMA).await?;
         drop(client);
         let clock = Arc::clone(&keys.clock);
@@ -269,8 +275,9 @@ fn principal(text: &str) -> Result<PrincipalId, StoreError> {
 }
 
 /// `config` with glave's limits on every connection it opens: the database stops a query or an
-/// idle transaction past its limit, set after any options the URL gave so they hold whatever it
-/// says, and the system finds a database that vanished in about a minute.
+/// idle transaction past its limit, and the system finds a database that vanished in about a
+/// minute. glave's come before any options the URL gave, so an operator's own setting there
+/// wins (the later of two settings holds).
 fn limited(config: &mut Config) {
     let limits = format!(
         "-c statement_timeout={} -c idle_in_transaction_session_timeout={}",
@@ -278,7 +285,7 @@ fn limited(config: &mut Config) {
         IDLE_WITHIN.as_millis()
     );
     let options = match config.get_options() {
-        Some(given) if !given.is_empty() => format!("{given} {limits}"),
+        Some(given) if !given.is_empty() => format!("{limits} {given}"),
         _ => limits,
     };
     config
@@ -286,7 +293,42 @@ fn limited(config: &mut Config) {
         .keepalives(true)
         .keepalives_idle(KEEPALIVE_IDLE)
         .keepalives_interval(KEEPALIVE_INTERVAL)
-        .keepalives_retries(KEEPALIVE_RETRIES);
+        .keepalives_retries(KEEPALIVE_RETRIES)
+        .tcp_user_timeout(UNACKNOWLEDGED_WITHIN);
+}
+
+/// Whether the URL's own options set the query limit, which glave then takes as the operator's
+/// choice, whatever it is.
+fn chose_query_limit(config: &Config) -> bool {
+    config
+        .get_options()
+        .is_some_and(|given| given.contains("statement_timeout"))
+}
+
+/// Refuses a database whose connections run queries with no time limit, unless the operator
+/// chose that in the URL: the setting glave sends as each connection opens is dropped by a
+/// connection pooler between that ignores it, which would leave every query unbounded unseen.
+async fn queries_limited(client: &Object, chosen: bool) -> Result<(), StoreError> {
+    let limit: String = client
+        .query_one("SELECT current_setting('statement_timeout')", &[])
+        .await
+        .and_then(|row| row.try_get(0))
+        .map_err(|e| StoreError::Connect(describe(&e)))?;
+    unlimited_refused(&limit, chosen)
+}
+
+/// The refusal for a database whose query limit is `limit` (`0` for none), unless chosen.
+fn unlimited_refused(limit: &str, chosen: bool) -> Result<(), StoreError> {
+    if chosen || limit != "0" {
+        return Ok(());
+    }
+    Err(StoreError::Connect(format!(
+        "the database did not take the {} limit glave sets on each query, so a stuck query \
+         would never end; a connection pooler between may be dropping it: set \
+         statement_timeout for glave's database user, or in the database URL's options, and \
+         start again",
+        glave_ports::spoken(QUERIES_WITHIN)
+    )))
 }
 
 /// Borrows a connection from the pool for work in `org`: row-level security then lets it read
@@ -355,7 +397,8 @@ fn unavailable(error: &PoolError) -> String {
 pub(crate) fn describe(error: &tokio_postgres::Error) -> String {
     match error.as_db_error() {
         Some(said) if timed_out(said) => format!(
-            "a query ran past its limit of {}, and the database stopped it",
+            "a query ran past its time limit ({} unless the database URL sets another), and \
+             the database stopped it",
             glave_ports::spoken(QUERIES_WITHIN)
         ),
         Some(said) if said.code() == &SqlState::IDLE_IN_TRANSACTION_SESSION_TIMEOUT => format!(
@@ -402,6 +445,37 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "could not connect to the database: the database did not answer within 30 seconds"
+        );
+    }
+
+    #[test]
+    fn a_database_that_runs_queries_unlimited_is_refused_unless_the_operator_chose_it() {
+        let refused = unlimited_refused("0", false).unwrap_err().to_string();
+        assert!(refused.contains("30 seconds limit"), "{refused}");
+        assert!(
+            unlimited_refused("0", true).is_ok(),
+            "the operator's choice"
+        );
+        assert!(unlimited_refused("30s", false).is_ok());
+        assert!(
+            unlimited_refused("5min", false).is_ok(),
+            "a limit of the role's own"
+        );
+    }
+
+    #[test]
+    fn the_operator_s_own_options_come_after_glave_s_and_win() {
+        let mut config: Config = "postgres://glave@db/glave?options=-c%20statement_timeout%3D5s"
+            .parse()
+            .unwrap();
+        assert!(chose_query_limit(&config));
+        limited(&mut config);
+        assert_eq!(
+            config.get_options(),
+            Some(
+                "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000 \
+                 -c statement_timeout=5s"
+            )
         );
     }
 }

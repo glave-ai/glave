@@ -358,9 +358,44 @@ fn a_query_held_past_its_limit_is_stopped_saying_how_long_it_had() {
         let error = waited.expect("the query was never stopped").unwrap_err();
         assert_eq!(
             error.to_string(),
-            "the database failed: a query ran past its limit of 30 seconds, and the database \
-             stopped it"
+            "the database failed: a query ran past its time limit (30 seconds unless the \
+             database URL sets another), and the database stopped it"
         );
+    });
+}
+
+#[test]
+fn an_operator_s_own_query_limit_in_the_url_wins_over_glave_s() {
+    block_on!(async {
+        let Some(scratch) = Scratch::new("own-limit").await else {
+            return;
+        };
+        let mut config = scratch.config.clone();
+        let given = config.get_options().unwrap_or_default().to_owned();
+        config.options(format!("{given} -c statement_timeout=1s"));
+        let store = Store::connect_with(
+            config,
+            scratch.keys(),
+            std::sync::Arc::new(scratch.objects.clone()),
+        )
+        .await
+        .unwrap();
+        scratch
+            .admin
+            .batch_execute(&format!(
+                "BEGIN; LOCK TABLE {}.glave_settings IN ACCESS EXCLUSIVE MODE",
+                scratch.schema
+            ))
+            .await
+            .unwrap();
+        // Well before glave's own 30 seconds: only the operator's second stops it this soon.
+        let soon = std::time::Duration::from_secs(15);
+        let waited = tokio::time::timeout(soon, store.server(Uuid::from_u128(7))).await;
+        scratch.admin.batch_execute("ROLLBACK").await.unwrap();
+        drop(store);
+        scratch.drop_schema().await;
+        let stopped = waited.expect("the operator's limit did not hold");
+        assert!(stopped.is_err(), "{stopped:?}");
     });
 }
 
