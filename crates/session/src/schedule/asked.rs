@@ -97,7 +97,6 @@ where
                     ..Caution::default()
                 }),
                 repeating: None,
-                lines: None,
             })
         })
     }
@@ -194,7 +193,6 @@ where
             detail,
             caution,
             repeating: Some(repeating),
-            lines,
         })
     }
 

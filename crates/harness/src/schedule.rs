@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use glave_event::{Arguments, Ask, CardLines, Caution, PrincipalId, Repeating, ThreadId};
+use glave_event::{Arguments, Ask, Caution, PrincipalId, Repeating, ThreadId};
 use glave_ports::{
     BlobStore, BoxFuture, Effect, EventLog, ModelProvider, Scope, ToolCall, ToolOutput, ToolSpec,
 };
@@ -85,8 +85,6 @@ pub struct Confirm {
     pub caution: Option<Caution>,
     /// For a schedule's card, what it was written from.
     pub repeating: Option<Repeating>,
-    /// For a schedule's card, its lines, typed, as `detail` holds them.
-    pub lines: Option<CardLines>,
 }
 
 /// What came of what was asked, for the model, and the schedule it was about, for the person's
@@ -334,7 +332,6 @@ fn request(thread: &Thread, call: &ToolCall, confirm: Confirm) -> ApprovalReques
         caution: confirm.caution,
         outside_sandbox: None,
         repeating: confirm.repeating,
-        lines: confirm.lines,
     }
 }
 

@@ -29,33 +29,39 @@ pub(super) fn asks(event: &RawEvent) -> bool {
 
 /// `event` as a caller who reads `language` is sent it: what an approval asks written in their
 /// language, when the table holds the words it was recorded in, and why it asks, when it was
-/// recorded with its reason; what a service asks and how it was answered; what a fork tells of
-/// its files; `None` when nothing in it changes, as in English.
+/// recorded with its reason, and a schedule's card's lines, typed, which are never kept, in any
+/// language; what a service asks and how it was answered; what a fork tells of its files;
+/// `None` when nothing in it changes, as in English.
 pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent> {
-    if language == Language::English || !asks(event) {
+    let english = language == Language::English;
+    if !asks(event) || (english && event.kind.as_str() != ApprovalRequested::TYPE) {
         return None;
     }
     let Event { header, body } = decode(event.clone()).ok()?;
+    let mut lines = None;
     let body = match body {
         Body::ApprovalRequested(mut asked) => {
             // A schedule's card is written again from what it was written from: its question,
-            // what that was written from, and its lines.
+            // what that was written from, and its lines, a line each in its detail.
             if let Some(repeating) = asked.repeating.as_ref() {
-                let lines = crate::schedule::card_in(language, repeating);
-                asked.asking = Some(crate::schedule::asked_in(language, repeating));
-                asked.detail = (lines.as_ref()).map_or(asked.detail, CardLines::joined);
-                asked.lines = lines.or(asked.lines);
+                lines = crate::schedule::card_in(language, repeating);
+                if !english {
+                    asked.asking = Some(crate::schedule::asked_in(language, repeating));
+                    asked.detail = (lines.as_ref()).map_or(asked.detail, CardLines::joined);
+                }
             }
             let ask = asked.asking.as_ref().map(|ask| word(language, ask));
             let caution = asked
                 .reason
                 .as_ref()
                 .and_then(|reason| caution_in(language, reason));
-            if ask.is_none() && caution.is_none() {
+            if lines.is_none() && (english || (ask.is_none() && caution.is_none())) {
                 return None;
             }
-            asked.ask = ask.unwrap_or(asked.ask);
-            asked.caution = caution.or(asked.caution);
+            if !english {
+                asked.ask = ask.unwrap_or(asked.ask);
+                asked.caution = caution.or(asked.caution);
+            }
             Body::ApprovalRequested(asked)
         }
         Body::ServiceAsked(mut asked) => {
@@ -92,7 +98,21 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
         }
         _ => return None,
     };
-    Event { header, body }.to_raw().ok()
+    let raw = Event { header, body }.to_raw().ok()?;
+    match lines {
+        Some(lines) => with_lines(raw, &lines),
+        None => Some(raw),
+    }
+}
+
+/// `raw`, an `approval.requested`, with a schedule's card's `lines`, typed, as a client draws
+/// each by what it says: built as it is sent from what the card was written from, never kept.
+fn with_lines(mut raw: RawEvent, lines: &CardLines) -> Option<RawEvent> {
+    let mut data: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(raw.data.get()).ok()?;
+    data.insert("lines".to_owned(), serde_json::to_value(lines).ok()?);
+    raw.data = serde_json::value::to_raw_value(&data).ok()?;
+    Some(raw)
 }
 
 /// `note` as a caller who reads `language` is sent it: an event's sentences, and why a
@@ -177,7 +197,7 @@ mod tests {
             detail.contains(prompt),
             "the model's words stay as they are: {detail}"
         );
-        // Its lines, typed, say what the detail says, a line each.
+        // Its lines, typed, built as it is sent, say what the detail says, a line each.
         let lines = &data["lines"];
         let typed: Vec<&str> = ["when", "chat", "prompt"]
             .iter()
@@ -185,5 +205,10 @@ mod tests {
             .collect();
         assert_eq!(typed.len(), 3, "{lines}");
         assert_eq!(typed.join("\n"), detail);
+        // In English too, though nothing else in it changes.
+        let english = event_in(&raw, Language::English).unwrap();
+        let data = serde_json::to_value(&english.data).unwrap();
+        let when = data["lines"]["when"].as_str().unwrap();
+        assert!(when.starts_with("Monday to Friday"), "{data}");
     }
 }

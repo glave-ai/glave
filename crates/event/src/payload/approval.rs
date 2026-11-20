@@ -72,11 +72,6 @@ pub struct ApprovalRequested {
     /// question and its `detail` again in the reader's language (version 2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeating: Option<Repeating>,
-    /// For a schedule's card, its lines, typed, as `detail` holds them a line each, so a client
-    /// draws each by what it says; written again in the reader's language with `detail`
-    /// (version 2).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lines: Option<CardLines>,
 }
 
 /// A schedule's card's lines, in the server's words: when it runs on whose clock, the chat its
@@ -182,7 +177,7 @@ pub enum Verdict {
 
 impl Payload for ApprovalRequested {
     const TYPE: &'static str = REQUESTED;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 3;
 }
 
 impl Payload for ApprovalDecided {
@@ -190,13 +185,22 @@ impl Payload for ApprovalDecided {
     const VERSION: u32 = 1;
 }
 
+/// `data`, a request of version 1 or 2, without the card's lines a version 2 kept.
+fn without_lines(data: &RawValue) -> serde_json::Result<ApprovalRequested> {
+    let mut read: serde_json::Map<String, serde_json::Value> = parse(data)?;
+    read.remove("lines");
+    serde_json::from_value(serde_json::Value::Object(read))
+}
+
 pub(crate) fn decode_requested(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<ApprovalRequested>> {
     match version {
-        // Version 2 only adds what an approval may ask and why: version 1 reads as it is.
-        1 | 2 => Some(parse(data)),
+        // Version 2 only adds what an approval may ask and why, and a schedule's card's lines,
+        // typed, which version 3 no longer keeps: `detail` holds them a line each, in order.
+        1 | 2 => Some(without_lines(data)),
+        3 => Some(parse(data)),
         _ => None,
     }
 }
