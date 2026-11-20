@@ -356,6 +356,16 @@ impl<L: EventLog> EventLog for Observed<L> {
         self.inner.latest_of(scope, thread, kinds)
     }
 
+    fn projects_with(
+        &self,
+        org: OrgId,
+        ledger: ThreadId,
+        after: Option<glave_ports::ProjectId>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<glave_ports::ProjectId>, LogError>> + Send {
+        self.inner.projects_with(org, ledger, after, limit)
+    }
+
     fn locate(
         &self,
         org: OrgId,

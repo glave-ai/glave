@@ -85,6 +85,7 @@ impl Daily<'_> {
             tidied = Instant::now();
             if let Some(memory) = self.memory {
                 memory.housekeep().await;
+                self.erase(memory).await;
                 memory.memory.tidy_soon(Some(memory.person), &memory.scopes);
             }
         }
@@ -92,6 +93,28 @@ impl Daily<'_> {
 }
 
 impl Daily<'_> {
+    /// Erases what is due in the memory of every project in every organization on the store,
+    /// not only the ones `memory` keeps (#1486). When the store can't say which they are, it is
+    /// tried again the next day.
+    async fn erase(&self, memory: &Running) {
+        match self.store.organizations().await {
+            Ok(organizations) => {
+                let leases = self.store.leases();
+                let memories = memory.memory.memories();
+                super::erasing::every_organization(
+                    organizations,
+                    memories,
+                    leases.as_ref(),
+                    self.holder,
+                )
+                .await;
+            }
+            Err(error) => {
+                tracing::error!(error = %format!("{error:#}"), "memory could not be erased");
+            }
+        }
+    }
+
     /// Sweeps the blobs of every organization on the store. When the store can't say which they
     /// are, it is tried again the next day.
     async fn sweep(&self) {

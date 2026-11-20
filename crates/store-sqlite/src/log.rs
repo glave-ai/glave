@@ -212,6 +212,38 @@ impl EventLog for SqliteLog {
         async move { crate::views::rebuild(&this, &this.connection, &scope, thread).await }
     }
 
+    fn projects_with(
+        &self,
+        org: OrgId,
+        ledger: ThreadId,
+        after: Option<ProjectId>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<ProjectId>, LogError>> + Send {
+        let connection = Arc::clone(&self.connection);
+        async move {
+            let found = run(&connection, move |connection| {
+                let mut statement = connection.prepare_cached(
+                    "SELECT DISTINCT project FROM events
+                     WHERE thread = ?1 AND org = ?2 AND (?3 IS NULL OR project > ?3)
+                     ORDER BY project LIMIT ?4",
+                )?;
+                let after = after.map(|project| project.to_string());
+                let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+                let rows = statement.query_map(
+                    params![ledger.to_string(), org.to_string(), after, limit],
+                    |row| row.get::<_, String>(0),
+                )?;
+                rows.collect::<Result<Vec<String>, _>>()
+            })
+            .await
+            .map_err(|e| LogError::Storage(e.to_string()))?;
+            found
+                .iter()
+                .map(|project| Ok(ProjectId::from_uuid(parse_uuid(project)?)))
+                .collect()
+        }
+    }
+
     fn locate(
         &self,
         org: OrgId,

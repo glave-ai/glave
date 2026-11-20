@@ -14,7 +14,7 @@ use glave_keys::KeyMaterial;
 use glave_ports::search::Found;
 use glave_ports::{
     Blob, BlobError, BlobStore, Chunks, Directory, Eraser, EventLog, Leases, Located, LogError,
-    Objects, OrgId, Projects, Scope, Swept, ThreadQuery, ThreadView,
+    Objects, OrgId, ProjectId, Projects, Scope, Swept, ThreadQuery, ThreadView,
 };
 use glave_store_postgres as postgres;
 use glave_store_sqlite as sqlite;
@@ -275,6 +275,19 @@ impl EventLog for DataLog {
         match self {
             Self::Sqlite(log) => log.search(scope, query, except, limit).await,
             Self::Postgres(log) => log.search(scope, query, except, limit).await,
+        }
+    }
+
+    async fn projects_with(
+        &self,
+        org: OrgId,
+        ledger: ThreadId,
+        after: Option<ProjectId>,
+        limit: usize,
+    ) -> Result<Vec<ProjectId>, LogError> {
+        match self {
+            Self::Sqlite(log) => log.projects_with(org, ledger, after, limit).await,
+            Self::Postgres(log) => log.projects_with(org, ledger, after, limit).await,
         }
     }
 

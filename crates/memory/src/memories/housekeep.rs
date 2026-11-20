@@ -1,11 +1,14 @@
 //! Housekeeping, run from time to time (when glave starts, when a session ends, and on the
 //! session server's scheduler tick): memories past the retention are forgotten by glave, keys
 //! whose erasure is due are destroyed, and a project key is rotated once a key was destroyed
-//! under it, batching the forgets since the last run, so backups lose them too.
+//! under it, batching the forgets since the last run, so backups lose them too. Retention runs
+//! in the projects in use; erasure in every project of an organization that has memories
+//! ([`Memories::erase_due_in`]), so a forget anywhere is erased on time (#1486).
 
 use glave_event::{At, MemoryId, Principal};
 use glave_ports::memories::MemoryError;
-use glave_ports::{Erasable, EventLog, Scope};
+use glave_ports::stream::Reserved;
+use glave_ports::{Erasable, EventLog, OrgId, Scope};
 use jiff::SignedDuration;
 
 use super::Memories;
@@ -13,6 +16,9 @@ use super::write::Erasure;
 
 /// How long glave's own forgets wait before their keys are destroyed, so they can be undone.
 const ERASE_AFTER_DAYS: i64 = 30;
+
+/// How many projects one page of an organization's names, while erasure goes through them all.
+const PROJECTS_A_PAGE: usize = 100;
 
 /// What one housekeeping run did.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -67,31 +73,69 @@ impl<L: EventLog + 'static> Memories<L> {
                     done.forgotten = done.forgotten.saturating_add(1);
                 }
             }
-            let due: Vec<MemoryId> = self
-                .with_book(*scope, |book| {
-                    let waited = book.entries.values().filter_map(|entry| {
-                        entry
-                            .forgot
-                            .as_ref()
-                            .filter(|forgot| forgot.erase_at <= now)
-                            .map(|_| entry.memory)
-                    });
-                    waited.chain(book.erasing.iter().copied()).collect()
-                })
+            let erased = self.erase_due(*scope).await?;
+            done.erased = done.erased.saturating_add(erased.erased);
+            done.rotated = done.rotated.saturating_add(erased.rotated);
+        }
+        Ok(done)
+    }
+
+    /// Erases what is due in every project of `org` that has memories, a page of them at a time,
+    /// whoever's they are and whether or not they are in use: keys whose erasure is due destroyed,
+    /// and each project key rotated once a key was destroyed under it, so backups lose a forget
+    /// within a day wherever it was made (`specs/memory.md`, "Forgetting"). Retention is left to
+    /// the projects in use ([`Memories::housekeep`]).
+    pub async fn erase_due_in(&self, org: OrgId) -> Result<Housekept, MemoryError> {
+        let mut done = Housekept::default();
+        let mut after = None;
+        loop {
+            let page = self
+                .inner
+                .log
+                .projects_with(org, Reserved::Memory.id(), after, PROJECTS_A_PAGE)
+                .await
+                .map_err(|error| MemoryError::Storage(error.to_string()))?;
+            for project in &page {
+                let erased = self.erase_due(Scope::glaves_own(org, *project)).await?;
+                done.erased = done.erased.saturating_add(erased.erased);
+                done.rotated = done.rotated.saturating_add(erased.rotated);
+            }
+            match page.last() {
+                Some(last) if page.len() == PROJECTS_A_PAGE => after = Some(*last),
+                _ => return Ok(done),
+            }
+        }
+    }
+
+    /// Destroys the keys in `scope` whose erasure is due, then rotates its project key if a key
+    /// was destroyed under it.
+    async fn erase_due(&self, scope: Scope) -> Result<Housekept, MemoryError> {
+        let mut done = Housekept::default();
+        let now = self.now();
+        let due: Vec<MemoryId> = self
+            .with_book(scope, |book| {
+                let waited = book.entries.values().filter_map(|entry| {
+                    entry
+                        .forgot
+                        .as_ref()
+                        .filter(|forgot| forgot.erase_at <= now)
+                        .map(|_| entry.memory)
+                });
+                waited.chain(book.erasing.iter().copied()).collect()
+            })
+            .await?;
+        for memory in &due {
+            self.inner
+                .eraser
+                .destroy(scope, Erasable::Memory(*memory))
                 .await?;
-            for memory in &due {
-                self.inner
-                    .eraser
-                    .destroy(*scope, Erasable::Memory(*memory))
-                    .await?;
-                done.erased = done.erased.saturating_add(1);
-            }
-            if !due.is_empty() {
-                self.drop_book(*scope);
-            }
-            if self.inner.eraser.rotate(*scope).await? {
-                done.rotated = done.rotated.saturating_add(1);
-            }
+            done.erased = done.erased.saturating_add(1);
+        }
+        if !due.is_empty() {
+            self.drop_book(scope);
+        }
+        if self.inner.eraser.rotate(scope).await? {
+            done.rotated = done.rotated.saturating_add(1);
         }
         Ok(done)
     }

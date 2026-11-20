@@ -359,6 +359,47 @@ fn retention_forgets_by_glave_which_can_be_restored_until_the_key_goes() {
     });
 }
 
+/// Erasure reaches every project with memories, not only the ones housekeeping is given (#1486):
+/// in a project no pass has in use, what glave forgot is erased once due and the project key
+/// rotated after a forget, by the organization's pass, so backups lose them too.
+#[test]
+fn every_project_with_memories_is_erased_on_time_not_only_those_in_use() {
+    block_on!(async {
+        let day = 86_400_000;
+        let kit = Kit::new();
+        let mut rules = rules();
+        rules.retention_days = Some(1);
+        let memories = kit.memories(rules, 1);
+        let mine = writer(shared());
+        let old = saved(
+            memories
+                .remember(&mine, "An old fact", MemoryScope::Project, None, false)
+                .await
+                .unwrap(),
+        );
+        kit.clock.advance_millis(2 * day);
+        let forgot = memories.housekeep(&[shared()]).await.unwrap();
+        assert_eq!(forgot.forgotten, 1, "glave forgets it for retention");
+        let gone = saved(
+            memories
+                .remember(&mine, "A fact to forget", MemoryScope::Project, None, false)
+                .await
+                .unwrap(),
+        );
+        memories.forget(&mine, gone.memory).await.unwrap();
+        kit.clock.advance_millis(31 * day);
+        // As the server housekept: only the person's own project and the one it started in.
+        let elsewhere = memories.housekeep(&[inbox()]).await.unwrap();
+        assert_eq!(elsewhere.erased, 0, "the project not in use is left");
+        assert!(kit.store.keys().rotation_due(&shared()).await.unwrap());
+        let done = memories.erase_due_in(shared().org()).await.unwrap();
+        assert!(done.erased >= 1, "what glave forgot, erased once due");
+        assert!(!kit.store.keys().rotation_due(&shared()).await.unwrap());
+        let restored = memories.restore(&mine, old.memory).await;
+        assert!(restored.is_err(), "erased for good: {restored:?}");
+    });
+}
+
 #[test]
 fn moving_saves_in_the_new_place_and_forgets_the_old() {
     block_on!(async {

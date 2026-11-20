@@ -271,6 +271,42 @@ impl EventLog for PostgresLog {
         }
     }
 
+    fn projects_with(
+        &self,
+        org: OrgId,
+        ledger: ThreadId,
+        after: Option<ProjectId>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<ProjectId>, LogError>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let client = connection(&pool, org).await.map_err(storage)?;
+            let statement = client
+                .prepare_cached(
+                    "SELECT DISTINCT project FROM events
+                     WHERE thread = $1 AND org = $2 AND ($3::uuid IS NULL OR project > $3)
+                     ORDER BY project LIMIT $4",
+                )
+                .await
+                .map_err(database)?;
+            let after = after.map(ProjectId::as_uuid);
+            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+            let rows = client
+                .query(
+                    &statement,
+                    &[&ledger.as_uuid(), &org.as_uuid(), &after, &limit],
+                )
+                .await
+                .map_err(database)?;
+            rows.iter()
+                .map(|row| {
+                    let project: Uuid = row.try_get(0).map_err(LogError::corrupt)?;
+                    Ok(ProjectId::from_uuid(project))
+                })
+                .collect()
+        }
+    }
+
     fn locate(
         &self,
         org: OrgId,
