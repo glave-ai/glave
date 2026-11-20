@@ -15,6 +15,7 @@ use glave_ports::{BoxFuture, Clock, Directory, EventLog, IdentityKey, OrgId};
 
 use super::browsers::{
     BrowserError, Browsers, Ceremony, Discovered, Discoverer, Session, account_of, kept, new_id,
+    passkey_key,
 };
 
 /// Accounts whose sessions and passkeys a server keeps in memory at once. Past this, those no
@@ -54,12 +55,13 @@ impl Accounts {
         clock: Arc<dyn Clock>,
     ) -> Result<Self, BrowserError> {
         let (opening, at, ticking) = (log, origin.clone(), Arc::clone(&clock));
+        let indexing = Arc::clone(&directory);
         let open: Opener = Box::new(move |person| {
             let (log, server, origin) = (opening.clone(), server.clone(), at.clone());
             let clock: Box<dyn Clock> = Box::new(Arc::clone(&ticking));
+            let index = Arc::clone(&indexing);
             Box::pin(async move {
-                let handle = person.as_uuid();
-                Browsers::open_account(log, person, server, handle, &origin, clock).await
+                Browsers::open_account(log, person, server, &origin, clock, index).await
             })
         });
         Ok(Self {
@@ -140,12 +142,23 @@ impl Accounts {
             .map_err(|e| BrowserError::Keep(e.to_string()))
     }
 
-    /// Records that `person` belongs to `org`, after the organizations they joined before.
+    /// Indexes the passkeys of `person`'s account by their credential ids, as a server starts,
+    /// so those made before the index sign in from its first request.
+    pub async fn index(&self, person: PrincipalId) -> Result<(), BrowserError> {
+        self.browsers(person)
+            .await?
+            .index_passkeys(&self.directory)
+            .await
+    }
+
+    /// Records that `person` belongs to `org`, after the organizations they joined before, and
+    /// indexes their passkeys again, which an account in no organization lets go of.
     pub async fn join(&self, person: PrincipalId, org: OrgId) -> Result<(), BrowserError> {
         self.directory
             .join(person, org)
             .await
-            .map_err(|e| BrowserError::Keep(e.to_string()))
+            .map_err(|e| BrowserError::Keep(e.to_string()))?;
+        self.index(person).await
     }
 
     /// Takes `person` out of `org`: their sessions sign them in there no more. Left in no
@@ -192,12 +205,20 @@ impl Accounts {
         discovered: Discovered,
     ) -> Result<(PrincipalId, Session), BrowserError> {
         let unknown = self.discoverer.no_account_knows(&discovered);
+        // The credential first, in the index of every account's passkeys, so an answer whose
+        // credential no account has is refused before any person's ledger is opened, the same
+        // work whatever id it names (#1523).
+        let indexed = self
+            .directory
+            .find(&passkey_key(discovered.credential())?)
+            .await
+            .map_err(|e| BrowserError::Keep(e.to_string()))?;
         let member = match PrincipalId::try_from(discovered.handle()) {
-            Ok(person) => self
+            Ok(person) if indexed == Some(person) => self
                 .member(person)
                 .await
                 .map(|(browsers, _)| (person, browsers)),
-            Err(_) => Err(BrowserError::Ended),
+            _ => Err(BrowserError::Ended),
         };
         let (person, browsers) = match member {
             Ok(member) => member,

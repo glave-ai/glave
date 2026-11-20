@@ -8,10 +8,12 @@
 //! sign-in through a provider ends when the provider stops renewing it.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use glave_event::{At, AuthMethod, PrincipalId, Secret};
 use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId};
 use jiff::SignedDuration;
 
 use crate::naming::given_name;
@@ -20,6 +22,10 @@ use crate::protocol::{ApiError, PasskeySummary, Reply, SignInWay, code};
 use crate::providers::local;
 use crate::server::Server;
 use crate::words::Sentence;
+
+/// How long a server, as it starts, indexes people's passkeys before it goes on starting, the
+/// rest indexed as each account is opened.
+const INDEXING: Duration = Duration::from_secs(30);
 
 /// How long a passkey made by email is told of on the person's other browsers: long enough to
 /// be seen on any device used within the week.
@@ -156,6 +162,48 @@ where
             }
         }
         Ok(options(self.browsers()?.get_options()?))
+    }
+
+    /// Indexes the passkeys of everyone in `orgs` who joined with a glave account, as a server
+    /// starts, so a passkey made before the index (#1523), whose account no request has opened
+    /// here yet, signs in from the first request. Each organization's people are read apart
+    /// from what this server keeps. It never stops the start: an organization or a person that
+    /// can't be read is skipped, and past 30 seconds the rest is left, each said in the log,
+    /// for the account's next opening here to index. Nothing where the server keeps no glave
+    /// accounts.
+    pub async fn index_passkeys(&self, orgs: &[OrgId]) {
+        let Some(accounts) = self.inner.accounts.as_deref() else {
+            return;
+        };
+        let indexed = AtomicUsize::new(0);
+        let all = async {
+            for org in orgs {
+                let people = match self.people_apart(*org).await {
+                    Ok(people) => people,
+                    Err(error) => {
+                        tracing::warn!(%error, %org, "could not read whose passkeys to index");
+                        continue;
+                    }
+                };
+                for person in people.with_accounts() {
+                    match accounts.index(person).await {
+                        Ok(()) => {
+                            indexed.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, "a person's passkeys were not indexed");
+                        }
+                    }
+                }
+            }
+        };
+        if tokio::time::timeout(INDEXING, all).await.is_err() {
+            tracing::warn!(
+                indexed = indexed.load(Ordering::Relaxed),
+                "indexing passkeys took over {}; the rest are indexed as their accounts are opened",
+                glave_ports::spoken(INDEXING)
+            );
+        }
     }
 
     /// Answers `passkey/get`: the browser signed in with a passkey, the local person's or, by

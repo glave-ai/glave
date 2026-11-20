@@ -22,6 +22,8 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::signups::linked;
+
+mod indexing;
 use crate::support::issuer::fixed_clock;
 use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, make_passkey, serve_with};
 use crate::support::*;
@@ -37,6 +39,16 @@ async fn serve_keeping(
     dir: &Path,
     reached: bool,
     token: &LocalToken,
+) -> (Served, Arc<dyn Directory>, Arc<Outbox>) {
+    serve_through(dir, reached, token, |directory| directory).await
+}
+
+/// [`serve_keeping`], its accounts reaching the directory through what `through` makes of it.
+async fn serve_through(
+    dir: &Path,
+    reached: bool,
+    token: &LocalToken,
+    through: impl FnOnce(Arc<dyn Directory>) -> Arc<dyn Directory>,
 ) -> (Served, Arc<dyn Directory>, Arc<Outbox>) {
     let store = sqlite(&dir.join("sign-ins.db")).await;
     let directory: Arc<dyn Directory> = Arc::new(store.directory());
@@ -56,12 +68,16 @@ async fn serve_keeping(
     let outbox = Arc::new(Outbox::default());
     setup.mail = Some(Arc::clone(&outbox) as Arc<dyn Mailer>);
     if reached {
-        let directory = Arc::clone(&directory);
+        let directory = through(Arc::clone(&directory));
         let accounts = Accounts::new(store.log(), directory, server, &origin, Arc::new(clock));
         setup.accounts = Some(Arc::new(accounts.unwrap()));
         setup.origin = Some(origin);
     }
-    let (server, _) = setup.build(dir).await;
+    // On the same store as its accounts, as a server is, so a server started again on it
+    // finds its organization's people.
+    let (server, _) = setup.build_on(dir, store.log()).await;
+    // As a server starts: the passkeys of its organization's people indexed.
+    server.index_passkeys(&[scope().org()]).await;
     let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
     (serve_with(server, signin, None).await, directory, outbox)
 }
@@ -625,11 +641,13 @@ fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_t
             .find(|person| person["email"] == json!("grace@first.example.com"))
             .map(|person| serde_json::from_value(person["id"].clone()).unwrap())
             .unwrap();
-        // Taken out of this organization, she works in one of her own.
-        let removed = asked(&mut here, &Request::PersonRemove { person: grace_id }).await;
-        assert_eq!(removed, json!({}));
+        // She works in one of her own too when she is taken out of this one, so she is never in
+        // none: an account in none lets its passkeys' index go, which only joining through glave
+        // links again, not the directory alone, as here.
         let her_own = OrgId::from_uuid(Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0a12));
         directory.join(grace_id, her_own).await.unwrap();
+        let removed = asked(&mut here, &Request::PersonRemove { person: grace_id }).await;
+        assert_eq!(removed, json!({}));
         let session = sign_in(&served, &mut phone).await;
         let mut signed_in = elsewhere(&served, session.as_str().map(str::to_owned));
 
