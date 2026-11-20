@@ -150,7 +150,7 @@ Decided by the owner, 2026-10-29: on Glave Cloud people use Glave Cloud's own mo
 - **A hold lapses** an hour after it was made for every server but its own, which counts it until its call ends however long that is: a server that stopped mid-call lets go of what it held within the hour, and a call still running past it can take the balance below nothing by at most its own worst case, as a reported cost above its hold does. The lapse is read on each server's own clock against the hold's time on its maker's, so clocks apart by seconds move it by seconds. A hold whose append may have landed unseen, the store's answer lost or the call dropped meanwhile, is let go of by a charge of nothing naming it, written at once or with the organization's next call; it never waits for the lapse.
 - **The five deployments** (`deployments.md`):
   1. *Laptop:* no `[credits]`, so nothing changes.
-  2. *Own server:* the same, unless its owner turns them on for the people they invite.
+  2. *Own server:* the same: it serves its owner alone (owner decision, 2026-11-16), so there is no one else's spending to hold.
   3. *Glave Cloud, personal:* `[credits]` on; the person is the Owner of their organization of one, sees its balance and sets its limit.
   4. *Glave Cloud, enterprise:* the same, its Owners and Admins seeing everyone's spending and each person their own.
   5. *Enterprise, self-hosted:* their own providers and contracts, so no credits unless their operator turns them on, as a budget the operator adds to.
