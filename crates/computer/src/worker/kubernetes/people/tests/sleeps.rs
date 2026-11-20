@@ -15,6 +15,7 @@ use glave_ports::{
 
 use super::super::super::Kubernetes;
 use super::super::lease::{self, Leasing};
+use super::super::renewed::renewed_through;
 use super::super::{
     People, Person, State, holds, planned_home, renew_while_awake, slept, start, woken,
 };
@@ -79,6 +80,36 @@ fn the_renewal_left_from_the_last_wake_never_stops_the_next() {
         assert!(matches!(now, State::Waking(_)), "still waking: {now:?}");
         let renewed = *slow.renewed.lock().unwrap();
         assert_eq!(renewed, 0, "nothing renewed for a wake that ended");
+    });
+}
+
+/// A removal that outlasts the lease keeps it this server's (#1392): with nothing else renewing
+/// it, as when the renewal that found the computer gone is the one removing it, work done under
+/// the lease renews it all the while, where the same wait alone lets it lapse.
+#[test]
+fn a_long_removal_keeps_the_computer_s_lease() {
+    block_on!(async {
+        tokio::time::pause();
+        let slow = slow(Duration::ZERO, Duration::ZERO);
+        let people = people(leasing(&(Arc::clone(&slow) as Arc<dyn Leases>)));
+        let (org, id, key) = someone();
+        let person = people.person(org, id).unwrap();
+        let home = planned_home(&key).unwrap();
+        let wake = wake_up(&person, &home).await;
+        if let Some(renewal) = person.renewing.lock().unwrap().take() {
+            renewal.abort();
+        }
+        let long = lease::LEASE * 3;
+        let kept = renewed_through(&person, wake, tokio::time::sleep(long)).await;
+        assert!(kept.is_some(), "the lease held all through");
+        assert!(holds(&person), "still this server's");
+        let renewed = *slow.renewed.lock().unwrap();
+        assert!(renewed >= 8, "renewed as it went: {renewed}");
+        tokio::time::sleep(long).await;
+        assert!(
+            !holds(&person),
+            "control: the same wait unrenewed lets it lapse"
+        );
     });
 }
 
