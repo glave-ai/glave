@@ -33,6 +33,7 @@ use crate::{Grow, Lost, Peek, Short, Wake, Waking};
 mod grow;
 mod lease;
 mod reach;
+mod renewed;
 
 pub use lease::Leasing;
 
@@ -383,9 +384,9 @@ fn planned_home(key: &str) -> Result<WorkspaceInfo, ComputerError> {
 }
 
 /// Lets go of `person`'s computer, awake from its wake `wake` with `home` until it went away
-/// on its own: what is left of it removed and its lease let go of, and only then counted
-/// asleep, so the next call wakes it again and that wake takes the lease after this sleep let
-/// go of it. One sleep at a time: a call that finds the computer gone meanwhile waits for this
+/// on its own: what is left of it removed, its lease renewed all the while (`renewed.rs`), then
+/// let go of, and only then counted asleep, so the next call wakes it again and that wake takes
+/// the lease after this sleep let go of it. One sleep at a time: a call that finds the computer gone meanwhile waits for this
 /// one, then wakes it. One no longer awake from that wake, asleep already or woken again since,
 /// is not this sleep's.
 async fn slept(person: &Person, wake: u64, home: &WorkspaceInfo) {
@@ -397,8 +398,8 @@ async fn slept(person: &Person, wake: u64, home: &WorkspaceInfo) {
     // it is removed, so another server wakes it at once rather than once the lease lapses.
     let held = *person.held.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some((_, held)) = held.filter(|(of, held)| *of == wake && held.holds()) {
-        let _ = person.computers.destroy(home.computer).await;
-        person.leasing.release(&held).await;
+        let removing = person.computers.destroy(home.computer);
+        renewed::removed_then_let_go(person, wake, &held, removing).await;
     }
     let_go_of_lease(person, wake);
     let_go(person, wake, home);
