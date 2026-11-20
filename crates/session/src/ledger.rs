@@ -21,7 +21,7 @@ const FINISHED: usize = 100;
 /// Projects whose ledgers a server keeps in memory at once: the most whose schedules a tick reads
 /// on from where it last read (#1542). Past this, the one read longest ago is forgotten, and
 /// read again from its start when next asked for.
-const KEPT: usize = 65_536;
+const KEPT: usize = 1_024;
 
 /// A schedule that has not been deleted.
 #[derive(Debug, Clone)]

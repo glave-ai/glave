@@ -57,10 +57,10 @@ fn tick(ledgers: &mut Ledgers, projects: std::ops::Range<u128>, scheduled: bool)
 #[test]
 fn a_second_tick_reads_no_ledger_again_from_its_start() {
     let mut ledgers = Ledgers::new();
-    let many = 4_096;
+    let many = u128::try_from(KEPT).unwrap();
     assert_eq!(
         tick(&mut ledgers, 0..many, true),
-        4_096,
+        KEPT,
         "the first reads all"
     );
     assert_eq!(
