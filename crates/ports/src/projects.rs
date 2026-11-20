@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use glave_event::{At, Principal, Worded, worded};
+use glave_event::{At, Principal, Worded, repository_address, worded};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -129,28 +129,8 @@ impl FolderKey {
     pub fn stored(&self) -> String {
         match self {
             Self::Path(path) => format!("path:{path}"),
-            Self::Remote(url) => format!("remote:{}", repository(url)),
+            Self::Remote(url) => format!("remote:{}", repository_address(url)),
         }
-    }
-}
-
-/// `url` naming its repository alone: for a url with a scheme (`https://`, `ssh://`), without
-/// the name and password before its host, nor a query or fragment; any other (`git@host:path`,
-/// a folder) as it is, since nothing in it signs in.
-fn repository(url: &str) -> String {
-    let Some((scheme, rest)) = url.split_once("://") else {
-        return url.to_owned();
-    };
-    let rest = rest.split(['?', '#']).next().unwrap_or_default();
-    let (authority, path) = rest
-        .split_once('/')
-        .map_or((rest, None), |(a, p)| (a, Some(p)));
-    let host = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
-    match path {
-        Some(path) => format!("{scheme}://{host}/{path}"),
-        None => format!("{scheme}://{host}"),
     }
 }
 
@@ -161,7 +141,9 @@ impl fmt::Debug for FolderKey {
 }
 
 /// The `origin` remote's url in a repository's `.git/config`, whose text is `config`: read
-/// without running git, which a repository's own config can make run programs.
+/// without running git, which a repository's own config can make run programs. Named by its
+/// repository alone ([`repository_address`]), so a token a clone's url carries goes nowhere
+/// glave keeps or shows it (#1585).
 pub fn origin_remote(config: &str) -> Option<String> {
     let mut in_origin = false;
     for line in config.lines().map(str::trim) {
@@ -171,7 +153,7 @@ pub fn origin_remote(config: &str) -> Option<String> {
             return url
                 .trim_start()
                 .strip_prefix('=')
-                .map(|url| url.trim().to_owned());
+                .map(|url| repository_address(url.trim()));
         }
     }
     None
@@ -323,6 +305,20 @@ mod tests {
             assert_eq!(key.stored(), format!("remote:{named}"));
             assert!(!format!("{key:?} {key}").contains(&token), "{named}");
         }
+    }
+
+    /// A repository's `origin` is read as its repository alone, so a clone's token reaches
+    /// neither project trust nor a folder's source (#1585).
+    #[test]
+    fn an_origin_is_read_without_what_signs_in() {
+        let token = any_secret();
+        let config = format!(
+            "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = https://{token}@github.com/o/r\n"
+        );
+        assert_eq!(
+            origin_remote(&config).as_deref(),
+            Some("https://github.com/o/r")
+        );
     }
 
     /// Each refusal's English, as the stores wrote it before it was typed: what the log reads

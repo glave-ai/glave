@@ -87,7 +87,7 @@ pub use people::{
 };
 pub use plan::{PlanApproved, PlanStatus, PlanStep, PlanUpdated};
 pub use principal::{Principal, PrincipalKind};
-pub use project::{Checkout, FolderSource, ProjectFolderSet, ProjectRemoved};
+pub use project::{Checkout, FolderSource, ProjectFolderSet, ProjectRemoved, repository_address};
 pub use provider::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_account};
 pub use push::{PushClaimed, PushKeyMade, PushSubscribed, PushUnsubscribed};
 pub use remembering::MemorySet;

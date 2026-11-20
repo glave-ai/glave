@@ -25,6 +25,7 @@ pub use id::{
     ScheduleId, ThreadId,
 };
 pub use money::{Currency, Decimal, Money, Nanos};
+pub use payload::repository_address;
 pub use payload::{
     Accent, AcmeRegistered, AppearanceSet, AwakeSet, BrandSet, CertificateIssued, Color, Filters,
     FiltersSet, Grouping, GroupingSet, HeldLogo, Hides, InstructionsFile, InstructionsRead,

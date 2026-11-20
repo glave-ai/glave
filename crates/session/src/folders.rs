@@ -12,7 +12,7 @@ use std::path::Path;
 
 use glave_event::{
     At, Body, Checkout, EventId, FolderSource, Header, Payload, Principal, PrincipalId,
-    PrincipalKind, ProjectFolderSet, Seq, ThreadId, decode, encode,
+    PrincipalKind, ProjectFolderSet, Seq, ThreadId, decode, encode, repository_address,
 };
 use glave_harness::{Looked, Workspace};
 use glave_ports::computer::{ComputerError, CredentialHost, Forge};
@@ -529,6 +529,7 @@ async fn made_on(
                 .new_project(&folder_name(name), Some(&url))
                 .await
                 .map_err(|error| not_cloned(&url, &error))?;
+            let url = repository_address(&url);
             Ok((root, FolderSource::Repository { url }))
         }
         NewFolder::Empty => {

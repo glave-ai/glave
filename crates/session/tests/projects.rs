@@ -506,13 +506,16 @@ fn a_caller_signed_in_elsewhere_gives_no_folder_and_sees_none() {
     });
 }
 
+/// Its source is the repository alone, though its `origin` was cloned with a token in it
+/// (#1585).
 #[test]
 fn the_folder_glave_runs_in_becomes_its_project_s_folder_from_its_repository() {
     let dir = folder("projects-keep");
     let repo = repository(&dir.with_extension("repos"), "app");
+    let token = fake_secret("ghp_");
     sh(
         &repo,
-        "git remote add origin https://example.com/acme/app.git",
+        &format!("git remote add origin https://x-access-token:{token}@example.com/acme/app.git"),
     );
     block_on!(async {
         let server = Setup::new(Vec::new()).build(&dir).await.0;
@@ -530,7 +533,10 @@ fn the_folder_glave_runs_in_becomes_its_project_s_folder_from_its_repository() {
         );
         let folder = folder.unwrap();
         let url = "https://example.com/acme/app.git".to_owned();
-        assert_eq!(folder.source, FolderSource::Repository { url });
+        assert!(
+            folder.source == FolderSource::Repository { url },
+            "the source is the repository alone"
+        );
         assert_eq!(folder.checkout.path, canonical(&repo));
         let thread = start(&server, false).await;
         assert_eq!(opened(&server, thread).await.1, canonical(&repo));
