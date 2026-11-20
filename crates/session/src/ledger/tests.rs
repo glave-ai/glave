@@ -52,16 +52,15 @@ fn tick(ledgers: &mut Ledgers, projects: std::ops::Range<u128>, scheduled: bool)
     from_start
 }
 
-/// Past [`LEDGERS`] projects whose schedules a tick reads, each tick reads each ledger on
-/// from where it last read, not from its start (#1542), and no more than [`LEDGERS`] are
-/// kept whole.
+/// Below [`KEPT`] projects, a second tick reads none of their ledgers again from its start: each
+/// is read on from where the tick before stopped (#1542).
 #[test]
-fn a_tick_past_the_whole_ledgers_reads_only_what_was_added() {
+fn a_second_tick_reads_no_ledger_again_from_its_start() {
     let mut ledgers = Ledgers::new();
-    let many = u128::try_from(LEDGERS).unwrap() * 4;
+    let many = u128::try_from(KEPT).unwrap();
     assert_eq!(
         tick(&mut ledgers, 0..many, true),
-        LEDGERS * 4,
+        KEPT,
         "the first reads all"
     );
     assert_eq!(
@@ -69,22 +68,6 @@ fn a_tick_past_the_whole_ledgers_reads_only_what_was_added() {
         0,
         "the next reads none again"
     );
-    let whole = ledgers.values().filter(|ledger| !ledger.trimmed).count();
-    assert_eq!(whole, LEDGERS);
-    assert_eq!(ledgers.whole.len(), LEDGERS);
-    // Projects the scheduler does not need are forgotten first, one at a time.
-    let others = many..many + 10;
-    assert_eq!(tick(&mut ledgers, others.clone(), false), 10);
-    assert_eq!(tick(&mut ledgers, 0..many, true), 0, "still none");
-    // One read again for its history is whole again, and another trimmed in its place.
-    ledgers.forget(project(0));
-    assert_eq!(tick(&mut ledgers, 0..1, true), 1);
-    assert!(
-        ledgers
-            .get(&project(0))
-            .is_some_and(|ledger| !ledger.trimmed)
-    );
-    assert!(ledgers.whole.len() <= LEDGERS);
     assert_eq!(ledgers.by_read.len(), ledgers.len());
 }
 

@@ -18,14 +18,10 @@ use crate::server::Server;
 
 /// Finished tasks kept in memory for `tasks/list`, newest last, in each project.
 const FINISHED: usize = 100;
-/// Projects whose ledgers a server keeps whole in memory at once, the tasks they finished
-/// lately with them. Past this, the one read longest ago is forgotten, or, where it holds what
-/// the scheduler needs (a schedule, or a task not ended), trimmed to that ([`Ledger::trim`]).
-const LEDGERS: usize = 1_024;
-/// Projects whose ledgers a server keeps in memory at all, trimmed or whole: the most whose
-/// schedules a tick reads on from where it last read (#1542). Past this, the one read longest
-/// ago is forgotten, and read again from its start when next asked for.
-const KEPT: usize = 65_536;
+/// Projects whose ledgers a server keeps in memory at once: the most whose schedules a tick reads
+/// on from where it last read (#1542). Past this, the one read longest ago is forgotten, and
+/// read again from its start when next asked for.
+const KEPT: usize = 1_024;
 
 /// A schedule that has not been deleted.
 #[derive(Debug, Clone)]
@@ -102,9 +98,6 @@ pub(crate) struct Ledger {
     next: u64,
     /// When it was last read, in the order of [`Ledgers`]' reads.
     read_at: u64,
-    /// Whether its tasks finished lately were let go of ([`Ledger::trim`]), so `finished`
-    /// holds only each schedule's latest run, and `tasks/list` reads it again whole.
-    pub(crate) trimmed: bool,
     pub(crate) schedules: BTreeMap<ScheduleId, Scheduled>,
     /// When its last schedule went, while it holds none.
     pub(crate) emptied: Option<At>,
@@ -130,25 +123,6 @@ impl Ledger {
     /// Whether any of it was read yet.
     fn read(&self) -> bool {
         self.next > 0
-    }
-
-    /// Whether the scheduler needs it: it holds a schedule, or a task not ended.
-    fn scheduled(&self) -> bool {
-        !self.schedules.is_empty() || !self.open.is_empty()
-    }
-
-    /// Lets go of the tasks it finished lately, but for each schedule's latest run, which its
-    /// schedule's summary says how it ended: what the scheduler needs is kept, and is small.
-    fn trim(&mut self) {
-        let schedules = &self.schedules;
-        self.finished.retain(|task| {
-            task.started.schedule.is_some_and(|fired| {
-                schedules
-                    .get(&fired.schedule)
-                    .is_some_and(|scheduled| scheduled.last == Some(fired.due))
-            })
-        });
-        self.trimmed = true;
     }
 
     /// Takes in the event at the next `seq`; any other is already in, or not yet. Answers the
@@ -226,9 +200,9 @@ impl Ledger {
 }
 
 /// What each project's ledger says, as far as this server has read it, by where the project
-/// is: two organizations' projects never share one. At most [`LEDGERS`] whole and [`KEPT`] in
-/// all, one let go of at a time, the one read longest ago, so the scheduler's own, read every
-/// tick, are kept and read on from where it last read, however many projects there are.
+/// is: two organizations' projects never share one. At most [`KEPT`], the one read longest ago
+/// let go of first, so the scheduler's own, read every tick, are kept and read on from where it
+/// last read.
 #[derive(Debug, Default)]
 pub(crate) struct Ledgers {
     held: HashMap<Located, Ledger>,
@@ -236,8 +210,6 @@ pub(crate) struct Ledgers {
     reads: u64,
     /// Every ledger held, by when it was last read.
     by_read: BTreeMap<u64, Located>,
-    /// The whole ones, by when each was last read.
-    whole: BTreeMap<u64, Located>,
 }
 
 impl std::ops::Deref for Ledgers {
@@ -254,44 +226,21 @@ impl Ledgers {
     }
 
     /// The ledger of the project `at`, empty until it is read, marked read now. A new one past
-    /// [`LEDGERS`] whole ledgers trims or forgets the one read longest ago, and past [`KEPT`]
-    /// forgets one.
+    /// [`KEPT`] forgets the one read longest ago.
     fn kept(&mut self, at: Located) -> &mut Ledger {
         if let Some(ledger) = self.held.get(&at) {
             self.by_read.remove(&ledger.read_at);
-            if !ledger.trimmed {
-                self.whole.remove(&ledger.read_at);
-            }
-        } else {
-            while self.whole.len() >= LEDGERS && self.let_go(true) {}
-            while self.held.len() >= KEPT && self.let_go(false) {}
+        } else if self.held.len() >= KEPT
+            && let Some((_, &oldest)) = self.by_read.first_key_value()
+        {
+            self.forget(oldest);
         }
         self.reads = self.reads.saturating_add(1);
         let reads = self.reads;
         let ledger = self.held.entry(at).or_default();
         ledger.read_at = reads;
         self.by_read.insert(reads, at);
-        if !ledger.trimmed {
-            self.whole.insert(reads, at);
-        }
         ledger
-    }
-
-    /// Lets go of the ledger read longest ago, of the whole ones when `whole` says so, else of
-    /// all: trims a whole one the scheduler needs, else forgets it. Whether there was one.
-    fn let_go(&mut self, whole: bool) -> bool {
-        let oldest = if whole { &self.whole } else { &self.by_read };
-        let Some((&read_at, &at)) = oldest.first_key_value() else {
-            return false;
-        };
-        match self.held.get_mut(&at) {
-            Some(ledger) if whole && ledger.scheduled() => {
-                ledger.trim();
-                self.whole.remove(&read_at);
-            }
-            _ => self.forget(at),
-        }
-        true
     }
 
     /// The ledger of the project `at`, if read, to change what it holds in memory alone.
@@ -303,7 +252,6 @@ impl Ledgers {
     pub(crate) fn forget(&mut self, at: Located) {
         if let Some(gone) = self.held.remove(&at) {
             self.by_read.remove(&gone.read_at);
-            self.whole.remove(&gone.read_at);
         }
     }
 }
