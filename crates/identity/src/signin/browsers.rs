@@ -47,6 +47,10 @@ pub const SESSION_LIFETIME: SignedDuration = SignedDuration::from_hours(30 * 24)
 /// not write at every request and the ledger grows by a few events a day at most.
 const RECORD_USE: SignedDuration = SignedDuration::from_hours(24);
 
+/// How long a session this server knows is taken without reading the ledger again, so one
+/// ended through another server on the store ends here within this too (#1485).
+pub const READ_AGAIN: SignedDuration = SignedDuration::from_secs(30);
+
 /// Codes waiting at once; a new one past this forgets the oldest.
 const MOST_CODES: usize = 16;
 
@@ -265,6 +269,9 @@ impl Browsers {
     /// presented `here`, on the server's own computer, or was signed in with a passkey.
     pub async fn verify(&self, token: &str, here: bool) -> Result<String, BrowserError> {
         let presented = kept(token);
+        // Read again when stale, so a session ended through another server on this store is
+        // ended here too.
+        self.catch_up_within(READ_AGAIN).await?;
         let mut found = self.find(&presented);
         if found.is_none() {
             // Signed in on another server on this store since this one last looked.
@@ -396,8 +403,19 @@ impl Browsers {
         Ok(())
     }
 
+    /// Reads what the ledger holds past what is known, unless it was read to its end less than
+    /// `within` ago.
+    pub async fn catch_up_within(&self, within: SignedDuration) -> Result<(), BrowserError> {
+        let read = self.state().read;
+        match read {
+            Some(read) if self.clock.now().duration_since(read) < within => Ok(()),
+            _ => self.catch_up().await,
+        }
+    }
+
     /// Reads what the ledger holds past what is known.
     async fn catch_up(&self) -> Result<(), BrowserError> {
+        let now = self.clock.now();
         let after = Seq::new(self.state().next.saturating_sub(1)).ok();
         let mut take = |page: Vec<RawEvent>| {
             let mut state = self.state();
@@ -405,7 +423,9 @@ impl Browsers {
                 state.take(raw);
             }
         };
-        Ok(self.ledger.catch_up(after, &mut take).await?)
+        self.ledger.catch_up(after, &mut take).await?;
+        self.state().read = Some(now);
+        Ok(())
     }
 }
 

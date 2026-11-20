@@ -152,6 +152,67 @@ fn a_list_watch_ends_when_its_browser_signs_out() {
     });
 }
 
+/// A watch on one server of a store ends within moments when its browser is signed out
+/// through another, which tells this one nothing: it reads the browser's sign-ins again
+/// (#1485).
+#[test]
+fn a_watch_ends_soon_after_its_browser_is_signed_out_through_another_server() {
+    block_on!(async {
+        let dir = folder("ended-elsewhere");
+        let clock = ManualClock::at_second(1_791_001_000);
+        let root = glave_keys::InMemoryRoot::new().unwrap();
+        let store =
+            glave_store_sqlite::Store::open_in_memory(glave_keys::KeySettings::new(Arc::new(root)))
+                .unwrap();
+        let open = |log| {
+            Browsers::open(
+                log,
+                scope(),
+                "server".to_owned(),
+                uuid::Uuid::from_u128(0x691),
+                None,
+                Box::new(clock.clone()),
+            )
+        };
+        let here = Arc::new(open(store.log()).await.unwrap());
+        let other = open(store.log()).await.unwrap();
+        let mut setup = Setup::asking(Vec::new(), Answering::Clients);
+        setup.browsers = Some(Arc::clone(&here));
+        let (server, _) = setup.build(&dir).await;
+        let Ok(Reply::Link { code }) = server.request(Request::SigninLink {}).await else {
+            panic!("a link");
+        };
+        let session = here.redeem(code.expose()).await.unwrap();
+        let browser = Caller {
+            auth: Some(Auth {
+                method: AuthMethod::Local,
+                issuer: None,
+                subject: None,
+                session: Some(session.id.clone()),
+            }),
+            ..Caller::default()
+        };
+        let mut list = server
+            .watch_list(&browser, None, None, false)
+            .await
+            .unwrap();
+        tokio::time::pause();
+        // Signed out through the other server, which this one never hears of.
+        other.end(&session.id).await.unwrap();
+        let mut next = std::pin::pin!(list.next());
+        tokio::select! {
+            biased;
+            _ = &mut next => panic!("the watch ended before the store was read again"),
+            () = tokio::task::yield_now() => {}
+        }
+        clock.advance_millis(30_000);
+        let Ok(Some(Watched::Ended(ended))) = tokio::time::timeout(IDLE, next).await else {
+            panic!("the watch went on after its browser was signed out elsewhere");
+        };
+        no_sign_in(&ended);
+    });
+}
+
 /// How long the server takes a company login's token in these tests, in milliseconds: less than
 /// a thread's lease, so the turn it starts keeps its own.
 const TAKEN: i64 = 20_000;

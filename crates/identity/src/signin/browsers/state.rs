@@ -27,6 +27,9 @@ pub(super) struct State {
     pub(super) passkeys: Vec<KeptPasskey>,
     /// The `seq` the ledger's next event takes.
     pub(super) next: u64,
+    /// When the ledger was last read to its end: a session another server on the store ended
+    /// since is still taken here until it is read again.
+    pub(super) read: Option<Timestamp>,
 }
 
 /// One session as the ledger has it.

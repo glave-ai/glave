@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_event::PrincipalId;
-use glave_identity::signin::{BrowserError, Browsers};
+use glave_identity::signin::{BrowserError, Browsers, READ_AGAIN};
 use glave_ports::{BlobStore, Caller, Clock, EventLog, ModelProvider, OrgId};
 use jiff::Timestamp;
 use tokio::sync::watch;
@@ -54,6 +54,8 @@ impl Access {
                     changed = access.sign_ins.changed() => changed.is_ok(),
                     // Looked at once the loop comes round, which finds the token expired.
                     () = expires(left) => true,
+                    // Or the session ended through another server on the store.
+                    () = ended_elsewhere(access.session.as_ref()) => true,
                 };
                 access.heard
             }
@@ -102,6 +104,26 @@ impl Access {
     fn left(&self) -> Option<Duration> {
         let (until, clock) = self.until.as_ref()?;
         Some(Duration::try_from(until.duration_since(clock.now())).unwrap_or_default())
+    }
+}
+
+/// Waits until the browser session `session` follows has ended, as its ledger, read again every
+/// [`READ_AGAIN`], says: ended through another server on the store, which tells this one
+/// nothing (#1485). For ever when the watch follows no session.
+async fn ended_elsewhere(session: Option<&(Arc<Browsers>, String)>) {
+    let Some((browsers, id)) = session else {
+        return pending().await;
+    };
+    let every = Duration::try_from(READ_AGAIN).unwrap_or(Duration::from_secs(30));
+    loop {
+        tokio::time::sleep(every).await;
+        // A ledger that can't be read now is read again next time.
+        if let Err(error) = browsers.catch_up_within(READ_AGAIN).await {
+            tracing::warn!(%error, "could not read a browser's sign-ins again");
+        }
+        if !browsers.signed_in(id) {
+            return;
+        }
     }
 }
 
