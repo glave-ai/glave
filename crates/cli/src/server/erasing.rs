@@ -1,7 +1,7 @@
-//! The daily erasure of memory in every organization on the store (`specs/memory.md`,
-//! "Forgetting"): in each, under a lease, every project that has memories has what is due
-//! erased and its key rotated after a forget, whoever's it is and whether it is in use, so a
-//! forget anywhere leaves backups within a day (#1486). One at a time, as the blob sweep goes
+//! The daily housekeeping of memory in every organization on the store (`specs/memory.md`,
+//! "Forgetting"): in each, under a lease, every project that has memories has what is past the
+//! retention forgotten, what is due erased and its key rotated after a forget, whoever's it is
+//! and whether it is in use, so a forget anywhere leaves backups within a day (#1486). One at a time, as the blob sweep goes
 //! (`sweep.rs`): an organization another server holds, or one that fails, waits for the next day.
 
 use std::time::Duration;
@@ -24,10 +24,11 @@ pub(super) async fn every_organization<L: EventLog + 'static>(
     holder: Holder,
 ) {
     let job = (holder, Leased::MemoryErasure, ERASING);
-    let work = |org| memories.erase_due_in(org);
+    let work = |org| memories.housekeep_in(org);
     leased::every_organization(organizations, leases, job, work, |org, done| match done {
         Ok(Some(done)) => {
-            tracing::info!(%org, erased = done.erased, rotated = done.rotated, "memory erased");
+            let (forgotten, erased, rotated) = (done.forgotten, done.erased, done.rotated);
+            tracing::info!(%org, forgotten, erased, rotated, "memory housekept");
         }
         Ok(None) => tracing::debug!(%org, "another server is erasing this memory"),
         // The store failing: what is due waits on someone acting.

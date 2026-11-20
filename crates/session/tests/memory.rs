@@ -423,7 +423,7 @@ fn the_local_persons_own_changes_are_theirs_with_personal_memory_off() {
         assert_eq!(changed_by(&store).await, [("saved", PrincipalKind::Person)]);
         // Past its retention, glave forgets it: erased in 30 days, unless restored first.
         clock.advance_millis(2 * 86_400_000);
-        let kept = memory.memories().housekeep(&[scope()]).await.unwrap();
+        let kept = memory.memories().housekeep_in(scope().org()).await.unwrap();
         assert_eq!(kept.forgotten, 1);
         let id = saved.first().unwrap().memory;
         let forget = Request::MemoryForget {

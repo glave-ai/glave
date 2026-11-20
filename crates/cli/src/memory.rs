@@ -3,6 +3,7 @@
 //! `glave memory`, which lists, edits, moves and forgets memories from the terminal, through the person's
 //! server (`reach.rs`), as the app does.
 
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use anyhow::Context as _;
 use glave_event::{MemoryId, MemoryScope, PrincipalId};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier};
 use glave_ports::memories::{Control, Memory, Remembered};
-use glave_ports::{ModelProvider, OsEntropy, ProjectId, Scope, SystemClock};
+use glave_ports::{ModelProvider, OrgId, OsEntropy, ProjectId, Scope, SystemClock};
 use glave_session::protocol::{Reply, Request};
 
 use crate::data::{Data, DataLog};
@@ -57,11 +58,20 @@ impl Running {
         self.memory.tidy_soon(Some(self.person), &self.scopes);
     }
 
-    /// Housekeeping: retention, erasure that is due, and rotating project keys once keys were
+    /// Housekeeping in the organization of each of this run's projects, every project there with
+    /// memories: retention, erasure that is due, and rotating project keys once keys were
     /// destroyed. Failures are reported, never fatal, but someone must act on them: erasure
     /// that is due waits on them.
     pub(crate) async fn housekeep(&self) {
-        if let Err(error) = self.memory.memories().housekeep(&self.scopes).await {
+        let orgs: BTreeSet<OrgId> = self.scopes.iter().copied().map(Scope::org).collect();
+        for org in orgs {
+            self.housekeep_in(org).await;
+        }
+    }
+
+    /// [`Running::housekeep`] in `org`.
+    async fn housekeep_in(&self, org: OrgId) {
+        if let Err(error) = self.memory.memories().housekeep_in(org).await {
             self.said.failed("memory housekeeping failed", &error);
         }
     }

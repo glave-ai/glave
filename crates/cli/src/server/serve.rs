@@ -85,8 +85,7 @@ impl Daily<'_> {
             }
             tidied = Instant::now();
             if let Some(memory) = self.memory {
-                memory.housekeep().await;
-                self.erase(memory).await;
+                self.housekeep(memory).await;
                 memory.memory.tidy_soon(Some(memory.person), &memory.scopes);
             }
         }
@@ -94,9 +93,9 @@ impl Daily<'_> {
 }
 
 impl Daily<'_> {
-    /// Erases what is due in the memory of every project in every organization on the store,
-    /// not only the ones `memory` keeps (#1486).
-    async fn erase(&self, memory: &Running) {
+    /// Housekeeps the memory of every project in every organization on the store, not only the
+    /// ones `memory` keeps (#1486): retention, then erasure.
+    async fn housekeep(&self, memory: &Running) {
         if let Some(organizations) = self.organizations("memory could not be erased").await {
             let (memories, leases) = (memory.memory.memories(), self.store.leases());
             let holder = self.holder;
