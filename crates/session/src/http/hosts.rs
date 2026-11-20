@@ -84,7 +84,9 @@ impl ListenerNames {
 /// address when it came from here, and from elsewhere when not. A request a proxy forwarded
 /// ([`proxied`]) never came in here, whatever its `Host` says, as one that rewrites `Host` to
 /// its upstream makes a request from anywhere look like one from this computer (#1487): it
-/// came through the public origin, where there is one, else from elsewhere.
+/// came through the public origin, where there is one, else from elsewhere. A best-effort
+/// signal: a proxy that adds none of these, or a raw TCP forward, still looks like this
+/// computer, so the local token and a link's code stay the wall.
 pub(crate) fn door(names: Option<&ListenerNames>, headers: &HeaderMap, peer: IpAddr) -> Door {
     let host = headers
         .get(header::HOST)
@@ -157,7 +159,7 @@ fn proxied(headers: &HeaderMap) -> bool {
 }
 
 /// What proxies and tunnels add to a request they forward: the standard's, the de facto
-/// standard's, nginx's usual and Cloudflare's.
+/// standard's, one nginx configurations commonly set, and Cloudflare's.
 const PROXIES_ADD: [&str; 4] = ["forwarded", FORWARDED_FOR, "x-real-ip", "cf-connecting-ip"];
 
 /// The address `named` is, written bare or with a port: `203.0.113.7`, `203.0.113.7:4321`,
