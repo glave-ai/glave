@@ -111,12 +111,19 @@ jobs:
       # thread is recorded at full speed and only the resume runs under Valgrind, which counts
       # in software and needs nothing from the runner. The total needs no symbols. The count is
       # in the run's summary before the benchmark holds it to its budget, over it or not.
+      # Installing Valgrind is a step of its own: a mirror that stalls once used up the count's
+      # four minutes before it began. apt gives up on a stalled download and tries again.
+      - name: Install Valgrind
+        if: ${{ !cancelled() }}
+        timeout-minutes: 6
+        run: |
+          sudo apt-get update -q -o Acquire::Retries=3 -o Acquire::http::Timeout=30
+          sudo apt-get install -y -q --no-install-recommends \
+            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 valgrind
       - name: Count the instructions of one resume, against its budget
         if: ${{ !cancelled() }}
         timeout-minutes: 4
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends valgrind
           benchmark/budgets record "$RUNNER_TEMP/thread"
           timeout 2m valgrind --tool=cachegrind --cache-sim=no \
             --cachegrind-out-file=/dev/null --log-file="$RUNNER_TEMP/counted" \
