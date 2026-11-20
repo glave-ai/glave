@@ -97,6 +97,9 @@ jobs:
     runs-on: ubuntu-22.04
     # It takes seconds; the benchmark bounds its own waits, and this the rest.
     timeout-minutes: 10
+    env:
+      # jammy's valgrind 1:3.18.1-1ubuntu2, as its archive lists it.
+      VALGRIND_SHA256: 8376c1524d187246eb09b15531c83d83567bdbc609880622a05bc8126558a221
     steps:
       # Each into a folder of its own name; the files lose their mode on the way.
       - uses: actions/download-artifact@v8
@@ -111,22 +114,50 @@ jobs:
       # thread is recorded at full speed and only the resume runs under Valgrind, which counts
       # in software and needs nothing from the runner. The total needs no symbols. The count is
       # in the run's summary before the benchmark holds it to its budget, over it or not.
-      # Installing Valgrind is a step of its own: a mirror that stalls once used up the count's
-      # four minutes before it began. apt gives up on a stalled download and tries again.
-      - name: Install Valgrind
-        id: valgrind
+      # Valgrind is jammy's own package, which never changes, unpacked rather than installed: apt
+      # would bring libc6-dbg (14 MB) and upgrade libc too, none of which a static program
+      # counted by cachegrind uses, and the runner's mirror has crawled at 80 kB/s through all of
+      # it (#1608). The package is kept in GitHub's cache, so the queue never waits on a mirror;
+      # on a miss it is fetched, checked against its digest, and saved (main's runs save it for
+      # the queue, whose runs can read main's cache).
+      - name: Restore Valgrind
+        id: cached
         if: ${{ !cancelled() }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: valgrind.deb
+          key: valgrind_3.18.1-1ubuntu2_amd64-${{ env.VALGRIND_SHA256 }}
+      - name: Fetch Valgrind
+        if: ${{ !cancelled() && steps.cached.outcome == 'success' && steps.cached.outputs.cache-hit != 'true' }}
         timeout-minutes: 6
         run: |
-          sudo apt-get update -q -o Acquire::Retries=3 -o Acquire::http::Timeout=30
-          sudo apt-get install -y -q --no-install-recommends \
-            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 valgrind
+          for mirror in http://azure.archive.ubuntu.com http://archive.ubuntu.com; do
+            curl -fsSL --retry 2 --speed-limit 100000 --speed-time 30 --max-time 150 -o valgrind.deb \
+              "$mirror/ubuntu/pool/main/v/valgrind/valgrind_3.18.1-1ubuntu2_amd64.deb" \
+              && echo "$VALGRIND_SHA256  valgrind.deb" | sha256sum -c - && exit 0
+            rm -f valgrind.deb
+          done
+          exit 1
+      - name: Save Valgrind
+        if: ${{ !cancelled() && steps.cached.outcome == 'success' && steps.cached.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: valgrind.deb
+          key: valgrind_3.18.1-1ubuntu2_amd64-${{ env.VALGRIND_SHA256 }}
+      - name: Unpack Valgrind
+        id: valgrind
+        if: ${{ !cancelled() && steps.cached.outcome == 'success' }}
+        run: |
+          echo "$VALGRIND_SHA256  valgrind.deb" | sha256sum -c -
+          dpkg-deb -x valgrind.deb "$RUNNER_TEMP/valgrind"
       - name: Count the instructions of one resume, against its budget
         if: ${{ !cancelled() && steps.valgrind.outcome == 'success' }}
         timeout-minutes: 4
+        env:
+          VALGRIND_LIB: ${{ runner.temp }}/valgrind/usr/libexec/valgrind
         run: |
           benchmark/budgets record "$RUNNER_TEMP/thread"
-          timeout 2m valgrind --tool=cachegrind --cache-sim=no \
+          timeout 2m "$RUNNER_TEMP/valgrind/usr/bin/valgrind" --tool=cachegrind --cache-sim=no \
             --cachegrind-out-file=/dev/null --log-file="$RUNNER_TEMP/counted" \
             benchmark/budgets resume "$RUNNER_TEMP/thread"
           instructions=$(sed -n 's/.*I *refs: *//p' "$RUNNER_TEMP/counted")
