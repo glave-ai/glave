@@ -367,7 +367,7 @@ fn a_query_held_past_its_limit_is_stopped_saying_how_long_it_had() {
 #[test]
 fn an_operator_s_own_query_limit_in_the_url_wins_over_glave_s() {
     block_on!(async {
-        let Some(scratch) = Scratch::new("own-limit").await else {
+        let Some(scratch) = Scratch::new("own_limit").await else {
             return;
         };
         let mut config = scratch.config.clone();
