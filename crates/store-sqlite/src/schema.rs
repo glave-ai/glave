@@ -22,10 +22,16 @@ const MIGRATED_WITHIN: Duration = Duration::from_mins(5);
 pub(crate) const SCHEMA: Schema<'static> = Schema {
     baseline: 18,
     made: BASELINE,
-    migrations: &[Migration {
-        change: Change::Adds,
-        sql: SEALED_INDEX,
-    }],
+    migrations: &[
+        Migration {
+            change: Change::Adds,
+            sql: SEALED_INDEX,
+        },
+        Migration {
+            change: Change::Reshapes,
+            sql: REMOTES_NAMED,
+        },
+    ],
 };
 
 /// Every table as of version 18, but its unsealed search index, which 19 makes again sealed.
@@ -193,6 +199,46 @@ const SEALED_INDEX: &str = "
     ) STRICT;
     CREATE INDEX event_search_by_pos ON event_search (org, project, pos);
     CREATE INDEX event_search_by_thread ON event_search (org, project, thread);
+";
+
+/// 20: each folder key of a remote names its repository alone, as `FolderKey::stored` does,
+/// without the name and password before its host or the query or fragment after its path that a
+/// clone made with a token in its url carries (#1519). Where two keys come to one, a key that
+/// was already plain is kept, else the first in order; the folder's path still leads to its
+/// project.
+const REMOTES_NAMED: &str = "
+    CREATE TEMP VIEW remote_keys AS
+    SELECT org, key, 'remote:' || scheme || host || path AS named FROM (
+        SELECT org, key, scheme, substr(rest, length(authority) + 1) AS path,
+            substr(authority, length(rtrim(authority, replace(authority, '@', ''))) + 1) AS host
+        FROM (
+            SELECT org, key, scheme, rest, substr(rest, 1, instr(rest || '/', '/') - 1) AS authority
+            FROM (
+                SELECT org, key, scheme,
+                    substr(after, 1, min(instr(after || '?', '?'), instr(after || '#', '#')) - 1)
+                        AS rest
+                FROM (
+                    SELECT org, key, substr(url, 1, instr(url, '://') + 2) AS scheme,
+                        substr(url, instr(url, '://') + 3) AS after
+                    FROM (
+                        SELECT org, key, substr(key, 8) AS url FROM project_folders
+                        WHERE key LIKE 'remote:%://%'
+                    )
+                )
+            )
+        )
+    );
+
+    DELETE FROM project_folders WHERE (org, key) IN (
+        SELECT signed.org, signed.key FROM remote_keys AS signed JOIN remote_keys AS other
+            ON other.org = signed.org AND other.named = signed.named AND other.key <> signed.key
+        WHERE signed.named <> signed.key AND (other.named = other.key OR other.key < signed.key)
+    );
+    UPDATE project_folders SET key = (
+        SELECT named FROM remote_keys AS r
+        WHERE r.org = project_folders.org AND r.key = project_folders.key
+    ) WHERE (org, key) IN (SELECT org, key FROM remote_keys WHERE named <> key);
+    DROP VIEW remote_keys;
 ";
 
 /// Brings the database up to [`SCHEMA`], making it the first time. `file` is where it is kept,
