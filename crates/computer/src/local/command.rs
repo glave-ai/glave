@@ -286,7 +286,11 @@ pub(crate) async fn run(
         Waited::Ended(ending) => ending,
         Waited::Reached(id) => {
             let named = (id, command.script.clone());
-            let at = (opened.computer, keep.workspace);
+            let at = (
+                opened.computer,
+                keep.workspace,
+                super::background::runs_for(command),
+            );
             let adopted = keep.background.adopt(named, at, spawned, None);
             match adopted {
                 Ok(command) => Ending::Backgrounded {

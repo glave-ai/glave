@@ -15,8 +15,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_ports::computer::{
-    Background, CommandId, ComputerError, ComputerId, Ending, Finished, IDLE, Listening,
-    MAX_BACKGROUND, MAX_WAIT, Printed, Refusal, WorkspaceId,
+    Background, Command, CommandId, ComputerError, ComputerId, Ending, Finished, IDLE, Listening,
+    MAX_BACKGROUND, MAX_WAIT, Printed, Refusal, RunsFor, WorkspaceId,
 };
 use glave_process::Processes;
 use tokio::sync::{Notify, watch};
@@ -31,6 +31,11 @@ const MAX_RUNNING: usize = 64;
 /// The most it keeps at all, ended ones waiting for their last read included; past it, the
 /// oldest that ended is forgotten.
 const MAX_KEPT: usize = 128;
+/// The most of [`MAX_RUNNING`] that the commands of everyone but the computer's owner run
+/// together, so theirs never fill the owner's room (#1506).
+const OTHERS_RUNNING: usize = 48;
+/// The most of [`MAX_KEPT`] theirs keep; past it, the oldest of theirs that ended is forgotten.
+const OTHERS_KEPT: usize = 96;
 /// How long a stopped command's watcher may take to finish: the grace before SIGKILL, twice,
 /// and the last of its output.
 const STOPPING: Duration = Duration::from_secs(10);
@@ -57,6 +62,8 @@ impl Default for Backgrounds {
 struct Entry {
     computer: ComputerId,
     workspace: WorkspaceId,
+    /// Whom it runs for: the computer's owner, or everyone else, whose share is smaller.
+    runs_for: RunsFor,
     script: String,
     started: Instant,
     /// Its process group, by its leader's id, where the system gave one.
@@ -137,23 +144,29 @@ impl Backgrounds {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Refuses one more in `workspace` when it, or this machine, keeps as many as it may.
-    pub(crate) fn room(&self, workspace: WorkspaceId) -> Result<(), ComputerError> {
-        full(&self.held(), workspace).map_or(Ok(()), Err)
+    /// Refuses one more in `workspace`, for `runs_for`, when it, their share or this machine
+    /// keeps as many as it may.
+    pub(crate) fn room(
+        &self,
+        workspace: WorkspaceId,
+        runs_for: RunsFor,
+    ) -> Result<(), ComputerError> {
+        full(&self.held(), workspace, runs_for).map_or(Ok(()), Err)
     }
 
     /// Keeps `spawned` running `script` in the background as `id`, in `workspace` on
-    /// `computer`, until `limit` when there is one; hands it back when there is no room for it.
+    /// `computer` for `runs_for`, until `limit` when there is one; hands it back when there is
+    /// no room for it.
     pub(crate) fn adopt(
         &self,
         (id, script): (CommandId, String),
-        (computer, workspace): (ComputerId, WorkspaceId),
+        (computer, workspace, runs_for): (ComputerId, WorkspaceId, RunsFor),
         spawned: Spawned,
         limit: Option<Duration>,
     ) -> Result<CommandId, Box<Spawned>> {
         let mut held = self.held();
         prune(&mut held);
-        if full(&held, workspace).is_some() {
+        if full(&held, workspace, runs_for).is_some() {
             return Err(Box::new(spawned));
         }
         let started = spawned.started;
@@ -176,6 +189,7 @@ impl Backgrounds {
             Entry {
                 computer,
                 workspace,
+                runs_for,
                 script,
                 started,
                 group,
@@ -348,8 +362,21 @@ impl Drop for Backgrounds {
     }
 }
 
+/// Whom `command` runs for, as its sandbox says: one with none runs as the computer's owner
+/// would, outside every wall.
+pub(crate) fn runs_for(command: &Command) -> RunsFor {
+    command
+        .sandbox
+        .as_ref()
+        .map_or(RunsFor::Owner, |sandbox| sandbox.runs_for)
+}
+
 /// Why `workspace` may not start one more, if it may not.
-fn full(held: &HashMap<CommandId, Entry>, workspace: WorkspaceId) -> Option<ComputerError> {
+fn full(
+    held: &HashMap<CommandId, Entry>,
+    workspace: WorkspaceId,
+    runs_for: RunsFor,
+) -> Option<ComputerError> {
     let running = || held.values().filter(|entry| entry.shared.ended().is_none());
     if running()
         .filter(|entry| entry.workspace == workspace)
@@ -363,19 +390,25 @@ fn full(held: &HashMap<CommandId, Entry>, workspace: WorkspaceId) -> Option<Comp
             .into(),
         ));
     }
-    if running().count() >= MAX_RUNNING {
-        return Some(ComputerError::Refused(
-            Refusal::TooManyRunning {
-                most: MAX_RUNNING.to_string(),
-            }
-            .into(),
-        ));
-    }
-    None
+    let others = || running().filter(|entry| entry.runs_for == RunsFor::SomeoneElse);
+    let most = if running().count() >= MAX_RUNNING {
+        MAX_RUNNING
+    } else if runs_for == RunsFor::SomeoneElse && others().count() >= OTHERS_RUNNING {
+        OTHERS_RUNNING
+    } else {
+        return None;
+    };
+    Some(ComputerError::Refused(
+        Refusal::TooManyRunning {
+            most: most.to_string(),
+        }
+        .into(),
+    ))
 }
 
-/// Forgets what ended [`IDLE`] ago and was never read, and past [`MAX_KEPT`] the oldest that
-/// ended.
+/// Forgets what ended [`IDLE`] ago and was never read; past [`OTHERS_KEPT`] of everyone else's,
+/// the oldest of theirs that ended; and past [`MAX_KEPT`], the oldest that ended, theirs before
+/// the owner's.
 fn prune(held: &mut HashMap<CommandId, Entry>) {
     let forgotten = |entry: &Entry| {
         entry
@@ -390,16 +423,30 @@ fn prune(held: &mut HashMap<CommandId, Entry>) {
         }
         keep
     });
-    while held.len() > MAX_KEPT {
-        let oldest = held
-            .iter()
-            .filter_map(|(id, entry)| entry.shared.ended().map(|ended| (ended.at, *id)))
-            .min();
-        let Some(entry) = oldest.and_then(|(_, id)| held.remove(&id)) else {
-            break;
-        };
-        entry.watcher.abort();
-    }
+    let others = |held: &HashMap<CommandId, Entry>| {
+        held.values()
+            .filter(|entry| entry.runs_for == RunsFor::SomeoneElse)
+            .count()
+    };
+    while others(held) > OTHERS_KEPT && forget_oldest(held, Some(RunsFor::SomeoneElse)) {}
+    while held.len() > MAX_KEPT
+        && (forget_oldest(held, Some(RunsFor::SomeoneElse)) || forget_oldest(held, None))
+    {}
+}
+
+/// Forgets the oldest command that ended, of those `whose` picks (all of them when none), and
+/// says whether there was one.
+fn forget_oldest(held: &mut HashMap<CommandId, Entry>, whose: Option<RunsFor>) -> bool {
+    let oldest = held
+        .iter()
+        .filter(|(_, entry)| whose.is_none_or(|whose| entry.runs_for == whose))
+        .filter_map(|(id, entry)| entry.shared.ended().map(|ended| (ended.at, *id)))
+        .min();
+    let Some(entry) = oldest.and_then(|(_, id)| held.remove(&id)) else {
+        return false;
+    };
+    entry.watcher.abort();
+    true
 }
 
 fn millis(elapsed: Duration) -> u64 {
