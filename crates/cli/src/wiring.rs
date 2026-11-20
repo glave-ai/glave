@@ -154,7 +154,9 @@ pub(crate) async fn wire(
     let scope = scope_here(args, &store, &folder, &root, identity.person).await?;
     let constraints = &setup.loaded.constraints;
     let homes = crate::cloud::homes(choices, constraints, store.leases()).await?;
-    let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
+    let housekeeps = args.housekeeps_memory();
+    let memory = crate::memory::start_for(&store, &setup, identity.person, scope, housekeeps);
+    let memory = memory.await?;
     let projects = projects_for(
         &setup,
         &servers,

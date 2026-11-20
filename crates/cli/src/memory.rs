@@ -40,6 +40,9 @@ pub(crate) struct Running {
     pub memory: Arc<GlaveMemory<DataLog>>,
     pub scopes: Vec<Scope>,
     pub person: PrincipalId,
+    /// Whether it housekeeps as it starts and ends: not on the person's server, whose daily job
+    /// housekeeps every organization ([`crate::args::Args::housekeeps_memory`]).
+    housekeeps: bool,
     /// Where what fails in its housekeeping is said.
     said: Said,
 }
@@ -63,6 +66,9 @@ impl Running {
     /// destroyed. Failures are reported, never fatal, but someone must act on them: erasure
     /// that is due waits on them.
     pub(crate) async fn housekeep(&self) {
+        if !self.housekeeps {
+            return;
+        }
         let orgs: BTreeSet<OrgId> = self.scopes.iter().copied().map(Scope::org).collect();
         for org in orgs {
             self.housekeep_in(org).await;
@@ -83,10 +89,11 @@ pub(crate) async fn start_for(
     setup: &Setup,
     person: PrincipalId,
     scope: Scope,
+    housekeeps: bool,
 ) -> anyhow::Result<Option<Running>> {
     let settings =
         glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
-    start(store, &settings, person, scope, setup.said).await
+    start(store, &settings, (person, scope), housekeeps, setup.said).await
 }
 
 /// Starts memory for `person`, tidied in `scope` and their own, when `settings` turn it on:
@@ -95,8 +102,8 @@ pub(crate) async fn start_for(
 async fn start(
     store: &Data,
     settings: &MemorySettings,
-    person: PrincipalId,
-    scope: Scope,
+    (person, scope): (PrincipalId, Scope),
+    housekeeps: bool,
     said: Said,
 ) -> anyhow::Result<Option<Running>> {
     if !settings.on {
@@ -126,6 +133,7 @@ async fn start(
         memory: Arc::new(memory),
         scopes: vec![personal, scope],
         person,
+        housekeeps,
         said,
     };
     running.housekeep().await;

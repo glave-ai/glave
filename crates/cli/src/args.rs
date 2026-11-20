@@ -280,6 +280,12 @@ impl Args {
         self.action == Action::Serve && !self.stdio
     }
 
+    /// Whether this run housekeeps memory itself, as it starts and as it ends: wherever the
+    /// person's server, whose daily job housekeeps every organization, is not what runs.
+    pub(crate) fn housekeeps_memory(&self) -> bool {
+        !self.person_s_server()
+    }
+
     /// Whether a turn was asked for.
     pub(crate) fn turn(&self) -> bool {
         !self.prompt.is_empty()
