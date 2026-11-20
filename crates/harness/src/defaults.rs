@@ -59,6 +59,7 @@ impl std::fmt::Debug for Defaults {
             .field("ask_network", &self.ask_network)
             .field("hooks", &self.hooks)
             .field("web", &self.web.is_some())
+            .field("others_web", &self.others_web.is_some())
             .finish()
     }
 }
