@@ -34,10 +34,11 @@ const MAX_TIMEOUT_SECS: u64 = 600;
 pub(crate) const DRAIN: Duration = Duration::from_millis(500);
 /// Package managers' caches, kept in the home folder by default, where sandboxed commands
 /// cannot write. In the sandbox each goes in a folder of its own in glave's sandbox cache
-/// folder (`~/.glave/sandbox-cache`), kept between runs so installs stay fast, or, without
-/// glave's folder, in the command's own temp folder. Only sandboxed commands use it: nothing a
-/// command leaves there reaches a command outside the sandbox, though it does reach later
-/// sandboxed ones. Cargo's home is left alone: it holds the person's settings and installed
+/// folder (`~/.glave/sandbox-cache`), kept between runs so installs stay fast, or, for
+/// someone other than the person whose computer it is, or without glave's folder, in the
+/// command's own temp folder. Only sandboxed commands use it: nothing a command leaves there
+/// reaches a command outside the sandbox, though it does reach the person's later sandboxed
+/// ones, which is why nobody else's commands share it (#1469). Cargo's home is left alone: it holds the person's settings and installed
 /// tools beside the registry, so it cannot move, and its registry cannot be shared writable,
 /// since the person's own builds outside the sandbox compile and run what is there.
 const CACHES: &[(&str, &str)] = &[

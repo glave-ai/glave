@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::block_on;
 use glave_ports::computer::{
     Command, Computers, CredentialHost, Ending, Environment, Forge, GitCredential, Output, Sandbox,
-    SandboxLevel, SandboxNetwork, Sources,
+    SandboxCaches, SandboxLevel, SandboxNetwork, Sources,
 };
 use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
 
@@ -250,6 +250,7 @@ fn a_sandboxed_command_signs_in_through_the_helper() {
             network: SandboxNetwork::Direct,
             home: std::env::var_os("HOME").map(PathBuf::from),
             glave_home: None,
+            caches: SandboxCaches::Kept,
         });
         computers
             .run_with_credentials(
@@ -309,6 +310,7 @@ impl SignedIn {
             network,
             home: Some(dir.to_path_buf()),
             glave_home: Some(self.glave_home.clone()),
+            caches: SandboxCaches::Kept,
         });
         command
     }

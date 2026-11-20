@@ -13,8 +13,8 @@ use std::time::Duration;
 
 use glave_event::PrincipalId;
 use glave_ports::computer::{
-    ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Sandbox, SandboxLevel,
-    SandboxNetwork, Sources, State as ComputerState, WorkspaceId, WorkspaceInfo,
+    ComputerError, ComputerId, Computers, Environment, Home, Image, Limits, Sandbox, SandboxCaches,
+    SandboxLevel, SandboxNetwork, Sources, State as ComputerState, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{OrgId, SystemClock};
 use tokio::sync::watch;
@@ -356,6 +356,7 @@ pub fn person_sandbox(network: bool) -> Sandbox {
         network: SandboxNetwork::when(network),
         home: Some(PERSON_HOME.into()),
         glave_home: Some(format!("{PERSON_HOME}/.glave").into()),
+        caches: SandboxCaches::Kept,
     }
 }
 
