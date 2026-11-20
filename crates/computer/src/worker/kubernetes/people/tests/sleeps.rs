@@ -4,6 +4,7 @@
 //! that comes as the computer sleeps waits for that sleep to let go of the lease, then wakes
 //! it; and a turn takes a free lease, but never as the computer is put to sleep.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -15,7 +16,7 @@ use glave_ports::{
 
 use super::super::super::Kubernetes;
 use super::super::lease::{self, Leasing};
-use super::super::renewed::renewed_through;
+use super::super::renewed::{removed_then_let_go, renewed_through};
 use super::super::{
     People, Person, State, holds, planned_home, renew_while_awake, slept, start, woken,
 };
@@ -116,6 +117,30 @@ fn a_long_removal_keeps_the_computer_s_lease() {
     });
 }
 
+/// A removal whose lease the store stops renewing stops by the time that lease lapses here, never
+/// after, whenever the next renewal was due: the store lets it lapse a few seconds later, and
+/// another server may wake the computer then (#1392). Nor is a lease no longer surely this
+/// server's let go of.
+#[test]
+fn a_removal_whose_lease_goes_unrenewed_stops_by_its_lapse_and_lets_nothing_go() {
+    block_on!(async {
+        tokio::time::pause();
+        let (slow, _people, person, _home, wake) = woken_on_leases().await;
+        if let Some(renewal) = person.renewing.lock().unwrap().take() {
+            renewal.abort();
+        }
+        slow.failing.store(true, Ordering::SeqCst);
+        let (_, held) = person.held.lock().unwrap().unwrap();
+        let removal = tokio::time::sleep(lease::LEASE * 3);
+        removed_then_let_go(&person, wake, &held, removal).await;
+        // By its lapse, give or take the millisecond a timer rounds up to.
+        let lapse = held.until + Duration::from_millis(1);
+        assert!(tokio::time::Instant::now() <= lapse, "stopped by its lapse");
+        assert!(!holds(&person), "no longer surely this server's");
+        assert_eq!(*slow.released.lock().unwrap(), 0, "nothing let go of");
+    });
+}
+
 /// Leases in memory whose renewing and letting go take `renewing` and `releasing`, as a store
 /// across a network takes a moment, and how often they were renewed and let go of.
 struct Slow {
@@ -124,6 +149,8 @@ struct Slow {
     releasing: Duration,
     renewed: Mutex<usize>,
     released: Mutex<usize>,
+    /// Whether every renewal fails, as a store that can't be reached.
+    failing: AtomicBool,
 }
 
 fn slow(renewing: Duration, releasing: Duration) -> Arc<Slow> {
@@ -133,6 +160,7 @@ fn slow(renewing: Duration, releasing: Duration) -> Arc<Slow> {
         releasing,
         renewed: Mutex::new(0),
         released: Mutex::new(0),
+        failing: AtomicBool::new(false),
     })
 }
 
@@ -155,6 +183,9 @@ impl Leases for Slow {
         Box::pin(async move {
             tokio::time::sleep(self.renewing).await;
             *self.renewed.lock().unwrap() += 1;
+            if self.failing.load(Ordering::SeqCst) {
+                return Err(LeaseError::Storage("unreachable".into()));
+            }
             self.leases.renew(lease, ttl).await
         })
     }

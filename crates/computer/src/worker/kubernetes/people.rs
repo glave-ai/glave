@@ -399,12 +399,7 @@ async fn slept(person: &Person, wake: u64, home: &WorkspaceInfo) {
     let held = *person.held.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some((_, held)) = held.filter(|(of, held)| *of == wake && held.holds()) {
         let removing = person.computers.destroy(home.computer);
-        if renewed::renewed_through(person, wake, removing)
-            .await
-            .is_some()
-        {
-            person.leasing.release(&held).await;
-        }
+        renewed::removed_then_let_go(person, wake, &held, removing).await;
     }
     let_go_of_lease(person, wake);
     let_go(person, wake, home);
