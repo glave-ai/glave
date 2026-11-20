@@ -31,6 +31,7 @@ import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
 import { ProjectsService } from '../../services/projects.service';
 import { SearchService } from '../../services/search.service';
+import { ZoneService } from '../../services/zone.service';
 import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
@@ -173,6 +174,8 @@ export class HomeComponent {
   protected readonly attachments = inject(AttachmentsService);
 
   constructor() {
+    // A schedule the model sets up in the new chat repeats on the person's clocks.
+    void inject(ZoneService).give();
     effect(() => {
       const where = this.where();
       untracked(() => {

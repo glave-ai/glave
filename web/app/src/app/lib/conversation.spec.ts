@@ -311,6 +311,95 @@ describe('conversation', () => {
     expect(items[1]).toMatchObject({ outsideSandbox: true, withNetwork: false, modelReason: '' });
   });
 
+  it('reads a schedule’s card by what it was written from, its lines typed, and the chat it made', () => {
+    const lines = {
+      when: 'Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.',
+      chat: 'Each run is added to its own chat, “Morning check”.',
+      prompt: 'Each run starts with: “Check the build.”',
+    };
+    const repeating = {
+      cron: '0 8 * * 1-5',
+      zone: 'Europe/Lisbon',
+      name: 'Morning check',
+      first: '2026-11-17T08:00:00.000Z',
+      prompt: 'Check the build.',
+    };
+    const asked = event('approval.requested', {
+      call_id: 'c1',
+      tool: 'schedule',
+      summary: 'schedule: Morning check',
+      ask: 'Repeat this every weekday at 8:00 am?',
+      asking: { says: 'ask-repeat', when: 'every weekday at 8:00 am' },
+      detail: Object.values(lines).join('\n'),
+      caution: 'It runs only while glave runs on this computer.',
+      repeating,
+      lines,
+    });
+    const yes = event('approval.decided', { call_id: 'c1', decision: 'allow_once' });
+    const [before] = threadItems([asked]);
+    expect(before).toMatchObject({
+      ask: 'Repeat this every weekday at 8:00 am?',
+      caution: 'It runs only while glave runs on this computer.',
+      repeat: {
+        lines: [
+          { says: 'when', text: lines.when },
+          { says: 'chat', text: lines.chat },
+          { says: 'prompt', text: lines.prompt },
+        ],
+        chat: null,
+      },
+    });
+    const [made] = threadItems([
+      asked,
+      yes,
+      event('tool.call.completed', {
+        call_id: 'c1',
+        is_error: false,
+        output: [{ type: 'text', text: 'Made it.' }],
+        structured: { schedule: 's1', chat: 'chat-1', repeats: 'Every weekday at 8:00 am' },
+      }),
+    ]);
+    expect(made).toMatchObject({ decision: 'allow_once', repeat: { chat: 'chat-1' } });
+    // A result that names no chat, or a call that failed, made nothing to fold to.
+    for (const done of [
+      { is_error: false, output: [], structured: {} },
+      { is_error: true, output: [{ type: 'text', text: 'Refused.' }] },
+    ]) {
+      const [none] = threadItems([
+        asked,
+        yes,
+        event('tool.call.completed', { call_id: 'c1', ...done }),
+      ]);
+      expect(none).toMatchObject({ repeat: { chat: null } });
+    }
+    // A shape with no plain words asks for its next runs, and is a schedule's card all the same.
+    const [monthly] = threadItems([
+      event('approval.requested', {
+        call_id: 'c3',
+        tool: 'schedule',
+        summary: 'schedule: Monthly',
+        ask: 'Repeat this, next on Tuesday 1 December, Friday 1 January and Monday 1 February?',
+        asking: { says: 'ask-repeat-next', runs: 'Tuesday 1 December' },
+        detail: 'At these times, your time.\nEach run is added to its own chat, “Monthly”.',
+        repeating: { ...repeating, cron: '0 9 1 * *', name: 'Monthly' },
+      }),
+    ]);
+    // Recorded before its lines were typed, its lines are its detail's.
+    expect(monthly).toMatchObject({
+      repeat: {
+        lines: [
+          { says: null, text: 'At these times, your time.' },
+          { says: null, text: 'Each run is added to its own chat, “Monthly”.' },
+        ],
+      },
+    });
+    // Any other approval asks nothing to repeat.
+    const [other] = threadItems([
+      event('approval.requested', { call_id: 'c2', tool: 'bash', summary: 'bash: ls' }),
+    ]);
+    expect(other).not.toHaveProperty('repeat');
+  });
+
   it('reads a request to run with the network, in the sandbox otherwise', () => {
     const items = threadItems([
       event('approval.requested', {

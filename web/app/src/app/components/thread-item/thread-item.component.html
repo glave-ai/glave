@@ -43,6 +43,29 @@
       (decide)="decide(item.approval, $event)"
     />
   }
+  @case ('repeat') {
+    @if (item.waiting) {
+      <glz-approval-card
+        testId="thread-repeat"
+        onlyOnce
+        paired
+        [class.glz-rise]="rises()"
+        [icon]="icons.repeat"
+        [summary]="item.ask"
+        [lines]="item.lines"
+        [caution]="item.caution"
+        [allowOnceLabel]="copy.repeatIt"
+        [denyLabel]="copy.notNow"
+        [busy]="sending()"
+        (decide)="decide(item.approval, $event)"
+      />
+    } @else if (item.made; as made) {
+      <p class="repeats" data-testid="thread-repeat-made">
+        <glz-icon [icon]="icons.repeat" [label]="copy.repeats" />
+        <a data-testid="thread-repeat-chat" dir="auto" [routerLink]="made.link">{{ made.words }}</a>
+      </p>
+    }
+  }
   @case ('question') {
     <glz-question-card
       testId="thread-question"

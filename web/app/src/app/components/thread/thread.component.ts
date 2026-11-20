@@ -46,6 +46,7 @@ import { StepsService } from '../../services/steps.service';
 import { ThreadService } from '../../services/thread.service';
 import { PanelService } from '../../services/panel.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
+import { ZoneService } from '../../services/zone.service';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import { MessageTextComponent } from '../message-text/message-text.component';
 import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
@@ -334,6 +335,8 @@ export class ThreadComponent {
   });
 
   constructor() {
+    // A schedule the model sets up here repeats on the person's clocks.
+    void inject(ZoneService).give();
     // The server writes its own words in the thread (what an approval asks, what replies drew
     // on, the plan) in the person's language: when they choose another, it is read again.
     onChange('language', () => void this.service.open(this.thread()));

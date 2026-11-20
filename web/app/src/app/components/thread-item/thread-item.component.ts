@@ -6,17 +6,22 @@ import {
   inject,
   input,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import type { ThreadSummary } from '@glave/client';
 import {
   GlzApprovalCardComponent,
   GlzAttachmentComponent,
+  type GlzCardLine,
   GlzCopyButtonComponent,
   type GlzDecision,
+  GlzIconComponent,
   type GlzIconData,
   GlzMessageComponent,
   GlzQuestionCardComponent,
   GlzReceiptComponent,
   GlzServiceCardComponent,
 } from '@glave/glaze';
+import { Clock, MessageSquare, Repeat, TextQuote } from 'lucide';
 
 import { sizeOf } from '../../lib/attachments';
 import type {
@@ -24,10 +29,13 @@ import type {
   CallItem,
   MessageItem,
   QuestionItem,
+  RepeatAsk,
   ServiceItem,
   ThreadItem,
 } from '../../lib/conversation';
 import { toolIcon } from '../../lib/steps';
+import { threadTitle } from '../../lib/threads';
+import { ProjectsService } from '../../services/projects.service';
 import { SessionService } from '../../services/session.service';
 import { ThreadService } from '../../services/thread.service';
 import { MessageTextComponent } from '../message-text/message-text.component';
@@ -56,13 +64,55 @@ interface ShownService extends ServiceItem {
   readonly sendLabel: string;
 }
 
-type ShownItem = ShownMessage | ShownCall | ApprovalItem | QuestionItem | ShownService;
+/** The icon a card asking to repeat work draws before each of its lines, by what it says. */
+const LINE_ICONS = { when: Clock, chat: MessageSquare, prompt: TextQuote } as const;
+
+/**
+ * A card asking to repeat work, as the thread shows it: the server's question, its lines, each
+ * after the icon of what it says, and its caution, while it waits; once the call made the
+ * schedule, a line that opens the schedule's chat, in the words the server gives that chat:
+ * when its schedule repeats, else its title; while the call goes on, once it failed or was
+ * declined, nothing (the run of calls says how the call went).
+ */
+interface ShownRepeat {
+  readonly kind: 'repeat';
+  readonly approval: string;
+  readonly ask: string;
+  readonly lines: readonly GlzCardLine[];
+  readonly caution: string;
+  readonly waiting: boolean;
+  readonly made: { readonly words: string; readonly link: readonly string[] } | null;
+}
+
+type ShownItem =
+  ShownMessage | ShownCall | ApprovalItem | QuestionItem | ShownService | ShownRepeat;
+
+/** What the server says of a chat, by its id, as the person's lists hold it, if they do. */
+type Chats = (chat: string) => ThreadSummary | undefined;
+
+/** `item`, a card asking to repeat work, as the thread shows it, its chat found in `chats`. */
+function shownRepeat(item: ApprovalItem, repeat: RepeatAsk, chats: Chats): ShownRepeat {
+  const allowed = item.decision === 'allow_once' || item.decision === 'allow_for_thread';
+  const chat = allowed && repeat.chat !== null ? chats(repeat.chat) : undefined;
+  const words = chat === undefined ? null : (chat.schedule?.repeats ?? threadTitle(chat));
+  return {
+    kind: 'repeat',
+    approval: item.approval,
+    ask: item.ask,
+    lines: repeat.lines.map(({ says, text }) =>
+      says === null ? { text } : { text, icon: LINE_ICONS[says] },
+    ),
+    caution: item.caution,
+    waiting: item.decision === null,
+    made: chat === undefined || words === null ? null : { words, link: ['/t', chat.id] },
+  };
+}
 
 /**
  * `item` as the thread shows it, its sizes written for `locale`: a message of the model's said
  * along the way (`interim`) named an update, its last words its reply.
  */
-function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
+function shown(item: ThreadItem, locale: string, interim: boolean, chats: Chats): ShownItem {
   switch (item.kind) {
     case 'message': {
       const person = item.from === 'person';
@@ -84,6 +134,7 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
     case 'call':
       return { ...item, icon: toolIcon(item.tool) };
     case 'approval':
+      return item.repeat === undefined ? item : shownRepeat(item, item.repeat, chats);
     case 'question':
       return item;
     case 'service':
@@ -99,14 +150,18 @@ function shown(item: ThreadItem, locale: string, interim: boolean): ShownItem {
  * typed, saying so when the model read it as it worked; a reply as markdown with no name over
  * it, each with a copy button; its reasoning in a line, which opens to it in full), a tool call
  * as a quiet line, an approval, questions or what a service asks as a card that needs the person,
- * answered in place, which rises into place when it `rises`.
+ * answered in place, which rises into place when it `rises`; a card asking to repeat work,
+ * answered Repeat it or Not now, folds to a line in the server's words that opens the schedule's
+ * chat, or away.
  */
 @Component({
   selector: 'app-thread-item',
   imports: [
+    RouterLink,
     GlzApprovalCardComponent,
     GlzAttachmentComponent,
     GlzCopyButtonComponent,
+    GlzIconComponent,
     GlzMessageComponent,
     GlzQuestionCardComponent,
     GlzReceiptComponent,
@@ -130,8 +185,17 @@ export class ThreadItemComponent {
   /** Whether an answer is being sent, so the cards wait. */
   protected readonly sending = this.thread.sending;
   private readonly locale = inject(LOCALE_ID);
-  protected readonly shown = computed(() => shown(this.item(), this.locale, this.interim()));
-  protected readonly copy = { read: $localize`:@@threadItem.read:Read while working` } as const;
+  private readonly projects = inject(ProjectsService);
+  protected readonly shown = computed(() =>
+    shown(this.item(), this.locale, this.interim(), (chat) => this.projects.thread(chat)),
+  );
+  protected readonly copy = {
+    read: $localize`:@@threadItem.read:Read while working`,
+    repeatIt: $localize`:@@threadItem.repeatIt:Repeat it`,
+    notNow: $localize`:@@threadItem.notNow:Not now`,
+    repeats: $localize`:@@threadItem.repeating:Repeats`,
+  } as const;
+  protected readonly icons = { repeat: Repeat };
 
   protected decide(approval: string, decision: GlzDecision): void {
     void this.thread.decide(approval, decision);

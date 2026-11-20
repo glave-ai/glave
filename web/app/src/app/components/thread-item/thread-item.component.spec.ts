@@ -1,10 +1,19 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import type { GlzDecision } from '@glave/glaze';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import { NO_THOUGHT, type ServiceItem, type ThreadItem } from '../../lib/conversation';
+import {
+  type ApprovalItem,
+  NO_THOUGHT,
+  type RepeatAsk,
+  type ServiceItem,
+  type ThreadItem,
+} from '../../lib/conversation';
+import { ProjectsService } from '../../services/projects.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { record, schedule, thread } from '../../testing/fixtures';
 import { ThreadItemComponent } from './thread-item.component';
 
 async function render(
@@ -14,11 +23,47 @@ async function render(
   TestBed.configureTestingModule({
     providers: [provideRouter([]), ...provideFakeSession(fake), ThreadService],
   });
+  await TestBed.inject(ProjectsService).refresh();
   await TestBed.inject(ThreadService).open('thread-1');
   const fixture = TestBed.createComponent(ThreadItemComponent);
   fixture.componentRef.setInput('item', item);
   await fixture.whenStable();
   return { root: fixture.nativeElement as HTMLElement, fake };
+}
+
+/** The lines of a card asking to repeat work, as the server writes them. */
+/** The lines of a card asking to repeat work, as the server gives them typed. */
+const LINES: RepeatAsk['lines'] = [
+  { says: 'when', text: 'Monday to Friday, 8:00 am your time. First run: Tuesday 17 November.' },
+  { says: 'chat', text: 'Each run is added to its own chat, “Morning check”.' },
+  { says: 'prompt', text: 'Each run starts with: “Check the build.”' },
+];
+
+/** A card asking to repeat work, answered `decision`, its call having made `chat`. */
+function repeating(decision: GlzDecision | null, chat: string | null = null): ApprovalItem {
+  return {
+    kind: 'approval',
+    key: 'a',
+    seq: 1,
+    approval: 'c2',
+    tool: 'schedule',
+    summary: 'schedule: First run',
+    ask: 'Repeat this every weekday at 8:00 am?',
+    detail: LINES.map((line) => line.text).join('\n'),
+    caution: 'It runs only while glave runs on this computer.',
+    outsideSandbox: false,
+    withNetwork: false,
+    modelReason: '',
+    repeat: { lines: LINES, chat },
+    decision,
+  };
+}
+
+/** A fake whose lists hold `chats`, each a chat of the person's. */
+function listing(...chats: Parameters<typeof thread>[]): FakeSession {
+  return new FakeSession()
+    .answer('project/list', { projects: [record('p1', 'glave')] })
+    .answer('thread/list', { threads: chats.map((each) => thread(...each)) });
 }
 
 describe('ThreadItemComponent', () => {
@@ -164,6 +209,57 @@ describe('ThreadItemComponent', () => {
     expect(fake.paramsOf('approval/decide')).toEqual([
       { thread: 'thread-1', approval: 'c1', decision: 'allow_for_thread' },
     ]);
+  });
+
+  it('asks to repeat work in the server’s words, answered Repeat it or Not now', async () => {
+    const { root, fake } = await render(repeating(null));
+    const card = root.querySelector('[data-testid="thread-repeat"]');
+    expect(card?.querySelector('.summary')?.textContent.trim()).toBe(
+      'Repeat this every weekday at 8:00 am?',
+    );
+    const lines = [...(card?.querySelectorAll('[data-testid="thread-repeat-lines"] li') ?? [])];
+    expect(lines.map((line) => line.textContent.trim())).toEqual(LINES.map((line) => line.text));
+    // Each line after the icon of what it says: when it runs, its chat, what it starts with.
+    expect(lines.map((line) => line.querySelectorAll('glz-icon').length)).toEqual([1, 1, 1]);
+    expect(card?.querySelector('.summary glz-icon')).not.toBeNull();
+    expect(card?.querySelector('code')).toBeNull();
+    expect(card?.querySelector('[data-testid="thread-repeat-caution"]')?.textContent).toBe(
+      'It runs only while glave runs on this computer.',
+    );
+    expect(card?.classList).toContain('glz-approval-card--paired');
+    const buttons = [...(card?.querySelectorAll('button') ?? [])];
+    expect(buttons.map((each) => each.textContent.trim())).toEqual(['Repeat it', 'Not now']);
+    await expectAccessible(root);
+    card?.querySelector<HTMLButtonElement>('[data-testid="thread-repeat-allow-once"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('approval/decide')).toEqual([
+      { thread: 'thread-1', approval: 'c2', decision: 'allow_once' },
+    ]);
+  });
+
+  it('folds a repeat the call made to a line that opens its chat, in the server’s words for it', async () => {
+    const repeats = { schedule: schedule('s1', null) };
+    const fake = listing(['chat-1', 'Morning check', repeats], ['chat-2', 'Old check']);
+    const { root } = await render(repeating('allow_once', 'chat-1'), fake);
+    expect(root.querySelector('[data-testid="thread-repeat"]')).toBeNull();
+    const link = root.querySelector('[data-testid="thread-repeat-chat"]');
+    expect(link?.textContent).toBe('Every day at 2:00 am');
+    expect(link?.getAttribute('href')).toBe('/t/chat-1');
+    await expectAccessible(root);
+    // A chat whose schedule is gone is named by its title.
+    TestBed.resetTestingModule();
+    const gone = await render(repeating('allow_once', 'chat-2'), fake);
+    expect(gone.root.querySelector('[data-testid="thread-repeat-chat"]')?.textContent).toBe(
+      'Old check',
+    );
+  });
+
+  it('shows nothing while the call goes on, once it made no chat, or once declined', async () => {
+    for (const decision of ['allow_once', 'deny'] as const) {
+      TestBed.resetTestingModule();
+      const { root } = await render(repeating(decision));
+      expect(root.textContent.trim()).toBe('');
+    }
   });
 
   it('asks in the server’s sentence and shows what would run as it gives it', async () => {

@@ -10,6 +10,51 @@
   white-space: pre-wrap;
 }
 
+// More of what it asks, a plain line each, in the secondary tone: when, and where it goes,
+// each after its icon, muted, in a column of its own so the words line up.
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-1);
+  padding: 0;
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-sm);
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.lines li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--glz-space-2);
+  align-items: baseline;
+}
+
+.lines span:only-child {
+  grid-column: 1 / -1;
+}
+
+.mark {
+  color: var(--glz-color-text-muted);
+  vertical-align: -0.125em;
+}
+
+// Paired, its two answers stay in one row on a narrow card, the primary taking the room.
+@container (width <= 30rem) {
+  :host(.glz-approval-card--paired) .actions {
+    flex-direction: row;
+    gap: var(--glz-space-2);
+  }
+
+  :host(.glz-approval-card--paired) .actions > * {
+    width: auto;
+  }
+
+  :host(.glz-approval-card--paired) .actions > :first-child {
+    flex: 1;
+  }
+}
+
 // Why it asks, in its own words under what would run: the warning tone while it waits, muted
 // once answered, as the card rests.
 .caution {

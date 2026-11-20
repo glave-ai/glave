@@ -96,7 +96,27 @@ export interface ApprovalItem extends Placed {
   readonly withNetwork: boolean;
   /** The model's own words for why it must run outside the sandbox; empty when it gave none. */
   readonly modelReason: string;
+  /** For a card asking to repeat work (`ask-repeat`), what it asks to repeat; absent otherwise. */
+  readonly repeat?: RepeatAsk;
   readonly decision: GlzDecision | null;
+}
+
+/** A line of a schedule's card, by what it says, as the server gives it. */
+export interface CardLine {
+  /**
+   * What it says: when it runs, the chat its runs go to, or what each run starts with; `null`
+   * for a line of a card recorded before the server gave them typed.
+   */
+  readonly says: 'when' | 'chat' | 'prompt' | null;
+  readonly text: string;
+}
+
+/** What a card asking to repeat work asks, and what came of it, as the server says. */
+export interface RepeatAsk {
+  /** The card's lines under its question, as the server gives them. */
+  readonly lines: readonly CardLine[];
+  /** The schedule's own chat, once the call made it (its result's `structured`); else `null`. */
+  readonly chat: string | null;
 }
 
 /** Questions the model asked the person. */
@@ -307,6 +327,31 @@ function isDecision(value: unknown): value is GlzDecision {
   return typeof value === 'string' && DECISIONS.includes(value);
 }
 
+/**
+ * What an approval asks to repeat, when it is a schedule's card: one carries what it was written
+ * from (`repeating`), whatever its question says. Its lines, typed (`lines`), else its `detail`,
+ * a line each; `null` for any other approval.
+ */
+function repeatOf(data: Data): RepeatAsk | null {
+  if (!isRecord(data['repeating'])) {
+    return null;
+  }
+  const lines = data['lines'];
+  const typed: readonly CardLine[] = isRecord(lines)
+    ? (['when', 'chat', 'prompt'] as const).map((says) => ({ says, text: text(lines[says]) }))
+    : text(data['detail'])
+        .split('\n')
+        .map((line) => ({ says: null, text: line }));
+  return { lines: typed.filter((line) => line.text.trim() !== ''), chat: null };
+}
+
+/** The chat a `schedule` call's result says it made (`structured`, `chat`), if it made one. */
+function chatOf(data: Data): string | null {
+  const structured = data['structured'];
+  const chat = data['is_error'] === true || !isRecord(structured) ? '' : text(structured['chat']);
+  return chat === '' ? null : chat;
+}
+
 /** Whether glave wrote a message the person's side of the conversation holds, such as a note. */
 export function byGlave(data: Data): boolean {
   const author = data['author'];
@@ -424,6 +469,11 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
         const call = text(data['call_id']);
         const output = partsText(data['output']).text;
         const images = imagesOf(data['output']);
+        update(`approval-${call}`, (item) =>
+          item.kind === 'approval' && item.repeat !== undefined
+            ? { ...item, repeat: { ...item.repeat, chat: chatOf(data) } }
+            : item,
+        );
         update(`call-${call}`, (item) => {
           if (item.kind === 'call') {
             const status = data['is_error'] === true ? 'failed' : 'done';
@@ -439,6 +489,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
       case 'approval.requested': {
         const approval = text(data['call_id']);
         const outside = data['outside_sandbox'];
+        const repeat = repeatOf(data);
         put({
           kind: 'approval',
           key: `approval-${approval}`,
@@ -452,6 +503,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           outsideSandbox: isRecord(outside),
           withNetwork: isRecord(outside) && outside['lifted'] === 'network',
           modelReason: isRecord(outside) ? text(outside['reason']) : '',
+          ...(repeat === null ? {} : { repeat }),
           decision: null,
         });
         break;
