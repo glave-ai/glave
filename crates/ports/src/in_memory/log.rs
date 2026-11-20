@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use glave_event::{RawEvent, Seq, ThreadId};
 
 use crate::log::{EventLog, LogError, check_append};
-use crate::scope::{Located, OrgId, Scope};
+use crate::scope::{Located, OrgId, ProjectId, Scope};
 use crate::search::{Found, deletes_thread, indexed, query_terms, weight};
 use crate::view::{ThreadQuery, ThreadView};
 
@@ -269,6 +269,29 @@ impl EventLog for InMemoryLog {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
         ready(self.search_now(scope, query, except, limit))
+    }
+
+    fn projects_with(
+        &self,
+        org: OrgId,
+        ledger: ThreadId,
+        after: Option<ProjectId>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<ProjectId>, LogError>> + Send {
+        let found = self
+            .threads
+            .lock()
+            .map_err(|_| LogError::Storage("the in-memory log's lock is poisoned".into()))
+            .map(|threads| {
+                let projects: BTreeSet<ProjectId> = threads
+                    .keys()
+                    .filter(|(scope, id)| *id == ledger && scope.org() == org)
+                    .map(|(scope, _)| scope.project())
+                    .filter(|project| after.is_none_or(|after| *project > after))
+                    .collect();
+                projects.into_iter().take(limit).collect()
+            });
+        ready(found)
     }
 
     fn locate(

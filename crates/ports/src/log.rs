@@ -5,7 +5,7 @@ use std::future::Future;
 use glave_event::{RawEvent, Seq, ThreadId};
 use thiserror::Error;
 
-use crate::scope::{Located, OrgId, Scope};
+use crate::scope::{Located, OrgId, ProjectId, Scope};
 use crate::search::Found;
 use crate::view::{ThreadQuery, ThreadView};
 
@@ -70,6 +70,18 @@ pub trait EventLog: Send + Sync {
         org: OrgId,
         thread: ThreadId,
     ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send;
+
+    /// The projects of `org` that hold any event of `ledger`, one of the ledgers' reserved ids
+    /// every project may hold, in project id order after `after`, at most `limit`: how glave's own
+    /// work over every project's ledger finds them a page at a time, as memory's housekeeping
+    /// erases what is due in each (#1486). Another organization's are never named.
+    fn projects_with(
+        &self,
+        org: OrgId,
+        ledger: ThreadId,
+        after: Option<ProjectId>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<ProjectId>, LogError>> + Send;
 
     /// A page of the threads view in `scope` (`specs/events.md`, "Storage"): the views of one
     /// standing, most recently updated first, after `query.after`, at most `query.limit`. Its

@@ -670,6 +670,16 @@ impl EventLog for Shared {
         self.0.search(scope, query, except, limit)
     }
 
+    fn projects_with(
+        &self,
+        org: OrgId,
+        ledger: ThreadId,
+        after: Option<ProjectId>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<ProjectId>, LogError>> + Send {
+        self.0.projects_with(org, ledger, after, limit)
+    }
+
     fn locate(
         &self,
         org: OrgId,

@@ -10,7 +10,7 @@ use tokio::sync::Notify;
 
 use crate::in_memory::InMemoryLog;
 use crate::log::{EventLog, LogError};
-use crate::scope::{Located, OrgId, Scope};
+use crate::scope::{Located, OrgId, ProjectId, Scope};
 use crate::search::Found;
 use crate::view::{ThreadQuery, ThreadView};
 
@@ -221,6 +221,16 @@ impl EventLog for FaultyLog {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
         self.log.search(scope, query, except, limit)
+    }
+
+    fn projects_with(
+        &self,
+        org: OrgId,
+        ledger: ThreadId,
+        after: Option<ProjectId>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<ProjectId>, LogError>> + Send {
+        self.log.projects_with(org, ledger, after, limit)
     }
 
     fn locate(

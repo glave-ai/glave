@@ -33,11 +33,13 @@ pub enum Leased {
     Computer(PrincipalId),
     /// The organization's blobs while they are swept: one server at a time.
     BlobSweep,
+    /// The organization's memory while what is due in it is erased: one server at a time.
+    MemoryErasure,
 }
 
 impl Leased {
     /// The name stores keep it under: `thread:<id>`, `task:<thread>`, `scheduler`,
-    /// `computer:<person>`, or `blob-sweep`.
+    /// `computer:<person>`, `blob-sweep`, or `memory-erasure`.
     pub fn key(&self) -> String {
         match self {
             Self::Thread(thread) => format!("thread:{thread}"),
@@ -45,6 +47,7 @@ impl Leased {
             Self::Scheduler => "scheduler".to_owned(),
             Self::Computer(person) => format!("computer:{person}"),
             Self::BlobSweep => "blob-sweep".to_owned(),
+            Self::MemoryErasure => "memory-erasure".to_owned(),
         }
     }
 }

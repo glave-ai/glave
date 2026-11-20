@@ -196,6 +196,7 @@ pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
     )?;
 
     organizations_apart(log).await?;
+    ledger_projects(log).await?;
     racing::racing_appends(log).await
 }
 
@@ -225,6 +226,40 @@ async fn organizations_apart<L: EventLog>(log: &L) -> Verdict {
     ensure(
         projects.is_empty(),
         "a project must not see its organization's own stream",
+    )
+}
+
+/// `projects_with` names the projects of an organization that hold a ledger, in project id
+/// order, a page at a time: neither a project without it nor another organization's.
+async fn ledger_projects<L: EventLog>(log: &L) -> Verdict {
+    let org = OrgId::from_uuid(uuid_v7(1_100));
+    let project = |n: u64| ProjectId::from_uuid(uuid_v7(2_100 + n));
+    let ledger = Reserved::Memory.id();
+    let write = |org: OrgId, project: ProjectId, thread: ThreadId| async move {
+        let events = events(thread, &[1])?;
+        let scope = Scope::glaves_own(org, project);
+        log.append(&scope, &events).await.map_err(|e| e.to_string())
+    };
+    write(org, project(2), ledger).await?;
+    write(org, project(1), ledger).await?;
+    write(org, project(3), thread(5)?).await?;
+    write(OrgId::from_uuid(uuid_v7(1_101)), project(4), ledger).await?;
+    let named = |after: Option<ProjectId>, limit: usize| async move {
+        log.projects_with(org, ledger, after, limit)
+            .await
+            .map_err(|e| e.to_string())
+    };
+    ensure(
+        named(None, 10).await? == [project(1), project(2)],
+        "projects_with must name each project of the organization holding the ledger, in order",
+    )?;
+    ensure(
+        named(None, 1).await? == [project(1)],
+        "projects_with must name at most `limit`",
+    )?;
+    ensure(
+        named(Some(project(1)), 10).await? == [project(2)],
+        "projects_with must name those after `after`",
     )
 }
 

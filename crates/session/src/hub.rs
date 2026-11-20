@@ -11,7 +11,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Body, Event, PrincipalId, RawEvent, Seq, ThreadId, decode};
-use glave_ports::{EventLog, Located, LogError, OrgId, Scope};
+use glave_ports::{EventLog, Located, LogError, OrgId, ProjectId, Scope};
 use tokio::sync::{broadcast, watch};
 
 use crate::notify::Need;
@@ -354,6 +354,16 @@ impl<L: EventLog> EventLog for Observed<L> {
         kinds: &[&str],
     ) -> impl Future<Output = Result<Option<RawEvent>, LogError>> + Send {
         self.inner.latest_of(scope, thread, kinds)
+    }
+
+    fn projects_with(
+        &self,
+        org: OrgId,
+        ledger: ThreadId,
+        after: Option<ProjectId>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<ProjectId>, LogError>> + Send {
+        self.inner.projects_with(org, ledger, after, limit)
     }
 
     fn locate(
