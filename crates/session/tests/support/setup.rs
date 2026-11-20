@@ -674,9 +674,9 @@ impl EventLog for Shared {
         &self,
         org: OrgId,
         ledger: ThreadId,
-        after: Option<glave_ports::ProjectId>,
+        after: Option<ProjectId>,
         limit: usize,
-    ) -> impl Future<Output = Result<Vec<glave_ports::ProjectId>, LogError>> + Send {
+    ) -> impl Future<Output = Result<Vec<ProjectId>, LogError>> + Send {
         self.0.projects_with(org, ledger, after, limit)
     }
 
