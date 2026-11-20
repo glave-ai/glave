@@ -466,9 +466,12 @@ pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
             .iter()
             .map(move |secret| runtime.join(secret))
     });
+    // Someone else's commands read nothing the person's left in `/var/tmp` either (#1583).
+    let var_tmp = layout.own_tmp.then(|| PathBuf::from("/var/tmp"));
     in_home
         .chain(in_runtime)
         .chain(layout.also_hidden.iter().cloned())
+        .chain(var_tmp)
         .filter_map(|secret| std::fs::canonicalize(secret).ok())
         .filter(|real| !layout.root.starts_with(real))
         .collect()

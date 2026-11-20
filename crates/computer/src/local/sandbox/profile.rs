@@ -51,8 +51,11 @@ pub(crate) struct Places {
     pub git_own: Option<PathBuf>,
     /// Whether commands share `/tmp`, readable and writable, as the person's do. Someone else's
     /// neither read nor write it (`RunsFor::SomeoneElse`): Seatbelt can't give them one of
-    /// their own, so they use their own temp folder (`TMPDIR`) alone.
+    /// their own, so they use their own temp folder (`TMPDIR`) alone, and read neither
+    /// `/var/tmp` nor the person's temp folder (`person_temp`), but that and the project.
     pub shared_tmp: bool,
+    /// The person's own temp folder (`/var/folders/…/T`), which holds each command's.
+    pub person_temp: Option<PathBuf>,
 }
 
 /// The parameter naming a command's own temp folder, made for it when it starts.
@@ -86,6 +89,16 @@ fn reads(profile: &mut Profile, places: &Places) {
     let mut conditions = vec![r#"(subpath "/")"#.to_owned(), OTHER_TERMINALS.to_owned()];
     if !places.shared_tmp {
         conditions.push(r#"(require-not (subpath "/private/tmp"))"#.to_owned());
+        conditions.push(r#"(require-not (subpath "/private/var/tmp"))"#.to_owned());
+        if let Some(person_temp) = &places.person_temp {
+            conditions.push(
+                r#"(require-any (require-not (subpath (param "PERSON_TEMP"))) (subpath (param "TEMP")) (subpath (param "ROOT")))"#
+                    .to_owned(),
+            );
+            profile
+                .params
+                .push(("PERSON_TEMP".into(), person_temp.clone()));
+        }
     }
     for (index, path) in places.hidden.iter().cloned().enumerate() {
         let name = format!("SECRET_{index}");
@@ -294,6 +307,7 @@ mod tests {
             git_common: None,
             git_own: None,
             shared_tmp: true,
+            person_temp: None,
         }
     }
 
