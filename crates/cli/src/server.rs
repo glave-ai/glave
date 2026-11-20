@@ -8,6 +8,7 @@
 
 mod command;
 mod erasing;
+mod leased;
 mod log;
 mod serve;
 mod sweep;
