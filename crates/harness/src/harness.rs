@@ -335,6 +335,7 @@ where
                 ask_network: workspace.asks_network(),
                 hooks: Hooks::default(),
                 web: None,
+                others_web: None,
             })),
             workspace,
             own: RwLock::default(),
@@ -438,14 +439,6 @@ where
         self
     }
 
-    /// Offers `web_fetch` from `web`, right after the built-in tools, to every thread whose
-    /// project sets up none of its own; none leaves it to the other sources.
-    #[must_use]
-    pub fn with_web(self, web: Option<Arc<dyn ToolSource>>) -> Self {
-        self.change_defaults(|defaults| defaults.web = web);
-        self
-    }
-
     /// Offers `skills` to its threads, those on this computer's and glave's own; a thread on a
     /// person's own computer is offered what is found there, with glave's own.
     #[must_use]
@@ -503,7 +496,14 @@ where
         if let Some(source) = sources.get_mut(crate::builtins::BUILTINS) {
             *source = self.builtins_for(thread);
         }
-        if let Some(web) = thread.brought.web.as_ref().or(thread.defaults.web.as_ref()) {
+        // A project's own `[web]`, and the person's, may reach private addresses on the
+        // person's network: their threads alone get them, as their own servers (#1507).
+        let web = if self.trusting(thread.for_) {
+            thread.brought.web.as_ref().or(thread.defaults.web.as_ref())
+        } else {
+            thread.defaults.others_web.as_ref()
+        };
+        if let Some(web) = web {
             let after = crate::builtins::BUILTINS
                 .saturating_add(1)
                 .min(sources.len());

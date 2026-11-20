@@ -15,6 +15,7 @@ Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp,
 - More credential stores hidden, git-credential-store's other file among them, in the home folder and where `XDG_CONFIG_HOME` and the like move them; on Linux git's credential cache, GNU screen's sessions, and what listens in `/tmp` for the person's other programs (ssh agents, connections ssh shares, editors' servers), looked for before each command (#1508, *Reads*, *Unix sockets on Linux*).
 - Someone else's commands on the server's computer get none of its owner's git sign-ins or secrets (#1434, *Whose computer*).
 - Someone else's threads on the server's computer get none of its owner's own instructions, skills or custom commands (#1460, *Whose computer*).
+- Someone else's threads on the server's computer get `web_fetch` with the same hosts but no private address, the owner's network being the owner's (#1507, `policy.md`, `[web]`).
 - Someone else's commands on the server's computer keep their package caches in each command's own temp folder, sharing none with its owner's (#1469, *Whose computer*, *Package caches*).
 - Someone else's commands on the server's computer share no `/tmp` with its owner's: on Linux each gets one of its own, on macOS none; and they read nothing the owner left in `/var/tmp` or, on macOS, the owner's temp folder (#1583, *Whose computer*, *Writes*).
 - The outbound proxy built for #643, wired to nothing, is deleted (#1398): the network is off or on.

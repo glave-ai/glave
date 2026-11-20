@@ -39,8 +39,12 @@ pub struct Defaults {
     /// Commands run at points of the turns of the person the harness works for.
     pub hooks: Hooks,
     /// `web_fetch`, offered right after the built-in tools unless a thread's project sets up
-    /// its own; none when it is off.
+    /// its own; none when it is off. The person's the harness works for alone: it may reach the
+    /// private addresses on their network that they allowed.
     pub web: Option<Arc<dyn ToolSource>>,
+    /// `web_fetch` for everyone else's threads: the same hosts, no private address, theirs
+    /// being the person's network (#1507); none when it is off.
+    pub others_web: Option<Arc<dyn ToolSource>>,
 }
 
 impl std::fmt::Debug for Defaults {
@@ -55,6 +59,7 @@ impl std::fmt::Debug for Defaults {
             .field("ask_network", &self.ask_network)
             .field("hooks", &self.hooks)
             .field("web", &self.web.is_some())
+            .field("others_web", &self.others_web.is_some())
             .finish()
     }
 }
@@ -89,6 +94,23 @@ where
             .defaults
             .write()
             .unwrap_or_else(PoisonError::into_inner) = Arc::new(defaults);
+    }
+
+    /// Offers `web_fetch` from `web`, right after the built-in tools, to the threads of the person
+    /// the harness works for whose project sets up none of its own; none leaves it to the other
+    /// sources. Everyone else's get [`Harness::with_others_web`]'s.
+    #[must_use]
+    pub fn with_web(self, web: Option<Arc<dyn ToolSource>>) -> Self {
+        self.change_defaults(|defaults| defaults.web = web);
+        self
+    }
+
+    /// Offers `web` as `web_fetch` to the threads of anyone but the person the harness works
+    /// for: one that reaches no private address (#1507).
+    #[must_use]
+    pub fn with_others_web(self, web: Option<Arc<dyn ToolSource>>) -> Self {
+        self.change_defaults(|defaults| defaults.others_web = web);
+        self
     }
 
     /// The defaults as `change` changes them, from each thread's next turn on.

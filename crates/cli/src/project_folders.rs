@@ -36,7 +36,7 @@ use crate::setup::off_note;
 use crate::trust::Trust;
 use servers::Running;
 
-pub(crate) use settle::web_offered;
+pub(crate) use settle::{web_offered, web_offered_to_others};
 
 /// How often glave looks for projects' servers to close.
 const TIDY_EVERY: Duration = Duration::from_secs(60);

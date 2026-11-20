@@ -249,6 +249,7 @@ fn runs(setup: &Setup, here: Option<SandboxLevel>, glave_home: &Path) -> anyhow:
             ask_network: setup.loaded.constraints.network_ask_forbidden().is_none(),
             hooks: Hooks::new(setup.hooks.clone())?,
             web: crate::project_folders::web_offered(&choices.web.value)?,
+            others_web: crate::project_folders::web_offered_to_others(&choices.web.value)?,
         },
         worktree: choices.worktree.value,
     })
