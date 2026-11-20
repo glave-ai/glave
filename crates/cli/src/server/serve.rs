@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use glave_harness::Cancel;
+use glave_ports::OrgId;
 use glave_process::Processes;
 use tokio::io::BufReader;
 use tokio::net::UnixStream;
@@ -94,42 +95,33 @@ impl Daily<'_> {
 
 impl Daily<'_> {
     /// Erases what is due in the memory of every project in every organization on the store,
-    /// not only the ones `memory` keeps (#1486). When the store can't say which they are, it is
-    /// tried again the next day.
+    /// not only the ones `memory` keeps (#1486).
     async fn erase(&self, memory: &Running) {
-        match self.store.organizations().await {
-            Ok(organizations) => {
-                let leases = self.store.leases();
-                let memories = memory.memory.memories();
-                super::erasing::every_organization(
-                    organizations,
-                    memories,
-                    leases.as_ref(),
-                    self.holder,
-                )
+        if let Some(organizations) = self.organizations("memory could not be erased").await {
+            let (memories, leases) = (memory.memory.memories(), self.store.leases());
+            let holder = self.holder;
+            super::erasing::every_organization(organizations, memories, leases.as_ref(), holder)
                 .await;
-            }
-            Err(error) => {
-                tracing::error!(error = %format!("{error:#}"), "memory could not be erased");
-            }
         }
     }
 
-    /// Sweeps the blobs of every organization on the store. When the store can't say which they
-    /// are, it is tried again the next day.
+    /// Sweeps the blobs of every organization on the store.
     async fn sweep(&self) {
-        match self.store.organizations().await {
-            Ok(organizations) => {
-                let (blobs, leases) = (self.store.blobs(), self.store.leases());
-                let holder = self.holder;
-                super::sweep::every_organization(organizations, &blobs, leases.as_ref(), holder)
-                    .await;
-            }
-            // The store failing: what no thread refers to grows until someone acts.
-            Err(error) => {
-                tracing::error!(error = %format!("{error:#}"), "the blobs could not be swept");
-            }
+        // The store failing: what no thread refers to grows until someone acts.
+        if let Some(organizations) = self.organizations("the blobs could not be swept").await {
+            let (blobs, leases) = (self.store.blobs(), self.store.leases());
+            let holder = self.holder;
+            super::sweep::every_organization(organizations, &blobs, leases.as_ref(), holder).await;
         }
+    }
+
+    /// The organizations on the store, for daily work in each; none when the store can't say,
+    /// logged as `failed`, so the work is tried again the next day.
+    async fn organizations(&self, failed: &str) -> Option<Vec<OrgId>> {
+        let listed = self.store.organizations().await;
+        listed
+            .inspect_err(|error| tracing::error!(error = %format!("{error:#}"), "{failed}"))
+            .ok()
     }
 }
 

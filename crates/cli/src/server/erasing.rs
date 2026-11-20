@@ -6,10 +6,10 @@
 
 use std::time::Duration;
 
-use anyhow::Context as _;
-use glave_memory::{Housekept, Memories};
-use glave_ports::{EventLog, Holder, Leased, Leases, OrgId, spoken};
-use tokio::time::timeout;
+use glave_memory::Memories;
+use glave_ports::{EventLog, Holder, Leased, Leases, OrgId};
+
+use super::leased;
 
 /// The longest one organization's erasure runs, holding its lease for as long. Stopped then,
 /// what it had not reached waits for the next day.
@@ -23,42 +23,20 @@ pub(super) async fn every_organization<L: EventLog + 'static>(
     leases: &dyn Leases,
     holder: Holder,
 ) {
-    for org in organizations {
-        match one_organization(memories, leases, holder, org).await {
-            Ok(Some(done)) => {
-                tracing::info!(%org, erased = done.erased, rotated = done.rotated, "memory erased");
-            }
-            Ok(None) => tracing::debug!(%org, "another server is erasing this memory"),
-            // The store failing: what is due waits on someone acting.
-            Err(error) => {
-                let error = format!("{error:#}");
-                tracing::error!(%org, %error, "memory could not be erased");
-            }
+    let job = (holder, Leased::MemoryErasure, ERASING);
+    let work = |org| memories.erase_due_in(org);
+    leased::every_organization(organizations, leases, job, work, |org, done| match done {
+        Ok(Some(done)) => {
+            tracing::info!(%org, erased = done.erased, rotated = done.rotated, "memory erased");
         }
-    }
-}
-
-/// Erases what is due in `org`, holding its lease as `holder`: what it did, or none while
-/// another holds it.
-async fn one_organization<L: EventLog + 'static>(
-    memories: &Memories<L>,
-    leases: &dyn Leases,
-    holder: Holder,
-    org: OrgId,
-) -> anyhow::Result<Option<Housekept>> {
-    let taken = leases
-        .acquire(org, Leased::MemoryErasure, holder, ERASING)
-        .await
-        .context("could not take its lease")?;
-    let Some(lease) = taken else {
-        return Ok(None);
-    };
-    let done = timeout(ERASING, memories.erase_due_in(org)).await;
-    if let Err(error) = leases.release(&lease).await {
-        tracing::warn!(%org, %error, "an erasure's lease could not be let go; it lapses");
-    }
-    let done = done.with_context(|| format!("it was not done within {}", spoken(ERASING)))?;
-    Ok(Some(done?))
+        Ok(None) => tracing::debug!(%org, "another server is erasing this memory"),
+        // The store failing: what is due waits on someone acting.
+        Err(error) => {
+            let error = format!("{error:#}");
+            tracing::error!(%org, %error, "memory could not be erased");
+        }
+    })
+    .await;
 }
 
 #[cfg(test)]

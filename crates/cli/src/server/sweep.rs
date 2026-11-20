@@ -6,9 +6,9 @@
 
 use std::time::Duration;
 
-use anyhow::Context as _;
-use glave_ports::{BlobStore, Holder, Leased, Leases, OrgId, Swept, spoken};
-use tokio::time::timeout;
+use glave_ports::{BlobStore, Holder, Leased, Leases, OrgId};
+
+use super::leased;
 
 /// The longest one organization's sweep runs, holding its lease for as long, and so how long one
 /// a server left unfinished keeps others off. Stopped then, what it had not reached waits for the
@@ -23,41 +23,20 @@ pub(super) async fn every_organization<B: BlobStore>(
     leases: &dyn Leases,
     holder: Holder,
 ) {
-    for org in organizations {
-        match one_organization(blobs, leases, holder, org).await {
-            Ok(Some(swept)) => {
-                tracing::info!(%org, blobs = swept.blobs, orphans = swept.orphans, "blobs swept");
-            }
-            Ok(None) => tracing::debug!(%org, "another server is sweeping these blobs"),
-            // The store or the bucket failing: what no thread refers to grows until someone acts.
-            Err(error) => {
-                let error = format!("{error:#}");
-                tracing::error!(%org, %error, "the blobs could not be swept");
-            }
+    let job = (holder, Leased::BlobSweep, SWEEPING);
+    let work = |org| blobs.sweep(org);
+    leased::every_organization(organizations, leases, job, work, |org, done| match done {
+        Ok(Some(swept)) => {
+            tracing::info!(%org, blobs = swept.blobs, orphans = swept.orphans, "blobs swept");
         }
-    }
-}
-
-/// Sweeps `org`, holding its lease as `holder`: what went, or none while another holds it.
-async fn one_organization<B: BlobStore>(
-    blobs: &B,
-    leases: &dyn Leases,
-    holder: Holder,
-    org: OrgId,
-) -> anyhow::Result<Option<Swept>> {
-    let taken = leases
-        .acquire(org, Leased::BlobSweep, holder, SWEEPING)
-        .await
-        .context("could not take its lease")?;
-    let Some(lease) = taken else {
-        return Ok(None);
-    };
-    let swept = timeout(SWEEPING, blobs.sweep(org)).await;
-    if let Err(error) = leases.release(&lease).await {
-        tracing::warn!(%org, %error, "a sweep's lease could not be let go; it lapses");
-    }
-    let swept = swept.with_context(|| format!("it was not done within {}", spoken(SWEEPING)))?;
-    Ok(Some(swept?))
+        Ok(None) => tracing::debug!(%org, "another server is sweeping these blobs"),
+        // The store or the bucket failing: what no thread refers to grows until someone acts.
+        Err(error) => {
+            let error = format!("{error:#}");
+            tracing::error!(%org, %error, "the blobs could not be swept");
+        }
+    })
+    .await;
 }
 
 #[cfg(test)]
