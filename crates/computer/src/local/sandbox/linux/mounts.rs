@@ -58,6 +58,27 @@ const GIT_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "worktree
 /// Inside a worktree's own git folder: what runs code later, and its submodules' folders.
 const WORKTREE_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "modules"];
 
+/// `/tmp` as a command sees it.
+#[derive(Debug)]
+pub(super) enum Tmp {
+    /// Shared, which models reach for constantly: this computer's, where it resolves.
+    Shared(Option<PathBuf>),
+    /// One of each command's own, its own temp folder there: someone else's commands
+    /// (`RunsFor::SomeoneElse`), which leave nothing in the shared one that the person's
+    /// commands later read or run, and read nothing the person's left there (#1583).
+    Own,
+}
+
+impl Tmp {
+    /// The shared `/tmp`, where commands share one that resolves.
+    pub(super) fn shared(&self) -> Option<&PathBuf> {
+        match self {
+            Self::Shared(tmp) => tmp.as_ref(),
+            Self::Own => None,
+        }
+    }
+}
+
 /// Everything a command's mounts depend on, fixed when the sandbox is prepared.
 #[derive(Debug)]
 pub(super) struct Layout {
@@ -68,13 +89,7 @@ pub(super) struct Layout {
     pub(super) base: PathBuf,
     pub(super) empty_file: PathBuf,
     pub(super) empty_folder: PathBuf,
-    /// `/tmp`, shared, which models reach for constantly; none for someone else's commands,
-    /// which get one of their own (`own_tmp`).
-    pub(super) shared_tmp: Option<PathBuf>,
-    /// Whether each command gets a `/tmp` of its own, its own temp folder there: someone else's
-    /// (`RunsFor::SomeoneElse`), which leave nothing in the shared one that the person's
-    /// commands later read or run, and read nothing the person's left there (#1583).
-    pub(super) own_tmp: bool,
+    pub(super) tmp: Tmp,
     pub(super) home: Option<PathBuf>,
     /// What the computer hides beside the home folder's credential stores.
     pub(super) also_hidden: Vec<PathBuf>,
@@ -186,14 +201,13 @@ pub(super) fn plan(
     temp: &Path,
     stand_ins: &StandIns,
 ) -> Result<(Vec<Mount>, Held), String> {
-    let mut mounts: Vec<Mount> = layout
-        .shared_tmp
-        .iter()
+    let mut mounts: Vec<Mount> = (layout.tmp.shared())
         .map(|tmp| Mount::Writable(tmp.clone()))
+        .into_iter()
         .collect();
     mounts.push(Mount::ReadOnly(layout.base.clone()));
     mounts.push(Mount::Writable(temp.to_owned()));
-    if layout.own_tmp {
+    if matches!(layout.tmp, Tmp::Own) {
         mounts.push(Mount::Tmp(temp.to_owned()));
     }
     let mut held = Held {
@@ -396,14 +410,14 @@ fn daemon_places(layout: &Layout) -> Result<Vec<PathBuf>, String> {
     let used: Vec<&Path> = [&layout.root, &layout.base]
         .into_iter()
         .chain(layout.home.iter())
-        .chain(layout.shared_tmp.iter())
+        .chain(layout.tmp.shared())
         .chain(layout.cache.iter())
         .chain(layout.git_common.iter())
         .map(PathBuf::as_path)
         .collect();
     let uid = rustix::process::getuid().as_raw();
     let in_tmp = listeners(Path::new("/tmp"), uid)?;
-    let sessions = (layout.shared_tmp.iter())
+    let sessions = (layout.tmp.shared().into_iter())
         .flat_map(|tmp| sessions(tmp, uid))
         .chain(layout.moved_sessions.iter().cloned())
         .map(made_private);
@@ -468,7 +482,7 @@ pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
             .map(move |secret| runtime.join(secret))
     });
     // Someone else's commands read nothing the person's left in `/var/tmp` either (#1583).
-    let var_tmp = layout.own_tmp.then(|| PathBuf::from("/var/tmp"));
+    let var_tmp = matches!(layout.tmp, Tmp::Own).then(|| PathBuf::from("/var/tmp"));
     in_home
         .chain(in_runtime)
         .chain(layout.also_hidden.iter().cloned())
@@ -524,7 +538,7 @@ mod tests {
             base: dir.join("base"),
             empty_file: dir.join("base/empty"),
             empty_folder: dir.join("base/empty.d"),
-            shared_tmp: Some(dir.join("tmp")),
+            tmp: Tmp::Shared(Some(dir.join("tmp"))),
             home: None,
             also_hidden: Vec::new(),
             glave_home: None,
@@ -533,7 +547,6 @@ mod tests {
             runtime: None,
             daemons,
             moved_sessions: moved,
-            own_tmp: false,
             git_common: None,
         };
         let (mounts, _held) = plan(&layout, &dir.join("temp"), &StandIns::default()).unwrap();

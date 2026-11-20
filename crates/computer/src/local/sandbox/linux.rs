@@ -24,7 +24,7 @@ use super::run_temp::RunTemp;
 use super::{
     Launch, Reached, Refuses, SANDBOX_HELPER_ARG, SANDBOX_HELPER_FAILED, Temps, failed, resolved,
 };
-use mounts::{Layout, StandIns};
+use mounts::{Layout, StandIns, Tmp};
 use temp::RunFolder;
 
 pub(super) use helper::helper;
@@ -76,7 +76,6 @@ impl Enforcer {
             .await
             .map_err(|error| ComputerError::Failed(error.to_string()))?
             .map_err(|error| failed(&error))?;
-        let own_tmp = sandbox.runs_for == RunsFor::SomeoneElse;
         let layout = Layout {
             root: root.to_owned(),
             level: sandbox.level,
@@ -84,12 +83,11 @@ impl Enforcer {
             base: folder.base().to_owned(),
             empty_file: folder.empty_file(),
             empty_folder: folder.empty_folder(),
-            shared_tmp: if own_tmp {
-                None
+            tmp: if sandbox.runs_for == RunsFor::SomeoneElse {
+                Tmp::Own
             } else {
-                resolved(Some(Path::new("/tmp"))).await
+                Tmp::Shared(resolved(Some(Path::new("/tmp"))).await)
             },
-            own_tmp,
             home: resolved(sandbox.home.as_deref()).await,
             also_hidden: also_hidden.to_vec(),
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
@@ -284,8 +282,9 @@ fn landlock_plan(layout: &Layout, temp: &Path) -> landlocked::Plan {
     unreadable.extend(other_terminals(Path::new("/dev")));
     // Landlock can't give someone else's commands a `/tmp` of their own: none, then, but
     // their own temp folder and the project, wherever those are.
-    unreadable.extend(layout.own_tmp.then(|| PathBuf::from("/tmp")));
-    let own: Vec<PathBuf> = if layout.own_tmp {
+    let own_tmp = matches!(layout.tmp, Tmp::Own);
+    unreadable.extend(own_tmp.then(|| PathBuf::from("/tmp")));
+    let own: Vec<PathBuf> = if own_tmp {
         vec![temp.to_owned(), layout.root.clone()]
     } else {
         Vec::new()
@@ -303,9 +302,7 @@ fn landlock_plan(layout: &Layout, temp: &Path) -> landlocked::Plan {
     unreadable.dedup();
     landlocked::Plan {
         network: layout.network,
-        writable: layout
-            .shared_tmp
-            .iter()
+        writable: (layout.tmp.shared().into_iter())
             .map(PathBuf::as_path)
             .chain([temp])
             .chain(layout.cache.as_deref())
