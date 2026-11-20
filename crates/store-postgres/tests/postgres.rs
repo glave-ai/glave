@@ -4,6 +4,7 @@
 
 use glave_event::ThreadId;
 use glave_identity::signin::Browsers;
+use glave_ports::testing::HUNG;
 use glave_ports::{BlobStore, OrgId, Pieces, ProjectId, Scope, conformance, digest, read_all};
 use glave_store_postgres::Store;
 use uuid::{Builder, Uuid};
@@ -331,6 +332,35 @@ fn servers_on_one_database_racing_to_make_the_identity_all_get_the_first() {
             "the person and the agent are kept as a pair"
         );
         assert_eq!(rows, 2, "one person and one agent");
+    });
+}
+
+#[test]
+fn a_query_held_past_its_limit_is_stopped_saying_how_long_it_had() {
+    block_on!(async {
+        let Some(scratch) = Scratch::new("limit").await else {
+            return;
+        };
+        let store = scratch.store().await.unwrap();
+        // Another session takes the table the query below writes, and never lets it go.
+        scratch
+            .admin
+            .batch_execute(&format!(
+                "BEGIN; LOCK TABLE {}.glave_settings IN ACCESS EXCLUSIVE MODE",
+                scratch.schema
+            ))
+            .await
+            .unwrap();
+        let waited = tokio::time::timeout(HUNG, store.server(Uuid::from_u128(7))).await;
+        scratch.admin.batch_execute("ROLLBACK").await.unwrap();
+        drop(store);
+        scratch.drop_schema().await;
+        let error = waited.expect("the query was never stopped").unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "the database failed: a query ran past its limit of 30 seconds, and the database \
+             stopped it"
+        );
     });
 }
 
