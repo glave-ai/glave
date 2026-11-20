@@ -5,6 +5,7 @@ import { FORMATTED } from './fake-formatted';
 import { MORE, NOTES, madeTheFiles } from './fake-made';
 import { LONG, LONG_TURNS } from './fake-long';
 import { PHOTOS } from './fake-photos';
+import { MORNING, schedules } from './fake-schedules';
 import {
   type Felt,
   FEEL,
@@ -68,6 +69,19 @@ test('a thread of 10,000 events opens at its end soon, and the turns before come
     await expect(messages).toHaveCount(40 * (back + 1));
     await atRest(page);
   }
+  expectStill(await feltOn(page));
+});
+
+test('nothing moves on opening a schedule’s chat: its line under its title comes with it', async ({
+  page,
+}) => {
+  await watchFeel(page);
+  await fakeApi(page);
+  await schedules(page, { existing: true });
+  await page.goto(`/t/${MORNING}${SIGNED_IN}`);
+  await expect(byTestId(page, 'thread-repeats')).toBeVisible();
+  await expect(byTestId(page, 'turn-ran').last()).toBeVisible();
+  await atRest(page);
   expectStill(await feltOn(page));
 });
 

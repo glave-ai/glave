@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  booleanAttribute,
   type ElementRef,
   LOCALE_ID,
   computed,
@@ -19,9 +20,11 @@ import {
 } from '@glave/glaze';
 
 import { trimBlankLines } from '../../lib/conversation';
+import { runDate } from '../../lib/repeating';
 import type { TurnResults } from '../../lib/results';
 import { runningFor } from '../../lib/when';
 import { clock } from '../../services/clock';
+import { READER_ZONE } from '../../services/zone.service';
 import { ThreadService } from '../../services/thread.service';
 import { ThoughtComponent } from '../thought/thought.component';
 import { ThreadItemComponent } from '../thread-item/thread-item.component';
@@ -30,7 +33,9 @@ import { TurnMadeComponent } from '../turn-made/turn-made.component';
 import { TurnPartComponent } from '../turn-part/turn-part.component';
 
 /**
- * One turn: the person's message; then, in order, what the model said at each step, each run of
+ * One turn, headed, for a schedule's run, with when the run was due, and what it was asked
+ * folded under that, quiet, rather than as the person's message (a run before the schedule's
+ * latest reads quieter still); else the person's message; then, in order, what the model said at each step, each run of
  * calls between as the server's line, which opens to its calls, and the questions and approvals
  * already answered, with the pages the reply drew on from the web under it; what the model
  * writes now, as markdown; what changed, its room kept as the thread opens until it is read; the
@@ -63,6 +68,7 @@ import { TurnPartComponent } from '../turn-part/turn-part.component';
   templateUrl: './turn.component.html',
   styleUrl: './turn.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '[class.earlier]': 'earlier()' },
 })
 export class TurnComponent {
   readonly turn = input.required<TurnResults>();
@@ -71,7 +77,29 @@ export class TurnComponent {
    * opened the chat at it: when it finished, while the person was away.
    */
   readonly away = input<string | null>(null);
+  /** Whether it is a schedule's run before its latest, which reads quieter. */
+  readonly earlier = input(false, { transform: booleanAttribute });
   private readonly locale = inject(LOCALE_ID);
+  private readonly zone = inject(READER_ZONE);
+  private readonly thread = inject(ThreadService);
+  /**
+   * For a schedule's run, its heading: when it was due, on the clocks it came due on as its start
+   * recorded them (for one recorded before it said, its schedule's), so no later change moves it;
+   * and what it was asked, folded under that rather than shown as the person's message, as the
+   * server shows its schedule's prompt, each letter the eye can't see as its code (`asked`, not
+   * shown once the schedule is gone). `null` for any other turn.
+   */
+  protected readonly run = computed(() => {
+    const due = this.turn().scheduled;
+    const schedule = this.thread.summary()?.schedule ?? null;
+    const zone = due?.zone ?? schedule?.zone ?? this.zone;
+    const text =
+      due === null ? null : runDate(due.at, zone, { locale: this.locale, timeZone: this.zone });
+    const asked = schedule?.prompt_shown ?? '';
+    return due === null || text === null
+      ? null
+      : { at: due.at, text, asked, unasked: asked === '' };
+  });
   /** Where the reply is among its parts: the last of the model's words that are no aside. */
   private readonly reply = computed(() =>
     this.turn().parts.reduce(
@@ -97,6 +125,7 @@ export class TurnComponent {
   protected readonly copy = {
     reply: $localize`:@@turn.reply:Reply`,
     thinking: $localize`:@@turn.thinking:Thinking…`,
+    asked: $localize`:@@turn.asked:What it was asked`,
     /** What the working line says while the model thinks, one word after another. */
     words: [
       $localize`:@@turn.forging:Forging…`,
@@ -140,7 +169,7 @@ export class TurnComponent {
     return room.length > 0 ? room : null;
   });
   /** Whether the thread is being opened, its history read: what shows meanwhile was there. */
-  private readonly opening = inject(ThreadService).opening;
+  private readonly opening = this.thread.opening;
   /**
    * What waits for the person that appeared as the person watched, by key: never what the turn
    * showed with as it first showed, nor what the thread's history brought as it opened.

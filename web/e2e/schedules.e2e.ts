@@ -82,6 +82,65 @@ for (const view of VIEWS) {
       expect(server.decision).toBe('deny');
     });
 
+    test('a schedule’s chat says when it repeats under its title, heads each run with its date, and pauses and goes from its bar', async ({
+      page,
+    }) => {
+      const phone = view.name === 'phone';
+      const problems = watchForProblems(page);
+      await fakeApi(page);
+      const server = await schedules(page, { existing: true });
+      await page.goto(`/t/${MORNING}${SIGNED_IN}`);
+      const line = byTestId(page, 'thread-repeats');
+      // On a phone, when it repeats alone, its actions and the panel's under a ⋯.
+      await expect(line).toContainText(phone ? REPEATS : `${REPEATS} · Next:`);
+      await expect(byTestId(page, 'thread-repeats-menu-trigger')).toHaveCount(phone ? 1 : 0);
+      await expect(byTestId(page, 'turn-ran')).toHaveText([
+        'Friday, November 13 · 8:00 AM',
+        'Monday, November 16 · 8:00 AM',
+      ]);
+      // Each run's prompt folds under its heading, as the server shows it, never the person's.
+      const asked = byTestId(page, 'turn-asked').first();
+      await expect(byTestId(page, 'turn-asked-summary').first()).toContainText('What it was asked');
+      await byTestId(page, 'turn-asked-summary').first().click();
+      await expect(asked).toContainText('Summarize my email');
+      await expect(byTestId(page, 'thread-message').filter({ hasText: 'Summarize' })).toHaveCount(
+        0,
+      );
+      if (!phone) {
+        await expect(byTestId(page, 'nav-thread-repeats')).toHaveCount(1);
+      }
+      await expectAccessible(page);
+      const act = async (action: 'pause' | 'remove'): Promise<void> => {
+        if (phone) {
+          await byTestId(page, 'thread-repeats-menu-trigger').click();
+          await byTestId(page, 'thread-repeats-menu-action')
+            .nth(action === 'pause' ? 0 : 1)
+            .click();
+        } else {
+          await byTestId(page, `thread-repeats-${action}`).click();
+        }
+      };
+      await act('pause');
+      await expect.poll(() => server.paused).toBe(true);
+      if (phone) {
+        await byTestId(page, 'thread-repeats-menu-trigger').click();
+        await expect(byTestId(page, 'thread-repeats-menu-action').first()).toHaveText('Resume');
+        await page.keyboard.press('Escape');
+      } else {
+        await expect(line).toContainText(`${REPEATS} · Paused`);
+        await expect(byTestId(page, 'thread-repeats-pause')).toHaveText('Resume');
+      }
+      await act('remove');
+      // Removing asks in the server's words, naming it.
+      await expect(byTestId(page, 'thread-repeats-confirm')).toContainText(
+        'Stop repeating Morning email summary?',
+      );
+      await byTestId(page, 'thread-repeats-confirm-ok').click();
+      await expect(line).toHaveCount(0);
+      expect(server.removed).toBe(true);
+      expect(problems()).toEqual([]);
+    });
+
     test('a repeat the server refuses after the yes folds away, its call saying how it went', async ({
       page,
     }) => {

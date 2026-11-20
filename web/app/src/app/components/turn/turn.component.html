@@ -1,4 +1,11 @@
-@if (turn().prompt; as prompt) {
+@if (run(); as run) {
+  <h2 class="ran" data-testid="turn-ran">
+    <time [attr.datetime]="run.at">{{ run.text }}</time>
+  </h2>
+  <glz-steps plain testId="turn-asked" [steps]="copy.asked" [class.unasked]="run.unasked">
+    <p class="asked" dir="auto">{{ run.asked }}</p>
+  </glz-steps>
+} @else if (turn().prompt; as prompt) {
   <app-thread-item [item]="prompt" />
 }
 @for (shown of parts(); track shown.part.key) {

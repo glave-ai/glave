@@ -30,6 +30,11 @@
   font-size: var(--glz-text-lg);
 }
 
+// Focused by script alone, once what it says of the thread goes: no ring of its own.
+.title:focus {
+  outline: none;
+}
+
 // The title renames the thread: a plain button, its hover a quiet wash.
 .rename {
   max-width: 100%;
@@ -50,25 +55,40 @@
   background: var(--glz-surface-hover);
 }
 
+// A quiet line: its project, and for a schedule's chat when it repeats, with its actions.
 .meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-half) var(--glz-space-3);
+  min-width: 0;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.part {
   display: flex;
   align-items: center;
   gap: var(--glz-space-2);
   min-width: 0;
+}
+
+.part glz-icon {
+  flex: none;
+}
+
+.words {
   overflow: hidden;
-  color: var(--glz-color-text-muted);
-  font-size: var(--glz-text-sm);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.folder {
-  flex: none;
-}
-
-.where {
-  overflow: hidden;
-  text-overflow: ellipsis;
+// What the server refused a change to the schedule with, under the bar.
+.error {
+  padding: var(--glz-inset-strip);
+  border-block-end: var(--glz-border-width) solid var(--glz-color-border);
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
 }
 
 // A phone: the title and its line in the middle, one above the other, between the side bar's

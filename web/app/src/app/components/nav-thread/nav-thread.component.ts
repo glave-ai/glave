@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
 import { RouterLink } from '@angular/router';
 import { GlzIconComponent, GlzNavItemComponent } from '@glave/glaze';
 import LoaderCircle from 'lucide/dist/esm/icons/loader-circle.mjs';
+import Repeat from 'lucide/dist/esm/icons/repeat.mjs';
 
 import type { NavThread } from '../../lib/nav';
 
@@ -10,8 +11,9 @@ import type { NavThread } from '../../lib/nav';
  * small, its line when it has one: that it waits for the person, in the ink of the text and
  * bold, or where it is, muted. At its end what the server says it is doing, quiet and in the
  * ink of the text, no colour: a ring that turns while it runs (still under reduced motion), else
- * how long ago it was last active. Screen readers hear "running" or the time in words. Under
- * it, indented on a thin line from it, the threads it started, each a line of its own.
+ * how long ago it was last active. Screen readers hear "running" or the time in words. A
+ * schedule's own chat has a quiet repeat mark at its start. Under it, indented on a thin line
+ * from it, the threads it started, each a line of its own.
  */
 @Component({
   selector: 'app-nav-thread',
@@ -29,6 +31,11 @@ export class NavThreadComponent {
   protected readonly running = {
     icon: LoaderCircle,
     label: $localize`:@@navThread.running:running`,
+  } as const;
+  /** What marks a schedule's own chat: its repeat, and what screen readers hear. */
+  protected readonly repeats = {
+    icon: Repeat,
+    label: $localize`:@@navThread.repeats:Repeats`,
   } as const;
 
   protected followed(): void {

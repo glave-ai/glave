@@ -118,6 +118,7 @@ function turn(items: readonly ThreadItem[], more: Partial<Turn> = {}): Turn {
     took: null,
     started: null,
     model: null,
+    scheduled: null,
     result: null,
     ended: null,
     ...more,

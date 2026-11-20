@@ -1,0 +1,43 @@
+@if (menu()) {
+  <glz-menu-button
+    [testId]="ids().menu"
+    [label]="labels().menu"
+    [actions]="actions()"
+    (action)="act($event)"
+  />
+} @else {
+  <button
+    glzButton
+    size="sm"
+    variant="ghost"
+    [attr.data-testid]="ids().pause"
+    [attr.aria-label]="labels().toggleNamed"
+    [attr.aria-disabled]="waiting()"
+    (click)="toggle()"
+  >
+    <glz-icon [icon]="toggleIcon()" />
+    {{ labels().toggle }}
+  </button>
+  <button
+    glzButton
+    size="sm"
+    variant="ghost"
+    class="remove"
+    [attr.data-testid]="ids().remove"
+    [attr.aria-label]="labels().removeNamed"
+    [attr.aria-disabled]="waiting()"
+    (click)="ask()"
+  >
+    <glz-icon [icon]="icons.remove" />
+    {{ copy.remove }}
+  </button>
+}
+<glz-confirm-dialog
+  danger
+  [testId]="ids().confirm"
+  [heading]="stop()"
+  [message]="copy.removeText"
+  [confirmLabel]="copy.remove"
+  [(open)]="confirming"
+  (decided)="decided($event)"
+/>

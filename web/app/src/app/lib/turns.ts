@@ -31,6 +31,12 @@ export interface Turn {
   /** The model it started with, by the id its `turn.started` records; `null` with none. */
   readonly model: string | null;
   /**
+   * For a schedule's run, when the run was due, and the time zone it came due in, as its
+   * `turn.started` records them (`scheduled`, `zone`; `null` for a run recorded before it said);
+   * `null` for any other turn.
+   */
+  readonly scheduled: Due | null;
+  /**
    * How it ended and what it did and cost, as the server says in its `turn.ended`; `null` until
    * it has ended.
    */
@@ -128,6 +134,22 @@ function modelOf(model: unknown): string | null {
   return typeof name === 'string' && name !== '' ? name : null;
 }
 
+/** When a schedule's run was due, and on whose clocks, as a turn's start records it. */
+export interface Due {
+  readonly at: string;
+  /** The time zone it came due in, by its IANA name; `null` where the start did not say. */
+  readonly zone: string | null;
+}
+
+/** When a schedule's run was due, as its `turn.started` data records it; else `null`. */
+function dueOf(data: Readonly<Record<string, unknown>> | undefined): Due | null {
+  const [at, zone] = [data?.['scheduled'], data?.['zone']];
+  if (typeof at !== 'string' || at === '') {
+    return null;
+  }
+  return { at, zone: typeof zone === 'string' && zone !== '' ? zone : null };
+}
+
 function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn {
   const started = events.find((event) => event.type === 'turn.started');
   const ended = events.filter((event) => event.type === 'turn.ended').at(-1);
@@ -143,6 +165,7 @@ function turnOf(events: readonly RawEvent[], items: readonly ThreadItem[]): Turn
     took: Number.isNaN(took) ? null : took,
     started: started?.at ?? null,
     model: modelOf(started?.data['model']),
+    scheduled: dueOf(started?.data),
     result: ended === undefined ? null : resultOf(ended.data),
     ended: ended === undefined ? null : { seq: ended.seq, at: ended.at },
   };
@@ -201,6 +224,7 @@ function startingTurn(prompt: string, key: string): Turn {
     took: null,
     started: null,
     model: null,
+    scheduled: null,
     result: null,
     ended: null,
   };

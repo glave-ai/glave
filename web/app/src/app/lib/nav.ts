@@ -54,6 +54,8 @@ export interface NavThread {
   readonly title: string;
   /** Whether the server says it runs. */
   readonly running: boolean;
+  /** Whether it is a schedule's own chat, which a run of the schedule adds to. */
+  readonly repeats: boolean;
   /** The line under its title, if it has one. */
   readonly line: NavLine | null;
   /** When it was last active, which its line shows while it does not run. */
@@ -324,6 +326,7 @@ function navThread(
     link: ['/t', thread.id],
     title: threadTitle(thread),
     running: thread.status === 'running',
+    repeats: (thread.schedule ?? null) !== null,
     line: null,
     since: times.since(thread.updated_at),
     current: thread.id === view.current,

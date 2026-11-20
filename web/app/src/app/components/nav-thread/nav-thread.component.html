@@ -5,6 +5,15 @@
   [current]="thread().current"
   (click)="followed()"
 >
+  @if (thread().repeats) {
+    <glz-icon
+      glzNavItemStart
+      class="repeats"
+      data-testid="nav-thread-repeats"
+      [icon]="repeats.icon"
+      [label]="repeats.label"
+    />
+  }
   <span class="lines">
     <!-- The title in its own direction; the space after it keeps it apart from what follows. -->
     <span class="title" dir="auto" data-testid="nav-thread-title">{{ thread().title }} </span>

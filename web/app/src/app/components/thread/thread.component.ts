@@ -39,6 +39,7 @@ import { ModelsService } from '../../services/models.service';
 import { PlanService } from '../../services/plan.service';
 import { ProjectsService } from '../../services/projects.service';
 import { SearchService } from '../../services/search.service';
+import { ZoneService } from '../../services/zone.service';
 import { ChangedFilesService } from '../../services/changed-files.service';
 import { MadeFilesService } from '../../services/made-files.service';
 import { SourcesService } from '../../services/sources.service';
@@ -46,7 +47,6 @@ import { StepsService } from '../../services/steps.service';
 import { ThreadService } from '../../services/thread.service';
 import { PanelService } from '../../services/panel.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
-import { ZoneService } from '../../services/zone.service';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import { MessageTextComponent } from '../message-text/message-text.component';
 import { EffortPickerComponent } from '../effort-picker/effort-picker.component';
@@ -60,7 +60,8 @@ import { ThreadPanelComponent } from '../thread-panel/thread-panel.component';
 import { TurnComponent } from '../turn/turn.component';
 
 /**
- * One thread: its bar across the top (title, project, the panel's button); its
+ * One thread: its bar across the top (title, project, a schedule's chat's repeat line, the
+ * panel's button); its
  * conversation in a reading column, turn by turn, results first (the reply, what changed, the
  * receipt that opens to the steps, then what waits for the person), its latest turns as it
  * opens and those before them read in above, nothing moving, as the person goes back to them
@@ -283,10 +284,19 @@ export class ThreadComponent {
   });
   /** The key of the turn opened at, which changes only when another is. */
   private readonly awayAt = computed(() => this.away()?.key ?? null);
-  /** Each turn shown, with the line it shows above its reply when it is the one opened at. */
+  /**
+   * Each turn shown, with the line it shows above its reply when it is the one opened at, and
+   * whether it is a schedule's run before its latest, which reads quieter.
+   */
   protected readonly shownTurns = computed(() => {
     const away = this.away();
-    return this.turns().map((turn) => ({ turn, away: turn.key === away?.key ? away.line : null }));
+    const turns = this.turns();
+    const latest = turns.filter((turn) => turn.scheduled !== null).at(-1)?.key;
+    return turns.map((turn) => ({
+      turn,
+      away: turn.key === away?.key ? away.line : null,
+      earlier: turn.scheduled !== null && turn.key !== latest,
+    }));
   });
   protected readonly title = computed(() => {
     const summary = this.service.summary();
@@ -302,6 +312,11 @@ export class ThreadComponent {
     const project = id === null ? undefined : this.projects.project(id);
     return project?.kind === 'project' ? project.name : null;
   });
+  /**
+   * For a schedule's own chat, its schedule, as the thread's own summary says, with the chat as
+   * it opens, and as the server sends it anew when it changes.
+   */
+  protected readonly schedule = computed(() => this.service.summary()?.schedule ?? null);
   /** When the thread's project folder isn't there anymore: the project, and what the server says. */
   protected readonly gone = computed(() => {
     const project = this.projectId();

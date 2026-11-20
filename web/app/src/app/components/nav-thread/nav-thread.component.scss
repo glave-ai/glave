@@ -38,6 +38,13 @@
   color: var(--glz-color-text);
 }
 
+// A schedule's own chat: a quiet mark at its start, as large as its title.
+.repeats {
+  --glz-icon-size: 1em;
+
+  color: var(--glz-color-text-muted);
+}
+
 // When it was last active, small and muted, its digits all one width.
 .since {
   color: var(--glz-color-text-muted);

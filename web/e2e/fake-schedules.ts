@@ -173,9 +173,36 @@ function answered(decision: string, outcome: Outcome): readonly RawEvent[] {
   ];
 }
 
+/** A run of the schedule in its chat, due at `due`, from `seq`: its prompt, and its reply. */
+function run(seq: number, due: string, reply: string): readonly RawEvent[] {
+  const model = { provider: 'openrouter', name: 'hope' };
+  return [
+    recorded(MORNING, seq, 'turn.started', { model, scheduled: due, zone: ZONE }, 2),
+    recorded(MORNING, seq + 1, 'message.added', {
+      role: 'user',
+      parts: [{ type: 'text', text: 'Summarize my email' }],
+    }),
+    recorded(MORNING, seq + 2, 'message.added', {
+      role: 'assistant',
+      parts: [{ type: 'text', text: reply }],
+    }),
+    recorded(MORNING, seq + 3, 'turn.ended', { outcome: 'completed' }),
+  ];
+}
+
+/** The schedule's chat: last Friday's run, and this Monday's. */
+const RAN: readonly RawEvent[] = [
+  ...run(1, '2026-11-13T08:00:00.000Z', 'Nothing urgent.'),
+  ...run(5, '2026-11-16T08:00:00.000Z', 'Three need a reply today.'),
+];
+
 /** What the fake keeps while it runs. */
 interface Kept {
   readonly card: Card;
+  /** Whether the schedule and its chat were made before the page opened. */
+  readonly existing: boolean;
+  paused: boolean;
+  removed: boolean;
   /** How the schedule's call ends once the person says yes. */
   readonly outcome: Outcome;
   /** The person's answer to the card, once given. */
@@ -188,11 +215,11 @@ interface Kept {
 
 /** Whether the schedule and its chat were made. */
 function made(kept: Kept): boolean {
-  return kept.decision === 'allow_once' && kept.outcome === 'made';
+  return kept.existing || (kept.decision === 'allow_once' && kept.outcome === 'made');
 }
 
-/** The schedule, as the server shows it, running next tomorrow at 8. */
-function info(): ScheduleInfo {
+/** The schedule, as the server shows it: running next tomorrow at 8, or paused. */
+function info(paused = false): ScheduleInfo {
   return {
     schedule: SCHEDULE,
     name: 'Morning email summary',
@@ -207,20 +234,33 @@ function info(): ScheduleInfo {
     zone: ZONE,
     repeats: REPEATS,
     budget: 200_000,
-    created_at: '2026-11-16T09:01:00.000Z',
-    paused: false,
-    next: '2026-11-17T08:00:00.000Z',
+    created_at: '2026-11-13T07:00:00.000Z',
+    paused,
+    ...(paused ? {} : { next: '2026-11-17T08:00:00.000Z' }),
+    last: { due: '2026-11-16T08:00:00.000Z', status: 'ended', outcome: 'completed', said: 'Done' },
   };
 }
 
-/** The schedule's chat once made, carrying its schedule. */
+/** The schedule while it is there: none once removed, or before it was made. */
+function scheduleOf(kept: Kept): ScheduleInfo | null {
+  return made(kept) && !kept.removed ? info(kept.paused) : null;
+}
+
+/** The schedule's chat once made, carrying its schedule while it has one. */
 function morningChat(kept: Kept): ThreadSummary | undefined {
-  return made(kept) ? chat(MORNING, 'Morning email summary', { schedule: info() }) : undefined;
+  if (!made(kept)) {
+    return undefined;
+  }
+  const schedule = scheduleOf(kept);
+  return chat(MORNING, 'Morning email summary', schedule === null ? {} : { schedule });
 }
 
 const ASKING_CHAT = chat(ASKING, 'Summarize my email');
 
 function events(thread: string, kept: Kept): readonly RawEvent[] | undefined {
+  if (thread === MORNING) {
+    return made(kept) ? RAN : undefined;
+  }
   if (thread !== ASKING) {
     return undefined;
   }
@@ -273,15 +313,27 @@ const ANSWERS: Answers<Kept> = {
     const all = events(thread, kept);
     return all === undefined ? undefined : { events: all };
   },
-  'thread/steps': ({ thread }, kept) =>
-    thread === ASKING
+  'thread/steps': ({ thread }, kept) => {
+    if (thread === MORNING) {
+      return { steps: { runs: [], replies: [3, 7] } };
+    }
+    return thread === ASKING
       ? {
           steps: {
             runs: [{ first: 3, calls: [CALL], sentence: 'Set up a schedule' }],
             replies: kept.decision === null ? [] : [7],
           },
         }
-      : undefined,
+      : undefined;
+  },
+  'schedule/pause': ({ paused }, kept) => {
+    kept.paused = paused;
+    return { schedule: info(paused) };
+  },
+  'schedule/delete': (_, kept) => {
+    kept.removed = true;
+    return {};
+  },
   'approval/decide': ({ thread, decision }, kept) => {
     if (thread !== ASKING) {
       return undefined;
@@ -296,17 +348,28 @@ const ANSWERS: Answers<Kept> = {
  * model asks to repeat their email summary, the server's card waiting for them (`card`: every
  * weekday at 8, or a shape with no plain words), recorded as the server records it; "Repeat it"
  * makes the schedule and its own chat, which the lists' watch is told of, or with `outcome`
- * `refused` the server refuses it; "Not now" makes nothing. Each time zone the page gives is
- * kept in `zones`.
+ * `refused` the server refuses it; "Not now" makes nothing. `existing`, the schedule and its
+ * chat, which ran last Friday and this morning, are there from the start. The schedule pauses,
+ * resumes and goes as asked. Each time zone the page gives is kept in `zones`.
  */
 export async function schedules(
   page: Page,
   {
     card = 'weekdays',
     outcome = 'made',
-  }: { readonly card?: Card; readonly outcome?: Outcome } = {},
+    existing = false,
+  }: { readonly card?: Card; readonly outcome?: Outcome; readonly existing?: boolean } = {},
 ): Promise<Kept> {
-  const kept: Kept = { card, outcome, decision: null, watch: null, zones: [] };
+  const kept: Kept = {
+    card,
+    outcome,
+    existing,
+    paused: false,
+    removed: false,
+    decision: null,
+    watch: null,
+    zones: [],
+  };
   await page.route('**/*', async (route: Route) => {
     const message = await posted(route);
     if (message === null) {

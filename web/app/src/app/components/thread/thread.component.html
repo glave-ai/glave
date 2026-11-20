@@ -17,6 +17,7 @@
       <app-thread-header
         [title]="title()"
         [project]="project()"
+        [schedule]="schedule()"
         [panel]="facts.shown()"
         (rename)="startRename()"
       />
@@ -32,7 +33,7 @@
         <div class="reading">
           <app-push-banner />
           @for (shown of shownTurns(); track shown.turn.key) {
-            <app-turn [turn]="shown.turn" [away]="shown.away" />
+            <app-turn [turn]="shown.turn" [away]="shown.away" [earlier]="shown.earlier" />
           }
           @for (message of service.queued(); track message.key) {
             <glz-message from="person" data-testid="thread-queued" [author]="copy.you">

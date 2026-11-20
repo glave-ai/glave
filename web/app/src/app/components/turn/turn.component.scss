@@ -27,3 +27,35 @@
     background: var(--glz-color-border);
   }
 }
+
+// A schedule's run, headed with when it was due: a quiet line, its rule to the end.
+.ran {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-3);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+
+  &::after {
+    flex: 1;
+    block-size: var(--glz-border-width);
+    content: '';
+    background: var(--glz-color-border);
+  }
+}
+
+// What a schedule's run was asked, under its heading, as the server shows it; once the schedule
+// is gone, not shown.
+.unasked {
+  display: none;
+}
+
+.asked {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+// A schedule's run before its latest reads quieter: its secondary words muted.
+:host(.earlier) {
+  --glz-color-text-secondary: var(--glz-color-text-muted);
+}
