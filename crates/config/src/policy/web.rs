@@ -39,6 +39,7 @@ impl WebFile {
             allow: hosts("allow", &self.allow)?,
             deny: hosts("deny", &self.deny)?,
             private_addresses: self.private_addresses.unwrap_or(false),
+            named_private: true,
         })
     }
 

@@ -176,6 +176,7 @@ pub(crate) async fn wire(
         connections: connected.map(|connected| connected as Arc<dyn Connections>),
         secrets,
         web: crate::project_folders::web_offered(&choices.web.value)?,
+        others_web: crate::project_folders::web_offered_to_others(&choices.web.value)?,
         skills: crate::skills::offered(&root).await?,
         // The person's own servers, for their threads alone.
         own: servers.tools(),

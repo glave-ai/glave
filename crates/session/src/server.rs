@@ -64,8 +64,10 @@ pub struct Wiring<P, L, B> {
     pub entropy: Box<dyn Entropy>,
     pub workspace: Workspace,
     /// `web_fetch`, which a project's own settings replace for its threads; none when it is
-    /// off.
+    /// off. The person's the server works for alone.
     pub web: Option<Arc<dyn ToolSource>>,
+    /// `web_fetch` for everyone else's threads: no private address (#1507).
+    pub others_web: Option<Arc<dyn ToolSource>>,
     /// Tools beside the built-in ones and `web_fetch`.
     pub tools: Vec<Arc<dyn ToolSource>>,
     /// The skills on the server's computer and glave's own; a thread on a person's own computer
@@ -190,6 +192,7 @@ impl<P, L, B> Wiring<P, L, B> {
             entropy: Box::new(OsEntropy),
             workspace,
             web: None,
+            others_web: None,
             tools: Vec::new(),
             skills: None,
             own: glave_harness::OwnTools::default(),
@@ -231,6 +234,7 @@ impl<P, L, B> Wiring<P, L, B> {
 /// and git hosts it shares with the server.
 struct Equipment {
     web: Option<Arc<dyn ToolSource>>,
+    others_web: Option<Arc<dyn ToolSource>>,
     tools: Vec<Arc<dyn ToolSource>>,
     skills: Option<glave_harness::Skills>,
     own: glave_harness::OwnTools,
@@ -248,6 +252,7 @@ impl Equipment {
     fn taken_from<P, L, B>(wiring: &mut Wiring<P, L, B>) -> Self {
         Self {
             web: wiring.web.take(),
+            others_web: wiring.others_web.take(),
             tools: std::mem::take(&mut wiring.tools),
             skills: wiring.skills.take(),
             own: std::mem::take(&mut wiring.own),
@@ -269,6 +274,7 @@ impl Equipment {
     {
         harness
             .with_web(self.web)
+            .with_others_web(self.others_web)
             .with_tools(self.tools)
             .with_skills(self.skills)
             .with_own_tools(self.own)

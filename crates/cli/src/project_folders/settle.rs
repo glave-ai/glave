@@ -12,7 +12,7 @@ use anyhow::Context as _;
 use glave_config::policy::{self, Choices, Source, WebFile};
 use glave_config::trust::{self, Outcome, Project};
 use glave_harness::Settled;
-use glave_ports::settings::{Hooks, Judge};
+use glave_ports::settings::{Hooks, Judge, WebPolicy};
 use glave_ports::{Scope, ToolSource};
 use glave_web::{Web, WebSettings};
 
@@ -46,11 +46,25 @@ impl Read {
 
 /// `web_fetch` as `web` sets it up, offering nothing when it is off.
 pub(super) fn web_fetch(web: &WebFile) -> anyhow::Result<Web> {
+    fetching(web.policy()?)
+}
+
+/// `web_fetch` under `policy`.
+fn fetching(policy: WebPolicy) -> anyhow::Result<Web> {
     let settings = WebSettings {
-        policy: web.policy()?,
+        policy,
         limits: glave_web::Limits::default(),
     };
     Web::new(settings).context("could not set up web_fetch")
+}
+
+/// `web_fetch` as `web` sets it up for someone other than the person whose computer it is: the
+/// same hosts, no private address (#1507); nothing when it is off.
+pub(crate) fn web_offered_to_others(web: &WebFile) -> anyhow::Result<Option<Arc<dyn ToolSource>>> {
+    let web = fetching(web.policy()?.without_private())?;
+    Ok(web
+        .offers_any()
+        .then(|| Arc::new(web) as Arc<dyn ToolSource>))
 }
 
 /// `web_fetch` as `web` sets it up, as a tool source; nothing when it is off.

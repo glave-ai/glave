@@ -523,3 +523,52 @@ fn a_project_that_takes_the_network_offers_its_commands_the_ask_for_it() {
         );
     });
 }
+
+/// The person's own `web_fetch`, which may reach the private addresses they allowed on their
+/// network, is offered to their threads alone; anyone else's on the server's computer get the
+/// one that reaches none (#1507), as the person's own servers are theirs alone.
+#[test]
+fn the_person_s_web_fetch_serves_their_threads_alone() {
+    let dir = folder("projects-web-own");
+    block_on!(async {
+        let fetch = || vec![("web_fetch", json!({"url": "http://10.0.0.5/"}))];
+        let answers = vec![
+            answer(None, fetch(), StopReason::ToolUse),
+            answer(Some("Read."), vec![], StopReason::EndTurn),
+            answer(None, fetch(), StopReason::ToolUse),
+            answer(Some("Read."), vec![], StopReason::EndTurn),
+        ];
+        let (harness, _) = harness_with(
+            workspace(&dir).await,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            in_the_sandbox(),
+        );
+        let harness = harness
+            .with_web(Some(Arc::new(tool("web_fetch", "the person's web"))))
+            .with_others_web(Some(Arc::new(tool("web_fetch", "everyone's web"))));
+        let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
+        let grace = Caller {
+            person: Some(someone.unwrap()),
+            ..Caller::default()
+        };
+        let cancel = Cancel::new();
+        let place = || Place::Folder(dir.to_string_lossy().into_owned());
+        let mut said = Vec::new();
+        for caller in [Caller::default(), grace] {
+            let mut thread = harness
+                .start_thread_in(scope(), &caller, place())
+                .await
+                .unwrap();
+            harness
+                .run_turn_as(&mut thread, "read it", &caller, &cancel, &mut |_| {})
+                .await
+                .unwrap();
+            said.push(returned(&events(harness.log(), thread.id).await).join("\n"));
+        }
+        assert!(said[0].contains("the person's web"), "{said:?}");
+        assert!(said[1].contains("everyone's web"), "{said:?}");
+    });
+}

@@ -39,8 +39,12 @@ pub struct Defaults {
     /// Commands run at points of the turns of the person the harness works for.
     pub hooks: Hooks,
     /// `web_fetch`, offered right after the built-in tools unless a thread's project sets up
-    /// its own; none when it is off.
+    /// its own; none when it is off. The person's the harness works for alone: it may reach the
+    /// private addresses on their network that they allowed.
     pub web: Option<Arc<dyn ToolSource>>,
+    /// `web_fetch` for everyone else's threads: the same hosts, no private address, theirs
+    /// being the person's network (#1507); none when it is off.
+    pub others_web: Option<Arc<dyn ToolSource>>,
 }
 
 impl std::fmt::Debug for Defaults {

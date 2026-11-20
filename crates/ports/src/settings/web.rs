@@ -18,16 +18,21 @@ pub struct WebPolicy {
     /// may, and it is then fetched only at the ports those entries name: a lookup sees no
     /// port, so `*` beside `localhost:3000` must not let `localhost` be reached at another.
     pub private_addresses: bool,
+    /// Whether a host `allow` names exactly may lead to a private address, as
+    /// `private_addresses` says. Off for someone else's threads on the server's computer, whose
+    /// private addresses are its owner's alone (#1507).
+    pub named_private: bool,
 }
 
 impl Default for WebPolicy {
-    /// Fetching on, every public host, no private addresses.
+    /// Fetching on, every public host, no private addresses but those `allow` names exactly.
     fn default() -> Self {
         Self {
             fetch: true,
             allow: Vec::new(),
             deny: Vec::new(),
             private_addresses: false,
+            named_private: true,
         }
     }
 }
@@ -50,7 +55,7 @@ impl WebPolicy {
             return HostRule::Denied(rule.to_string());
         }
         let mut exact = self.exactly(&host).peekable();
-        let allowed = if exact.peek().is_some() && !self.private_addresses {
+        let allowed = if exact.peek().is_some() && !self.private_addresses && self.named_private {
             exact.any(|allow| allow.admits(&host, port))
         } else {
             self.allow.is_empty() || self.allow.iter().any(|allow| allow.admits(&host, port))
@@ -65,7 +70,20 @@ impl WebPolicy {
     /// Whether `host` may lead to a private address, at whatever port [`WebPolicy::host`]
     /// allows it.
     pub fn private_ok(&self, host: &str) -> bool {
-        self.private_addresses || self.exactly(&Host::of_url(host)).next().is_some()
+        self.private_addresses
+            || (self.named_private && self.exactly(&Host::of_url(host)).next().is_some())
+    }
+
+    /// The same policy for someone other than the person whose computer it is: no private
+    /// address at all, theirs being that person's network, never anyone else's (#1507). Hosts and
+    /// whether fetching is on stay as they are.
+    #[must_use]
+    pub fn without_private(&self) -> Self {
+        Self {
+            private_addresses: false,
+            named_private: false,
+            ..self.clone()
+        }
     }
 
     /// The `allow` entries that name `host` exactly.
@@ -144,5 +162,36 @@ mod tests {
             };
             assert_eq!(open.host(named, 6379), HostRule::Allowed, "{named}");
         }
+    }
+
+    /// For someone else's threads no host reaches a private address, not even one `allow`
+    /// names exactly, while the hosts allowed and denied stay as they were (#1507).
+    #[test]
+    fn without_private_no_host_reaches_a_private_address() {
+        let policy = WebPolicy {
+            allow: patterns(&["wiki.corp:8443", "docs.rs"]),
+            deny: patterns(&["secret.docs.rs"]),
+            private_addresses: true,
+            ..WebPolicy::default()
+        };
+        let others = policy.without_private();
+        assert!(policy.private_ok("wiki.corp"), "the person's own reach it");
+        assert!(!others.private_ok("wiki.corp"));
+        assert!(!others.private_ok("docs.rs"));
+        assert_eq!(others.host("docs.rs", 443), HostRule::Allowed);
+        assert_eq!(others.host("example.com", 443), HostRule::NotAllowed);
+        assert!(matches!(
+            others.host("secret.docs.rs", 443),
+            HostRule::Denied(_)
+        ));
+        let named = WebPolicy {
+            allow: patterns(&["localhost:3000"]),
+            ..WebPolicy::default()
+        };
+        assert!(
+            named.private_ok("localhost"),
+            "named exactly: the person's may"
+        );
+        assert!(!named.without_private().private_ok("localhost"));
     }
 }
