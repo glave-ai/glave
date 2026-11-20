@@ -11,20 +11,22 @@
 //! same browsers. The server's id, which a browser checks before it presents its session, and
 //! the person's passkey handle, which must outlive the store, are the caller's to keep.
 
+mod index;
 mod ledger;
 mod passkeys;
 mod state;
 
+pub(crate) use self::index::passkey_key;
 pub use self::passkeys::Discovered;
 pub(crate) use self::passkeys::Discoverer;
 pub use self::passkeys::{AcceptedPasskeys, Ceremony, Checked, PasskeyInfo, Proof, UnknownPasskey};
 
-use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
-use glave_event::{PrincipalId, RawEvent, Secret, Seq};
+use glave_event::{PasskeyAdded, Payload as _, PrincipalId, RawEvent, Secret, Seq};
 use glave_ports::host::PublicOrigin;
 use glave_ports::stream::{Reserved, StreamError};
-use glave_ports::{BoxFuture, Clock, EventLog, Scope};
+use glave_ports::{BoxFuture, Clock, Directory, EventLog, Scope};
 use jiff::{SignedDuration, Timestamp};
 use thiserror::Error;
 use uuid::Uuid;
@@ -115,6 +117,9 @@ pub struct Browsers {
     ledger: Box<dyn Ledger>,
     /// The glave account it is, whose sessions' tokens name it; none for the local person.
     account: Option<PrincipalId>,
+    /// Where a glave account's passkeys are indexed by their credential ids (`index`); none
+    /// for the local person.
+    index: Option<Arc<dyn Directory>>,
     server: String,
     /// The person's user handle, which every passkey made for them keeps.
     handle: Uuid,
@@ -150,6 +155,7 @@ impl Browsers {
         let browsers = Self {
             ledger: Box::new(Stream { log, scope, thread }),
             account: None,
+            index: None,
             server,
             handle,
             clock,
@@ -165,18 +171,24 @@ impl Browsers {
     }
 
     /// The sessions and passkeys of `person`'s glave account, kept in the account's own
-    /// ledger, for the server `server`, its passkeys made at `origin` and keeping `handle`.
+    /// ledger, for the server `server`, its passkeys made at `origin` and keeping the person's
+    /// id as their handle, each indexed in `index` by its credential id.
     pub(crate) async fn open_account<L: EventLog + 'static>(
         log: L,
         person: PrincipalId,
         server: String,
-        handle: Uuid,
         origin: &PublicOrigin,
         clock: Box<dyn Clock>,
+        index: Arc<dyn Directory>,
     ) -> Result<Self, BrowserError> {
         let scope = Scope::of_account(person);
+        let handle = person.as_uuid();
         let mut browsers = Self::open(log, scope, server, handle, Some(origin), clock).await?;
         browsers.account = Some(person);
+        // Those it had before they were indexed, or since an account in no organization let
+        // them go.
+        browsers.index_passkeys(&index).await?;
+        browsers.index = Some(index);
         Ok(browsers)
     }
 
@@ -389,11 +401,18 @@ impl Browsers {
             })
         };
         let appended = self.ledger.append_retrying(&mut attempt).await?;
-        let mut state = self.state();
-        for raw in appended.into_iter().flat_map(|(events, ())| events) {
-            state.take(raw);
+        let mut added = false;
+        {
+            let mut state = self.state();
+            for raw in appended.into_iter().flat_map(|(events, ())| events) {
+                added |= raw.kind.as_str() == PasskeyAdded::TYPE;
+                state.take(raw);
+            }
         }
-        Ok(())
+        match &self.index {
+            Some(index) if added => self.index_passkeys(index).await,
+            _ => Ok(()),
+        }
     }
 
     /// Reads what the ledger holds past what is known.

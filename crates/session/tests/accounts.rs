@@ -625,11 +625,13 @@ fn an_account_not_in_an_organization_joins_it_with_the_address_its_invite_went_t
             .find(|person| person["email"] == json!("grace@first.example.com"))
             .map(|person| serde_json::from_value(person["id"].clone()).unwrap())
             .unwrap();
-        // Taken out of this organization, she works in one of her own.
-        let removed = asked(&mut here, &Request::PersonRemove { person: grace_id }).await;
-        assert_eq!(removed, json!({}));
+        // She works in one of her own too when she is taken out of this one, so she is never in
+        // none: an account in none lets its passkeys' index go, which only joining through glave
+        // links again, not the directory alone, as here.
         let her_own = OrgId::from_uuid(Uuid::from_u128(0x0192_f5c6_0000_7000_8000_0000_0000_0a12));
         directory.join(grace_id, her_own).await.unwrap();
+        let removed = asked(&mut here, &Request::PersonRemove { person: grace_id }).await;
+        assert_eq!(removed, json!({}));
         let session = sign_in(&served, &mut phone).await;
         let mut signed_in = elsewhere(&served, session.as_str().map(str::to_owned));
 

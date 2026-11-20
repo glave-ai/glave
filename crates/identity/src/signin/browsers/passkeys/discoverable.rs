@@ -32,6 +32,11 @@ impl Discovered {
     pub fn handle(&self) -> Uuid {
         self.handle
     }
+
+    /// The credential id the passkey answered with.
+    pub(crate) fn credential(&self) -> &[u8] {
+        self.answer.get_credential_id()
+    }
 }
 
 impl Discoverer {

@@ -59,3 +59,35 @@ fn a_passkey_no_account_knows_is_refused_alike_whoever_s_id_it_names() {
         }
     });
 }
+
+/// A made-up answer naming a member's id is refused before that member's ledger is opened, as
+/// one naming no one's is, so how long it takes says nothing of whether the id has an account
+/// (#1523): its credential is looked up first, among every account's passkeys.
+#[test]
+fn a_passkey_no_account_has_is_refused_before_any_ledger_is_opened() {
+    block_on!(async {
+        let root = glave_keys::InMemoryRoot::new().unwrap();
+        let store = Store::open_in_memory(glave_keys::KeySettings::new(Arc::new(root))).unwrap();
+        let origin = PublicOrigin::parse("https://glave.test").unwrap();
+        let clock = Arc::new(ManualClock::at_second(1_791_590_400));
+        let open = || {
+            let directory = Arc::new(store.directory());
+            let clock = Arc::<ManualClock>::clone(&clock);
+            Accounts::new(store.log(), directory, "server".into(), &origin, clock).unwrap()
+        };
+        let before = open();
+        let (member, _) = before.made().await.unwrap();
+        before
+            .join(member, OrgId::from_uuid(Uuid::from_u128(1)))
+            .await
+            .unwrap();
+        // Another server on the store, which has opened no one's ledger yet.
+        let accounts = open();
+        let mut forged = Authenticator::new(origin.as_str()).unwrap();
+        refused(&accounts, &mut forged, "glave.test", member.as_uuid()).await;
+        assert!(
+            !accounts.held().contains_key(&member),
+            "the member's ledger was opened"
+        );
+    });
+}

@@ -53,8 +53,10 @@ pub trait Directory: Send + Sync {
     /// Unlinks every identity that leads to `person` when they belong to no organization, all as
     /// one statement, so a join landing meanwhile keeps them: an account in no organization
     /// never signs in again, and lets its email addresses go. Every identity linked here today
-    /// is an email address. Whoever first links another kind, such as a company login's issuer
-    /// and subject, must limit this to emails' keys, so a removal never drops a company login.
+    /// is an email address or a glave account's passkey, whose index an account in no
+    /// organization has no use for and joining links again. Whoever first links another kind,
+    /// such as a company login's issuer and subject, must limit this to those keys, so a
+    /// removal never drops a company login.
     fn unlink_email_if_alone(
         &self,
         person: PrincipalId,
