@@ -10,7 +10,7 @@ use glave_ports::migrations::{Change, Migration, Refused, Schema};
 use tokio_postgres::Client;
 use tokio_postgres::error::SqlState;
 
-use crate::store::{StoreError, describe};
+use crate::store::{StoreError, describe, timed_out};
 
 /// The schema this build makes and reads. A migration that has shipped is never edited: a
 /// change to the schema is a new one, appended.
@@ -41,6 +41,11 @@ const MIGRATED_WITHIN: Duration = Duration::from_mins(5);
 /// using: moments, since every lock they take is held for one statement or transaction, and a
 /// migration waiting for one holds up every query of that table behind it.
 const TABLES_WITHIN: Duration = Duration::from_secs(5);
+
+/// How long one statement of bringing the database up to date may run, in place of every
+/// query's limit (`store::QUERIES_WITHIN`): a step can rebuild a large table or index, real
+/// work of minutes, and waiting for another server's migration takes up to [`MIGRATED_WITHIN`].
+const MIGRATES_WITHIN: Duration = Duration::from_mins(30);
 
 /// Every table as of version 20, but its unsealed search index, which 21 makes again sealed.
 const BASELINE: &str = "
@@ -322,13 +327,15 @@ pub async fn migrate(client: &mut Client, schema: &Schema<'_>) -> Result<(), Sto
     let transaction = client.transaction().await.map_err(failed)?;
     transaction
         .batch_execute(&format!(
-            "SET LOCAL lock_timeout = {};
+            "SET LOCAL statement_timeout = {};
+             SET LOCAL lock_timeout = {};
              SELECT pg_advisory_xact_lock(hashtext('glave_migrations:' || current_schema()));
              SET LOCAL lock_timeout = {};
              CREATE TABLE IF NOT EXISTS glave_migrations (
                  version  integer     PRIMARY KEY,
                  applied  timestamptz NOT NULL DEFAULT now()
              );",
+            MIGRATES_WITHIN.as_millis(),
             MIGRATED_WITHIN.as_millis(),
             TABLES_WITHIN.as_millis()
         ))
@@ -361,6 +368,10 @@ pub async fn migrate(client: &mut Client, schema: &Schema<'_>) -> Result<(), Sto
                 Some(&SqlState::LOCK_NOT_AVAILABLE) => format!(
                     "a table it changes stayed in use for {}; starting again tries again",
                     glave_ports::spoken(TABLES_WITHIN)
+                ),
+                _ if e.as_db_error().is_some_and(timed_out) => format!(
+                    "it ran past its limit of {}, and the database stopped it",
+                    glave_ports::spoken(MIGRATES_WITHIN)
                 ),
                 _ => describe(&e),
             };
