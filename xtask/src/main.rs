@@ -14,6 +14,7 @@ mod changed;
 mod ci;
 mod cli;
 mod cmd;
+mod connectors;
 mod credits;
 mod deps;
 mod duplicates;

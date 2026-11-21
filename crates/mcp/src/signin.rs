@@ -246,12 +246,19 @@ async fn offered(
     Ok((manager, resolution))
 }
 
+/// Reads the sign-in the MCP server at `url` offers, as [`SignIn::start`] would find it first,
+/// registering nothing and asking no one: `Ok` when glave can sign in there, else why not
+/// (`cargo xtask connectors` reads each catalog connector's this way).
+pub async fn sign_in_found(url: &str, reachable: Reachable) -> Result<(), SignInError> {
+    offered(url, reachable).await.map(drop)
+}
+
 /// Whether the MCP server at `url` asks people to sign in in a way glave can, as
 /// [`SignIn::start`] would find first: false for one that asks no one, or whose sign-in glave
 /// can't use yet, or that is out of reach.
 pub async fn offers_sign_in(url: &str, reachable: Reachable) -> Result<bool, SignInError> {
-    match offered(url, reachable).await {
-        Ok(_) => Ok(true),
+    match sign_in_found(url, reachable).await {
+        Ok(()) => Ok(true),
         Err(
             SignInError::NotOffered { .. }
             | SignInError::Unregistered { .. }

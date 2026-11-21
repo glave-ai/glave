@@ -27,4 +27,4 @@ pub use output::output as tool_output;
 pub use reachable::Reachable;
 pub use resources::Resources;
 pub use server::{Limits, McpServer};
-pub use signin::{Granted, SignIn, SignInError, address, offers_sign_in, renew};
+pub use signin::{Granted, SignIn, SignInError, address, offers_sign_in, renew, sign_in_found};

@@ -19,6 +19,9 @@ glave-ports = { workspace = true, features = ["conformance"] }
 # The sample people `try-org`'s organization starts with join as browsers do, with a passkey
 # made in software.
 glave-identity = { workspace = true, features = ["fake-authenticator"] }
+# Reading each catalog connector's sign-in, or starting it, as glave does (`cargo xtask
+# connectors`).
+glave-mcp.workspace = true
 # What xtask runs to its end (the builds, the tests, the web checks, the evals) ends with xtask,
 # however xtask ends: glave's lifeline.
 glave-process.workspace = true
