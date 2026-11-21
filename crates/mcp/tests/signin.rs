@@ -354,9 +354,12 @@ fn a_server_that_no_longer_says_where_its_sign_in_is_is_sent_no_refresh_token() 
             "asked again later: {renewed:?}"
         );
     });
+    // Only the ping a search for its sign-in starts with, which carries nothing of the person's.
     let asked = gone.received();
     assert!(
-        asked.iter().all(|asked| asked.method != "POST"),
+        asked
+            .iter()
+            .all(|asked| asked.method != "POST" || asked.body.contains("\"ping\"")),
         "nothing was sent there: {asked:?}"
     );
     assert!(!spent(&auth), "the refresh token is unspent");
@@ -423,6 +426,15 @@ fn an_authorization_server_that_takes_no_registration_is_asked_nothing_more() {
             asked.iter().all(|(_, path, _)| path != "/register"),
             "{asked:?}"
         );
+    });
+}
+
+#[test]
+fn a_server_that_sends_a_get_to_its_docs_is_signed_in_to_from_its_challenge() {
+    let auth = FakeAuthServer::start(Vec::new()).unwrap();
+    let served = Served::with(&["--sign-in", &auth.url, "--get-elsewhere"]);
+    block_on!(async {
+        assert_eq!(offers_sign_in(&served.url, HERE).await, Ok(true));
     });
 }
 

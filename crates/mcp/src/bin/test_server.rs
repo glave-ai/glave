@@ -580,12 +580,18 @@ fn main() -> ExitCode {
     let issuer = fake.as_ref().map(|fake| fake.url.clone());
     let issuer = issuer.or_else(|| valued("--sign-in").into_iter().next());
     let above = flags.iter().any(|flag| flag == "--resource-above");
+    let elsewhere = flags.iter().any(|flag| flag == "--get-elsewhere");
     let needs = valued("--needs").into_iter().next();
     let ends = flags.iter().any(|flag| flag == "--ends-with-stdin");
     let http = flags.iter().any(|flag| flag == "--http");
     let outcome = runtime.block_on(async {
         if http {
-            serve_http(server, issuer, above, needs, ends).await
+            let gating = Gating {
+                above,
+                needs,
+                elsewhere,
+            };
+            serve_http(server, issuer, gating, ends).await
         } else {
             let running = server.serve(rmcp::transport::stdio()).await?;
             running.waiting().await?;
@@ -629,14 +635,23 @@ async fn stdin_closed(ends: bool) {
     let _ = waiting.await;
 }
 
+/// How `--sign-in` lets requests in, besides its tokens.
+struct Gating {
+    /// `--resource-above`: its metadata names its origin as the resource.
+    above: bool,
+    /// `--needs`: the scope a call of `whose` needs.
+    needs: Option<String>,
+    /// `--get-elsewhere`: a GET with no token is sent to another origin's page, as some
+    /// vendors send a browser to their docs.
+    elsewhere: bool,
+}
+
 /// Serves until killed, or with `ends` until its standard input closes, after printing its
-/// URL; with an `issuer`, only to a request signed in with one of its tokens, and with `needs`,
-/// a call of `whose` only to one signed in with the last.
+/// URL; with an `issuer`, only to a request signed in with one of its tokens, as `gating` says.
 async fn serve_http(
     server: TestServer,
     issuer: Option<String>,
-    above: bool,
-    needs: Option<String>,
+    gating: Gating,
     ends: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let tokens = Arc::clone(&server.tokens);
@@ -652,7 +667,7 @@ async fn serve_http(
     out.flush()?;
     let gate = issuer.map(|issuer| {
         Arc::new(Gate {
-            resource: if above {
+            resource: if gating.above {
                 base.clone()
             } else {
                 format!("{base}/mcp")
@@ -660,7 +675,8 @@ async fn serve_http(
             base,
             issuer,
             tokens,
-            needs,
+            needs: gating.needs,
+            elsewhere: gating.elsewhere,
         })
     });
     let mut connections = tokio::task::JoinSet::new();
@@ -702,6 +718,8 @@ struct Gate {
     tokens: Arc<Vec<String>>,
     /// The scope a call of `whose` needs, which only the last token grants.
     needs: Option<String>,
+    /// Whether a GET with no token is sent to another origin.
+    elsewhere: bool,
 }
 
 type Answer = http::Response<BoxBody<Bytes, std::convert::Infallible>>;
@@ -737,6 +755,12 @@ impl Gate {
                 }
                 _ => None,
             };
+        }
+        if self.elsewhere && request.method() == http::Method::GET {
+            let docs = http::Response::builder()
+                .status(302)
+                .header(http::header::LOCATION, "https://docs.example.com/mcp");
+            return docs.body(Full::new(Bytes::new()).boxed()).ok();
         }
         let challenge = format!("Bearer resource_metadata=\"{metadata}\"");
         answer(401, Some(challenge), String::new())

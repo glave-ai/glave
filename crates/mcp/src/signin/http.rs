@@ -6,6 +6,8 @@
 use std::time::Duration;
 
 use http::{Request, Response};
+use reqwest::StatusCode;
+use reqwest::header::{ACCEPT, CONTENT_TYPE, WWW_AUTHENTICATE};
 use reqwest::redirect::Policy;
 use rmcp::transport::auth::{
     OAuthHttpClient, OAuthHttpClientError, OAuthHttpClientFuture, OAuthHttpRedirectPolicy,
@@ -76,6 +78,34 @@ impl Guarded {
         }
         Ok(response.body(body)?)
     }
+}
+
+/// What every MCP server answers first, and which changes nothing: a `ping`.
+const PING: &str = r#"{"jsonrpc":"2.0","id":0,"method":"ping"}"#;
+
+/// The challenge the MCP server at `url` answers a request with no token with, when it asks for
+/// a sign-in: its 401's `WWW-Authenticate`, which MCP's authorization starts from. Only its
+/// headers are waited for, so a server that asks no one never holds this up with a stream.
+pub(super) async fn challenge(url: &str, reach: &Reach) -> Option<String> {
+    if reach.refuses(url).is_some() {
+        return None;
+    }
+    let client = reach.client().timeout(WITHIN).redirect(Policy::none());
+    let answer = client
+        .build()
+        .ok()?
+        .post(url)
+        .header(CONTENT_TYPE, "application/json")
+        .header(ACCEPT, "application/json, text/event-stream")
+        .body(PING)
+        .send()
+        .await
+        .ok()?;
+    if answer.status() != StatusCode::UNAUTHORIZED {
+        return None;
+    }
+    let said = answer.headers().get(WWW_AUTHENTICATE)?.to_str().ok();
+    said.map(str::to_owned)
 }
 
 impl OAuthHttpClient for Guarded {

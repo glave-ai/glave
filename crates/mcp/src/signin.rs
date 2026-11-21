@@ -197,15 +197,28 @@ impl SignIn {
     }
 }
 
-/// rmcp's sign-in for the MCP server at `url`, every request it makes under `reachable`.
-async fn manager(url: &str, reachable: Reachable) -> Result<AuthorizationManager, SignInError> {
+/// rmcp's sign-in for the MCP server at `url`, every request it makes under `reachable`, and
+/// what it found of where the server's sign-in is. As MCP's authorization says, the search
+/// starts from the server's own 401 to a request, whose challenge names its metadata: rmcp's
+/// own first look is a GET, which a server may answer with a redirect to its docs, ending
+/// rmcp's search there (Close's does, #1615).
+async fn resolved(
+    url: &str,
+    reachable: Reachable,
+) -> Result<(AuthorizationManager, AuthorizationMetadataResolution), SignInError> {
     if let Some(refused) = reachable.refuses(url) {
         return Err(SignInError::OutOfReach {
             url: url.to_owned(),
             message: refused.to_string(),
         });
     }
-    guarded(url, reachable).await
+    let manager = guarded(url, reachable).await?;
+    let challenge = http::challenge(url, &reachable.signing_in_to(url)).await;
+    let resolution = manager
+        .resolve_metadata_from_challenge(challenge.as_deref())
+        .await
+        .map_err(|error| SignInError::from_auth(url, &error))?;
+    Ok((manager, resolution))
 }
 
 /// rmcp's sign-in for the MCP server at `url`, whatever its address, going out through glave's
@@ -228,9 +241,7 @@ async fn offered(
     url: &str,
     reachable: Reachable,
 ) -> Result<(AuthorizationManager, AuthorizationMetadataResolution), SignInError> {
-    let failed = |error: AuthError| SignInError::from_auth(url, &error);
-    let manager = manager(url, reachable).await?;
-    let resolution = manager.resolve_metadata().await.map_err(failed)?;
+    let (manager, resolution) = resolved(url, reachable).await?;
     if !resolution.source.is_discovered() {
         return Err(SignInError::NotOffered {
             url: url.to_owned(),
@@ -273,8 +284,7 @@ pub async fn renew(
     reachable: Reachable,
 ) -> Result<Granted, SignInError> {
     let failed = |error: AuthError| SignInError::from_auth(url, &error);
-    let mut manager = manager(url, reachable).await?;
-    let resolution = manager.resolve_metadata().await.map_err(failed)?;
+    let (mut manager, resolution) = resolved(url, reachable).await?;
     if !resolution.source.is_discovered() {
         return Err(SignInError::Unreachable {
             url: url.to_owned(),
