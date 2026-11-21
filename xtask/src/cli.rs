@@ -17,6 +17,11 @@ commands:
                     --all, and CI always, check everything. --target builds the lint, docs and
                     tests for a target other than this machine's (CI's run on musl). Off CI,
                     tests run on half the cores (GLAVE_TEST_THREADS=n sets how many)
+  connectors        read each connector of the catalog (crates/session/connectors.toml) as
+                    glave does, from its vendor: where it says one signs in, that its sign-in
+                    is found and takes glave's registration (nothing is registered); else that
+                    it starts with no one signed in. Fails naming each that drifted and why.
+                    Not part of ci: a weekly workflow runs it (connectors.yml)
   credits           fail on a commit since the change's base whose author, committer or
                     Co-authored-by address is at users.noreply.github.com, which GitHub
                     credits to the account with that login, unless xtask/src/credits.rs
@@ -85,6 +90,7 @@ fn run(args: &[String]) -> Result<(), String> {
             "package-age" => crate::package_age::check(),
             "secrets" => crate::secrets::check(),
             "credits" => crate::credits::check(),
+            "connectors" => crate::connectors::check(),
             "spawns" => crate::spawns::check(),
             "waits" => crate::waits::check(),
             "unused-pub" => crate::unused_pub::check(),

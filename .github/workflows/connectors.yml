@@ -1,0 +1,77 @@
+name: connectors
+
+# Each connector of glave's catalog (crates/session/connectors.toml) read again from its vendor,
+# as glave reads it (`cargo xtask connectors`, specs/session.md, "Connectors"): where it says one
+# signs in, that its sign-in is still found and takes glave's registration; else that it starts
+# with no one signed in. Nothing is registered and no one signs in. Weekly and by hand, never on
+# a pull request or in the merge queue, so a vendor's bad day never holds up a merge. When any
+# drifted, one issue says which and why, opened or updated; when none did, it is closed.
+on:
+  schedule:
+    - cron: "41 6 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: connectors
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: "0"
+  # The one issue this workflow keeps, found by its title.
+  TITLE: Connectors drifted from the catalog
+
+jobs:
+  read:
+    runs-on: ubuntu-24.04
+    # Building xtask takes minutes; reading the catalog, a few at a time, about one.
+    timeout-minutes: 30
+    # The issue alone, with the run's own token.
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build xtask
+        run: cargo build -p xtask
+      - name: Read each connector from its vendor
+        id: read
+        run: cargo xtask connectors | tee read.txt
+      - name: Open or update the issue
+        if: failure() && steps.read.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "\`cargo xtask connectors\` found connectors of the catalog (\`crates/session/connectors.toml\`) that no longer offer what it says of them ($RUN):"
+            echo
+            sed -n 's/^drifted  \(.*\)/- \1/p' read.txt
+            echo
+            echo "Removing or changing an entry is a change people see: decide each, then fix the catalog."
+          } > body.md
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number,title --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file body.md
+          fi
+      - name: Close the issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number,title --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" --comment "Every connector read as the catalog says again ($RUN)."
+          fi

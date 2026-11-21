@@ -6766,6 +6766,7 @@ version = "0.0.0"
 dependencies = [
  "base64 0.23.1",
  "glave-identity",
+ "glave-mcp",
  "glave-ports",
  "glave-process",
  "jiff",
