@@ -14,6 +14,7 @@ use glave_mcp::{
 use glave_ports::auth::{Auth, AuthError, Header, Outgoing, RequestSigner};
 use glave_ports::testing::{FAKE_CLIENT, FakeAuthServer, FakeHttp, Grant, fake_secret};
 use glave_ports::{BoxFuture, NeverCancelled, ToolSource as _, block_on, conformance};
+use serde_json::json;
 
 use crate::http::Served;
 
@@ -354,9 +355,11 @@ fn a_server_that_no_longer_says_where_its_sign_in_is_is_sent_no_refresh_token() 
             "asked again later: {renewed:?}"
         );
     });
+    // Only the ping a search for its sign-in starts with, which carries nothing of the person's.
     let asked = gone.received();
     assert!(
-        asked.iter().all(|asked| asked.method != "POST"),
+        asked.iter().all(|asked| asked.method != "POST"
+            || (asked.body.contains("\"ping\"") && !asked.headers.contains_key("authorization"))),
         "nothing was sent there: {asked:?}"
     );
     assert!(!spent(&auth), "the refresh token is unspent");
@@ -424,6 +427,35 @@ fn an_authorization_server_that_takes_no_registration_is_asked_nothing_more() {
             "{asked:?}"
         );
     });
+}
+
+#[test]
+fn a_server_that_sends_a_get_to_its_docs_is_signed_in_to_from_its_challenge() {
+    let auth = FakeAuthServer::start(Vec::new()).unwrap();
+    let served = Served::with(&["--sign-in", &auth.url, "--get-elsewhere"]);
+    block_on!(async {
+        assert_eq!(offers_sign_in(&served.url, HERE).await, Ok(true));
+    });
+}
+
+#[test]
+fn a_challenge_naming_metadata_elsewhere_for_another_resource_is_refused() {
+    let auth = FakeAuthServer::start(Vec::new()).unwrap();
+    // Metadata on another host, for a resource that is not the server's (RFC 9728, 3.3).
+    let document = json!({"resource": "https://elsewhere.example.com/mcp",
+                          "authorization_servers": [auth.url]});
+    let elsewhere = FakeHttp::always(200, &document.to_string()).unwrap();
+    let named = format!("{}/.well-known/oauth-protected-resource", elsewhere.url);
+    let served = Served::with(&["--sign-in", &auth.url, "--metadata-at", &named]);
+    block_on!(async {
+        let offered = offers_sign_in(&served.url, HERE).await;
+        assert!(
+            matches!(offered, Err(SignInError::Unreachable { .. })),
+            "{offered:?}"
+        );
+    });
+    assert_eq!(elsewhere.received().len(), 1, "its metadata was read");
+    assert!(auth.received().is_empty(), "its sign-in was never asked");
 }
 
 #[test]
