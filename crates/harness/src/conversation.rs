@@ -50,6 +50,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::ToolCallStarted(_)
         | Body::ServiceAsked(_)
         | Body::ServiceAnswered(_)
+        | Body::ConnectorSuggested(_)
         | Body::PlanApproved(_)
         | Body::WorkspaceBound(_)
         | Body::WorkspaceRemoved(_)

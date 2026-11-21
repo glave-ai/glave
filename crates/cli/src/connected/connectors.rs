@@ -18,13 +18,17 @@ use super::{Connected, Remote, described};
 use crate::mcp::Offered;
 
 impl Connected {
-    /// Offers the connectors `offered` names from now on, as the policy read again says.
-    pub(crate) fn offer(&self, offered: Offered) {
-        *self.offered.lock().unwrap_or_else(PoisonError::into_inner) = offered;
+    /// Offers the connectors `offered` names from now on, as the policy read again says:
+    /// whether that changed what is offered.
+    pub(crate) fn offer(&self, offered: Offered) -> bool {
+        let mut now = self.offered.lock().unwrap_or_else(PoisonError::into_inner);
+        let changed = *now != offered;
+        *now = offered;
+        changed
     }
 
     /// Whether the connector `id` is offered now.
-    fn offers(&self, id: &str) -> bool {
+    pub(crate) fn offers(&self, id: &str) -> bool {
         let offered = self.offered.lock().unwrap_or_else(PoisonError::into_inner);
         offered.allows(id)
     }

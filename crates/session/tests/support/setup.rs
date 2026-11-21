@@ -226,6 +226,9 @@ pub(crate) struct Setup {
     pub model: Option<ScriptedModel>,
     /// Tools beside the built-in ones.
     pub tools: Vec<Arc<dyn ToolSource>>,
+    /// The person's own: none unless a test gives some. Boxed, so the futures that hold a
+    /// setup stay small.
+    pub own: Box<glave_harness::OwnTools>,
     pub skills: Option<glave_harness::Skills>,
     /// The hooks every thread runs; none unless a test sets some.
     pub hooks: glave_ports::settings::Hooks,
@@ -314,6 +317,7 @@ impl Setup {
             leases: None,
             model: None,
             tools: Vec::new(),
+            own: Box::default(),
             skills: None,
             hooks: glave_ports::settings::Hooks::default(),
             variables: Vec::new(),
@@ -460,6 +464,7 @@ impl Setup {
             forwarded: self.forwarded,
             leases: self.leases,
             tools: self.tools,
+            own: *self.own,
             skills: self.skills,
             hooks: self.hooks,
             awake: self.awake,

@@ -32,7 +32,9 @@ pub use payload::{
     LanguageSet, MailAsked, MaxPrice, MemorySet, SearchSet, Serve, SignupFinished, SignupStarted,
     SkillFound, Sort,
 };
-pub use payload::{AccountRenamed, ConnectorConnected, ConnectorDisconnected};
+pub use payload::{
+    AccountRenamed, ConnectorConnected, ConnectorDisconnected, ConnectorSuggested, Suggests,
+};
 pub use payload::{
     AddedFile, ServiceAdds, ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField,
     ServiceFieldKind, ServiceOption, ServiceOutcome, misfit,

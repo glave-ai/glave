@@ -2,27 +2,29 @@
 //! transport sends the event: what an approval asks (`approval.requested`'s `ask`), recorded in
 //! English, as every sentence is where it is made, written again from the typed `asking` it was
 //! written from; why it asks (its `caution`), written again from the typed `reason` it was written from; and
-//! who asks and what came of it when a service asks the person, from the service's name; and
-//! where a fork begins, from how it stands as to files.
+//! who asks and what came of it when a service asks the person, from the service's name; where
+//! a fork begins, from how it stands as to files; and what a connector suggested to the person
+//! is, from what it was written from.
 
 use std::sync::Arc;
 
 use glave_event::{
-    ApprovalRequested, Body, CardLines, Event, Payload as _, RawEvent, ServiceAnswered,
-    ServiceAsked, ServiceOutcome, ThreadForked, decode,
+    ApprovalRequested, Body, CardLines, ConnectorSuggested, Event, Payload as _, RawEvent,
+    ServiceAnswered, ServiceAsked, ServiceOutcome, ThreadForked, decode,
 };
 
 use super::{Language, Sentence, caution_in, say, word};
 use crate::protocol::{Notification, Update};
 
 /// Whether `event` may hold a sentence of the server's own: an approval does, what a service
-/// asks and its answer, and where a fork begins.
+/// asks and its answer, where a fork begins, and a connector suggested.
 pub(super) fn asks(event: &RawEvent) -> bool {
     [
         ApprovalRequested::TYPE,
         ServiceAsked::TYPE,
         ServiceAnswered::TYPE,
         ThreadForked::TYPE,
+        ConnectorSuggested::TYPE,
     ]
     .contains(&event.kind.as_str())
 }
@@ -30,7 +32,7 @@ pub(super) fn asks(event: &RawEvent) -> bool {
 /// `event` as a caller who reads `language` is sent it: what an approval asks written in their
 /// language, when the table holds the words it was recorded in, and why it asks, when it was
 /// recorded with its reason; what a service asks and how it was answered; what a fork tells of
-/// its files; `None` when nothing in it changes, as in English.
+/// its files; what a connector suggested is; `None` when nothing in it changes, as in English.
 pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent> {
     if language == Language::English || !asks(event) {
         return None;
@@ -89,6 +91,10 @@ pub(super) fn event_in(event: &RawEvent, language: Language) -> Option<RawEvent>
         Body::ThreadForked(mut forked) => {
             forked.told = say(language, &crate::fork::forked(forked.files));
             Body::ThreadForked(forked)
+        }
+        Body::ConnectorSuggested(mut suggested) => {
+            suggested.told = word(language, &suggested.suggests);
+            Body::ConnectorSuggested(suggested)
         }
         _ => return None,
     };

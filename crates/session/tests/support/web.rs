@@ -5,11 +5,12 @@
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 
+use glave_event::ThreadId;
 use glave_ports::{EventLog, SseDecoder};
 use glave_session::http::{Listeners, Site};
 use glave_session::protocol::Request;
 use glave_session::rpc;
-use glave_session::signin::{SignIn, Trust};
+use glave_session::signin::{LocalToken, SignIn, Trust};
 use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
@@ -49,6 +50,30 @@ pub(crate) async fn serve_with<L: EventLog + 'static>(
 ) -> Served {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     serve_on(server, signin, site, listener.into())
+}
+
+/// `tested` served over HTTP to the person on this computer, two clients of theirs, one
+/// reading `en-XA` and one English, and a chat the first started.
+pub(crate) async fn read_in_two(tested: Tested) -> (Served, Web, Web, ThreadId) {
+    let local = LocalToken::new([7; 32]);
+    let signin = SignIn::local(local.clone(), Box::new(fixed_clock()));
+    let served = serve_with(tested, signin, None).await;
+    let token = local.reveal().to_owned();
+    let mut reading = Web::new(&served, Some(token.clone())).reading("en-XA");
+    let plain = Web::new(&served, Some(token));
+    let started = reading
+        .call(&Request::ThreadStart {
+            project: None,
+            background: false,
+            worktree: None,
+            computer: None,
+            model: None,
+            permissions: None,
+            effort: None,
+        })
+        .await;
+    let thread = serde_json::from_value(started["result"]["thread"]["id"].clone()).unwrap();
+    (served, reading, plain, thread)
 }
 
 /// Serves `server` as `serve_with` does, on `listener`, bound before the server was made, as

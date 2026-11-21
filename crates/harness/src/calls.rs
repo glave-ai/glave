@@ -29,7 +29,7 @@ use crate::room::fit;
 use crate::sandbox;
 use crate::service::Round;
 use crate::tools::Tool;
-use crate::toolset::Route;
+use crate::toolset::{Route, suggestion};
 use crate::turn::{Live, Step};
 use crate::waits::{Answered, verdict_of};
 
@@ -135,7 +135,17 @@ where
             }
             Route::Search { query, connector } => {
                 let found = step.toolset.search(query.as_deref(), connector.as_deref());
-                Ok(fit(found, self.tool_room(thread)))
+                // What it suggests the person connect, glave's own records, before its result.
+                let mut events = Vec::new();
+                for it in &found.suggested {
+                    self.stage(thread, &mut events, &suggestion(&call.call_id, it))?;
+                }
+                if !events.is_empty() {
+                    let staged = u64::try_from(events.len()).unwrap_or(u64::MAX);
+                    self.commit(thread, events).await?;
+                    thread.unnumbered = thread.unnumbered.saturating_add(staged);
+                }
+                Ok(fit(found.output, self.tool_room(thread)))
             }
             Route::Refused(output) => Ok(output),
         }

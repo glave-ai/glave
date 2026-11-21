@@ -2,6 +2,8 @@
 //! connection of theirs is used everywhere, or only in one project, their Chats among them. A
 //! thread is offered those of its project alone, so a connection used elsewhere is neither
 //! listed nor found in it, and a call to one its prefix still lists is refused (`toolset.rs`).
+//! The connectors of glave's catalog they may connect and have not, `tool_search` finds for
+//! them to connect.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -16,13 +18,34 @@ pub struct Placed {
     pub connections: Vec<String>,
 }
 
+/// A connector of glave's catalog the person may connect and has not: what `tool_search`
+/// finds of it, in English, for them to connect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Connectable {
+    /// Its id in the catalog: `linear`.
+    pub id: String,
+    /// Its vendor's name for it: `Linear`.
+    pub name: String,
+    /// What it reaches: `Issues, projects and cycles.`
+    pub description: String,
+    /// The names of its categories and tags, which a search finds it by too.
+    pub tags: Vec<String>,
+    /// Whether connecting it signs the person in on its vendor's own page.
+    pub signs_in: bool,
+    /// Whether its name is also a plain English word (Make, Close, Linear): a search names it
+    /// only written as the catalog spells it.
+    pub plain_word: bool,
+}
+
 /// The person's own tool sources: those every place has, each place's in their stead where it
-/// has connections of its own, and the name of every connection they may connect, here or not.
+/// has connections of its own, the name of every connection they may connect, here or not, and
+/// glave's catalog, where it is offered to them.
 #[derive(Clone, Default)]
 pub struct OwnTools {
     everywhere: Placed,
     places: BTreeMap<ProjectId, Placed>,
     connectors: Vec<String>,
+    offered: Option<Vec<Connectable>>,
 }
 
 impl OwnTools {
@@ -44,6 +67,7 @@ impl OwnTools {
             everywhere,
             places: BTreeMap::new(),
             connectors,
+            offered: None,
         }
     }
 
@@ -55,14 +79,35 @@ impl OwnTools {
         self
     }
 
-    /// The sources of the threads of `project`, and the connections the person may connect
-    /// that are not among them.
-    pub(crate) fn of(&self, project: ProjectId) -> (Placed, Vec<String>) {
+    /// With glave's catalog offered to the person, `connectable` the connectors of it they may
+    /// connect and have not, none where they connected all: `tool_search` is listed to find
+    /// them in every place, from each thread's first call.
+    #[must_use]
+    pub fn with_catalog_offered(mut self, connectable: Vec<Connectable>) -> Self {
+        self.offered = Some(connectable);
+        self
+    }
+
+    /// The person's own for the threads of `project`.
+    pub(crate) fn of(&self, project: ProjectId) -> Mine {
         let placed = self.places.get(&project).unwrap_or(&self.everywhere);
         let away = (self.connectors.iter())
             .filter(|name| !placed.connections.contains(name))
             .cloned()
             .collect();
-        (placed.clone(), away)
+        Mine {
+            placed: placed.clone(),
+            away,
+            offered: self.offered.clone(),
+        }
     }
+}
+
+/// The person's own for the threads of one place: its sources, the connections the person
+/// may connect that are not among them, and glave's catalog, where it is offered to them.
+#[derive(Clone, Default)]
+pub(crate) struct Mine {
+    pub(crate) placed: Placed,
+    pub(crate) away: Vec<String>,
+    pub(crate) offered: Option<Vec<Connectable>>,
 }

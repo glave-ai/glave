@@ -4,12 +4,15 @@
 //! changes as tools are found: a search's result holds what it found, at the end of the
 //! conversation, and the prompt cache keeps matching. Every call names the real tool by the
 //! time it is asked about, judged and hooked, and in its summary, and its arguments are checked
-//! against the real tool's parameters first, since the model may not have seen them.
+//! against the real tool's parameters first, since the model may not have seen them. The search
+//! also finds the connectors of glave's catalog the person may connect (`suggest.rs`).
 
 mod fits;
 mod rank;
+mod suggest;
 
 pub(crate) use rank::words_of;
+pub(crate) use suggest::{Searched, suggestion};
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -19,6 +22,7 @@ use glave_ports::{ToolCall, ToolOutput, ToolSpec};
 use serde_json::{Map, Value, json};
 
 use super::ToolSet;
+use crate::own_tools::Connectable;
 
 /// The search's name.
 pub(crate) const TOOL_SEARCH: &str = "tool_search";
@@ -104,16 +108,21 @@ pub(crate) fn one_line(text: &str, most: usize) -> String {
     sentence.to_owned()
 }
 
-/// The search, as the model is told it.
-fn search_spec() -> ToolSpec {
+/// The search, as the model is told it where each connector is one tool: finding services the
+/// person may connect too, when there are any (`connectable`).
+fn search_spec(connectable: bool) -> ToolSpec {
+    let mut description = "Find connected tools by what they do, and see their parameters. Each \
+         connector is one tool, mcp__<connector>, which lists some of its tools and calls any of \
+         them by name: search for the rest, or for one's parameters, before calling it. Give a \
+         few words for what the tool does, or its exact name; name a connector to search only \
+         its tools."
+        .to_owned();
+    if connectable {
+        description.push_str(suggest::ALSO);
+    }
     ToolSpec {
         name: TOOL_SEARCH.to_owned(),
-        description: "Find connected tools by what they do, and see their parameters. Each \
-             connector is one tool, mcp__<connector>, which lists some of its tools and calls \
-             any of them by name: search for the rest, or for one's parameters, before calling \
-             it. Give a few words for what the tool does, or its exact name; name a connector to \
-             search only its tools."
-            .to_owned(),
+        description,
         parameters: json!({"type": "object", "properties": {
             "query": {"type": "string", "description": "Words for what the tool does, or its exact name"},
             "connector": {"type": "string", "description": "Search only this connector's tools: the <connector> of mcp__<connector>"}
@@ -244,7 +253,9 @@ impl ToolSet {
 
     /// Lists each connector as one tool, and `tool_search` before them, where the connected
     /// tools' definitions would take more than a tenth of a window of `window_tokens`, or there
-    /// would be more than [`MOST_LISTED`] tools in all; else leaves every tool listed in full.
+    /// would be more than [`MOST_LISTED`] tools in all; else leaves every tool listed in full,
+    /// and `tool_search` last, to find services the person may connect, where glave's catalog
+    /// is offered, whether or not any is left to connect now.
     pub(crate) fn frame(&mut self, window_tokens: u64) {
         let connected: Vec<&ToolSpec> = (self.specs.iter())
             .filter(|spec| self.is_connected(&spec.name))
@@ -253,6 +264,9 @@ impl ToolSet {
         let tokens = u64::try_from(chars).unwrap_or(u64::MAX) / CHARS_PER_TOKEN;
         let fits = tokens <= window_tokens / SHARE && self.specs.len() <= MOST_LISTED;
         if connected.is_empty() || fits {
+            if self.offered.is_some() {
+                self.specs.push(suggest::spec());
+            }
             return;
         }
         let mut connectors: Vec<(&str, Vec<&ToolSpec>)> = Vec::new();
@@ -265,7 +279,7 @@ impl ToolSet {
                 None => connectors.push((connector, vec![spec])),
             }
         }
-        let mut framed = vec![search_spec()];
+        let mut framed = vec![search_spec(self.offered.is_some())];
         framed.extend(
             connectors.iter().map(|(connector, tools)| {
                 wrapper_spec(connector, tools, self.about.get(*connector))
@@ -306,9 +320,14 @@ impl ToolSet {
         self
     }
 
+    /// Whether `tool_search` is listed, glave's own.
+    fn lists_search(&self) -> bool {
+        !self.by_name.contains_key(TOOL_SEARCH) && self.specs.iter().any(|s| s.name == TOOL_SEARCH)
+    }
+
     /// Whether connectors are listed, each as one tool, with `tool_search`.
     fn searching(&self) -> bool {
-        !self.by_name.contains_key(TOOL_SEARCH) && self.specs.iter().any(|s| s.name == TOOL_SEARCH)
+        self.lists_search() && (self.specs.iter()).any(|spec| self.wrapper_of(&spec.name).is_some())
     }
 
     /// The connector a listed connector's tool called `name` calls.
@@ -333,15 +352,16 @@ impl ToolSet {
     }
 
     /// What `call` comes to: run as it is, run as the connected tool it stands for, a search,
-    /// or refused. Only where connectors are listed is it ever more than run as it is.
+    /// or refused. Only where `tool_search` is listed is it ever a search, and only where
+    /// connectors are listed is it ever more than that or run as it is.
     pub(crate) fn route(&self, call: &ToolCall) -> Route {
-        if !self.searching() {
-            return Route::Run(call.clone());
-        }
         let name = call.tool.trim();
         let map = map_of(&call.arguments);
-        if name.eq_ignore_ascii_case(TOOL_SEARCH) {
+        if name.eq_ignore_ascii_case(TOOL_SEARCH) && self.lists_search() {
             return search_of(map, None);
+        }
+        if !self.searching() {
+            return Route::Run(call.clone());
         }
         if let Some(connector) = self.wrapper_of(name) {
             return self.through(call, connector);
@@ -479,10 +499,11 @@ impl ToolSet {
     }
 
     /// Runs a search for `query`, of `connector`'s tools or all of them: their full definitions,
-    /// the best first, at most eight.
-    pub(crate) fn search(&self, query: Option<&str>, connector: Option<&str>) -> ToolOutput {
+    /// the best first, at most eight; and the connectors the person may connect and has not that
+    /// it names, or, when it finds none, that it finds (`suggest.rs`), suggested.
+    pub(crate) fn search(&self, query: Option<&str>, connector: Option<&str>) -> Searched {
         let Some(query) = query else {
-            return ToolOutput::text(true, "Say what to search for, in query.");
+            return Searched::only(ToolOutput::text(true, "Say what to search for, in query."));
         };
         let connector = connector.map(|named| {
             let named = named.trim();
@@ -495,16 +516,30 @@ impl ToolSet {
         if let Some(connector) = connector
             && tools.is_empty()
         {
-            return ToolOutput::text(true, self.no_connector(connector));
+            let offered = self.offered.iter().flatten();
+            let named: Vec<&Connectable> = offered.filter(|it| it.id == connector).collect();
+            if named.is_empty() {
+                return Searched::only(ToolOutput::text(true, self.no_connector(connector)));
+            }
+            return Searched::with(None, &named);
         }
         let found = rank::matching(&tools, query);
-        if found.is_empty() {
+        // A search within one connected connector suggests none.
+        let suggested = match (connector, &self.offered) {
+            (None, Some(offered)) => suggest::matching(offered, query, !found.is_empty()),
+            _ => Vec::new(),
+        };
+        if !found.is_empty() {
+            return Searched::with(Some(found_text(&found)), &suggested);
+        }
+        if suggested.is_empty() {
             let text = format!(
                 "No connected tool matches {query:?}. Try other words, or another connector."
             );
-            return ToolOutput::text(false, text);
+            return Searched::only(ToolOutput::text(false, text));
         }
-        ToolOutput::text(false, found_text(&found))
+        let none = format!("No connected tool matches {query:?}.");
+        Searched::with(Some(none), &suggested)
     }
 
     /// What a call of `connector`'s listed tool is told when none of its tools is on offer:
