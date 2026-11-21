@@ -386,7 +386,10 @@ impl Servers {
             .collect();
         let connectable = connectable(&catalog, offers, &names);
         let connectors = catalog.into_iter().map(|it| it.id).collect();
-        let everywhere = OwnTools::new(of_place(None), connectors).with_connectable(connectable);
+        let mut everywhere = OwnTools::new(of_place(None), connectors);
+        if let Some(connectable) = connectable {
+            everywhere = everywhere.with_connectable(connectable);
+        }
         places.into_iter().fold(everywhere, |tools, place| {
             tools.with_place(place, of_place(Some(place)))
         })
@@ -444,18 +447,21 @@ fn serving<T>(servers: &[(Wanted, T)], place: Option<ProjectId>) -> Vec<&(Wanted
     here
 }
 
-/// The connectors of `catalog` the person may connect, as `offers` says, and has not: none of
-/// their servers, `running`, is named for one, connected or in their settings. A search
-/// suggests them (`specs/session.md`, "Connectors").
+/// Where `offers` offers any connector of `catalog`, those the person may connect and has not:
+/// none of their servers, `running`, is named for one, connected or in their settings. A search
+/// suggests them (`specs/session.md`, "Connectors"); offered none, there is no search for them.
 fn connectable(
     catalog: &[Connector],
     offers: impl Fn(&str) -> bool,
     running: &[&str],
-) -> Vec<Connectable> {
-    (catalog.iter())
-        .filter(|it| offers(&it.id) && !running.contains(&it.id.as_str()))
-        .map(Connector::connectable)
-        .collect()
+) -> Option<Vec<Connectable>> {
+    let offered: Vec<&Connector> = catalog.iter().filter(|it| offers(&it.id)).collect();
+    (!offered.is_empty()).then(|| {
+        (offered.into_iter())
+            .filter(|it| !running.contains(&it.id.as_str()))
+            .map(Connector::connectable)
+            .collect()
+    })
 }
 
 #[cfg(test)]
@@ -469,7 +475,7 @@ mod tests {
         let offered = Offered::by(&constraints(
             "version = 1\n[mcp]\ncatalog = [\"linear\", \"stripe\", \"deepwiki\"]\n",
         ));
-        let found = connectable(&catalog, |id| offered.allows(id), &["stripe", "mine"]);
+        let found = connectable(&catalog, |id| offered.allows(id), &["stripe", "mine"]).unwrap();
         let ids: Vec<&str> = found.iter().map(|it| it.id.as_str()).collect();
         assert_eq!(ids, ["linear", "deepwiki"], "the catalog's order");
         let linear = &found[0];
@@ -480,10 +486,17 @@ mod tests {
             "{:?}",
             linear.tags
         );
-        let every = connectable(&catalog, |id| Offered::Every.allows(id), &[]);
+        let every = connectable(&catalog, |id| Offered::Every.allows(id), &[]).unwrap();
         assert_eq!(every.len(), catalog.len());
+        // All connected: offered still, so the search stays, with none to suggest.
+        let all = connectable(
+            &catalog,
+            |id| offered.allows(id),
+            &["linear", "stripe", "deepwiki"],
+        );
+        assert_eq!(all, Some(Vec::new()));
         let none = Offered::by(&constraints("version = 1\n[mcp]\nown = false\n"));
-        assert_eq!(connectable(&catalog, |id| none.allows(id), &[]), []);
+        assert_eq!(connectable(&catalog, |id| none.allows(id), &[]), None);
     }
 
     #[test]

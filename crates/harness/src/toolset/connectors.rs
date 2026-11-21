@@ -254,7 +254,8 @@ impl ToolSet {
     /// Lists each connector as one tool, and `tool_search` before them, where the connected
     /// tools' definitions would take more than a tenth of a window of `window_tokens`, or there
     /// would be more than [`MOST_LISTED`] tools in all; else leaves every tool listed in full,
-    /// and `tool_search` last, to find services the person may connect, when there are any.
+    /// and `tool_search` last, to find services the person may connect, where glave's catalog
+    /// is offered, whether or not any is left to connect now.
     pub(crate) fn frame(&mut self, window_tokens: u64) {
         let connected: Vec<&ToolSpec> = (self.specs.iter())
             .filter(|spec| self.is_connected(&spec.name))
@@ -263,7 +264,7 @@ impl ToolSet {
         let tokens = u64::try_from(chars).unwrap_or(u64::MAX) / CHARS_PER_TOKEN;
         let fits = tokens <= window_tokens / SHARE && self.specs.len() <= MOST_LISTED;
         if connected.is_empty() || fits {
-            if !self.connectable.is_empty() {
+            if self.connectable.is_some() {
                 self.specs.push(suggest::spec());
             }
             return;
@@ -278,7 +279,7 @@ impl ToolSet {
                 None => connectors.push((connector, vec![spec])),
             }
         }
-        let mut framed = vec![search_spec(!self.connectable.is_empty())];
+        let mut framed = vec![search_spec(self.connectable.is_some())];
         framed.extend(
             connectors.iter().map(|(connector, tools)| {
                 wrapper_spec(connector, tools, self.about.get(*connector))
@@ -498,8 +499,8 @@ impl ToolSet {
     }
 
     /// Runs a search for `query`, of `connector`'s tools or all of them: their full definitions,
-    /// the best first, at most eight; or, when it finds none, or names a connector the person
-    /// may connect and has not, that it suggests they connect it.
+    /// the best first, at most eight; and the connectors the person may connect and has not that
+    /// it names, or, when it finds none, that it finds (`suggest.rs`), suggested.
     pub(crate) fn search(&self, query: Option<&str>, connector: Option<&str>) -> Searched {
         let Some(query) = query else {
             return Searched::only(ToolOutput::text(true, "Say what to search for, in query."));
@@ -515,7 +516,7 @@ impl ToolSet {
         if let Some(connector) = connector
             && tools.is_empty()
         {
-            let named: Vec<&Connectable> = (self.connectable.iter())
+            let named: Vec<&Connectable> = (self.connectable.iter().flatten())
                 .filter(|it| it.id == connector)
                 .collect();
             if named.is_empty() {
@@ -524,14 +525,15 @@ impl ToolSet {
             return Searched::with(None, &named);
         }
         let found = rank::matching(&tools, query);
-        if !found.is_empty() {
-            return Searched::only(ToolOutput::text(false, found_text(&found)));
-        }
         // A search within one connected connector suggests none.
+        let connectable = self.connectable.as_deref().unwrap_or_default();
         let suggested = match connector {
-            None => suggest::matching(&self.connectable, query),
+            None => suggest::matching(connectable, query, !found.is_empty()),
             Some(_) => Vec::new(),
         };
+        if !found.is_empty() {
+            return Searched::with(Some(found_text(&found)), &suggested);
+        }
         if suggested.is_empty() {
             let text = format!(
                 "No connected tool matches {query:?}. Try other words, or another connector."

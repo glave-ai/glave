@@ -442,6 +442,55 @@ fn a_service_the_person_has_not_connected_is_found_suggested_and_used_once_they_
     });
 }
 
+#[test]
+fn a_thread_begun_with_none_to_connect_lists_the_search_and_is_made_again_only_on_connect() {
+    let dir = folder("tool-search-none-left");
+    block_on!(async {
+        let answers = vec![
+            done("Hello."),
+            calls(vec![("tool_search", json!({"query": "payments"}))]),
+            done("Connect Stripe and I'll take them."),
+            done("Stripe is here."),
+            done("Still here."),
+        ];
+        let log = InMemoryLog::new();
+        let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, settings()).await;
+        let linear = connection("linear", 2);
+        let own = |more: Option<Arc<dyn ToolSource>>| {
+            let mine = Arc::clone(&linear) as Arc<dyn ToolSource>;
+            OwnTools::everywhere(std::iter::once(mine).chain(more).collect())
+        };
+        // The organization offers Linear alone, connected: none is left to connect.
+        harness.set_own_tools(own(None).with_connectable(Vec::new()));
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(&harness, &mut thread, "hello").await;
+        // It offers Stripe too now: the search, listed from the first call, suggests it.
+        harness.set_own_tools(own(None).with_connectable(vec![stripe()]));
+        turn(&harness, &mut thread, "take payments").await;
+        // Stripe connected: the prefix is made again, once.
+        let stripe_tools = connection("stripe", 2) as Arc<dyn ToolSource>;
+        harness.set_own_tools(own(Some(stripe_tools)).with_connectable(Vec::new()));
+        turn(&harness, &mut thread, "connected").await;
+        turn(&harness, &mut thread, "and now?").await;
+
+        let events = events(harness.log(), thread.id).await;
+        let suggested = |event: &&glave_event::Event| matches!(&event.body, Body::ConnectorSuggested(it) if it.connector == "stripe");
+        assert_eq!(events.iter().filter(suggested).count(), 1);
+        let requests = seen.lock().unwrap().clone();
+        assert_eq!(requests.len(), 5);
+        assert_eq!(names(&requests[0]).last(), Some(&"tool_search"));
+        assert!(
+            requests[..3]
+                .iter()
+                .all(|r| prefix(r) == prefix(&requests[0])),
+            "one prefix"
+        );
+        assert!(prefix(&requests[3]) != prefix(&requests[0]), "made again");
+        assert!(names(&requests[3]).contains(&"mcp__stripe__tool_0"));
+        assert!(prefix(&requests[4]) == prefix(&requests[3]), "and kept");
+    });
+}
+
 /// A connection that is not answering while `down`.
 struct Down {
     down: AtomicBool,

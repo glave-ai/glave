@@ -1,9 +1,9 @@
 //! The connectors of glave's catalog the person may connect and has not, which `tool_search`
-//! finds for them to connect: the one a search names, or, when it finds no connected tool, the
-//! best by BM25 over each one's name, what it reaches and its tags. The model is told each in a
-//! plain line, and the thread records each as a suggestion the person sees
-//! (`connector.suggested`); only the person connects one. The catalog is static, so the tool's
-//! listing never changes as they are found or connected.
+//! finds for them to connect: those a search names, whatever connected tools it finds, and,
+//! when it finds none, the best by BM25 over each one's name, what it reaches and its tags. The
+//! model is told each in a plain line, and the thread records each as a suggestion the person
+//! sees (`connector.suggested`); only the person connects one. The catalog is static, so the
+//! tool's listing never changes as they are found or connected.
 
 use glave_event::{CallId, ConnectorSuggested, Suggests, Worded as _};
 use glave_ports::{ToolOutput, ToolSpec};
@@ -75,33 +75,57 @@ impl Searched {
     }
 }
 
-/// Which of `connectable` a search for `query` suggests: the best by BM25, at most
-/// [`MOST_SUGGESTED`]. A name is one word however it is cased, so `post` never finds PostHog,
-/// and a word of two letters or fewer says nothing of a service (`to` would find to-do lists).
-pub(super) fn matching<'a>(connectable: &'a [Connectable], query: &str) -> Vec<&'a Connectable> {
-    let words = super::words_of(query);
-    let query: Vec<&str> = (words.iter())
+/// Which of `connectable` a search for `query` suggests, at most [`MOST_SUGGESTED`]: those it
+/// names, by a word that is a connector's id or its name, whatever connected tools it found
+/// (`found_any`); then, where it found none, the best of the rest by BM25. A word of two letters
+/// or fewer says nothing of a service (`to` would find to-do lists), and a name is one word
+/// however it is cased, so `post` never finds PostHog. One named whose name is also a plain word
+/// (Make, Close, Square) is suggested only where the query's other words, if it has any, find
+/// what it reaches or its tags too: "make a linear issue" names Linear, not Make.
+pub(super) fn matching<'a>(
+    connectable: &'a [Connectable],
+    query: &str,
+    found_any: bool,
+) -> Vec<&'a Connectable> {
+    let asked: Vec<String> = (super::words_of(query).into_iter())
         .filter(|word| word.chars().count() > 2)
-        .map(String::as_str)
         .collect();
-    let query = query.join(" ");
-    let specs: Vec<ToolSpec> = (connectable.iter())
-        .map(|it| ToolSpec {
-            name: it.id.clone(),
-            description: format!(
-                "{} {} {}",
-                it.name.to_lowercase(),
-                it.description,
-                it.tags.join(" ")
-            ),
-            parameters: json!({}),
-        })
+    let calls = |it: &Connectable, word: &str| it.id == word || it.name.to_lowercase() == word;
+    let named: Vec<&Connectable> = (connectable.iter())
+        .filter(|it| asked.iter().any(|word| calls(it, word)))
         .collect();
-    let specs: Vec<&ToolSpec> = specs.iter().collect();
-    (rank::matching(&specs, &query).iter())
-        .filter_map(|found| connectable.iter().find(|it| it.id == found.name))
-        .take(MOST_SUGGESTED)
-        .collect()
+    let fits = |it: &Connectable| {
+        let about = rank::words(&format!("{} {}", it.description, it.tags.join(" ")));
+        let mut others = asked.iter().filter(|word| !calls(it, word)).peekable();
+        others.peek().is_none()
+            || others.any(|word| rank::words(word).iter().any(|w| about.contains(w)))
+    };
+    let mut chosen: Vec<&Connectable> = named.iter().copied().filter(|it| fits(it)).collect();
+    if !found_any {
+        let specs: Vec<ToolSpec> = (connectable.iter())
+            .map(|it| ToolSpec {
+                name: it.id.clone(),
+                description: format!(
+                    "{} {} {}",
+                    it.name.to_lowercase(),
+                    it.description,
+                    it.tags.join(" ")
+                ),
+                parameters: json!({}),
+            })
+            .collect();
+        let specs: Vec<&ToolSpec> = specs.iter().collect();
+        for found in rank::matching(&specs, &asked.join(" ")) {
+            // One named that the query's other words do not find stays out, however it ranks.
+            let unnamed = connectable
+                .iter()
+                .find(|it| it.id == found.name)
+                .filter(|it| !named.iter().any(|known| known.id == it.id));
+            chosen.extend(unnamed);
+        }
+    }
+    chosen.truncate(MOST_SUGGESTED);
+    chosen
 }
 
 /// The record that the search `call` suggests the person connect `it`.
