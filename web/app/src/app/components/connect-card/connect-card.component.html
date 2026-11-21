@@ -11,7 +11,7 @@
             </span>
           </div>
         </div>
-        <p class="told" data-testid="connect-card-told">{{ item().told }}</p>
+        <p class="told" data-testid="connect-card-told">{{ shown.line }}</p>
         @if (waiting(); as waiting) {
           <p class="waiting" data-testid="connect-card-waiting">
             <glz-icon class="glz-spin" [icon]="icons.waiting" />
@@ -29,7 +29,7 @@
             [disabled]="busy()"
             (click)="connect()"
           >
-            {{ shown.connect }}
+            {{ shown.action }}
           </button>
           <button glzButton data-testid="connect-card-not-now" (click)="notNow()">
             {{ copy.notNow }}

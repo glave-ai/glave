@@ -58,6 +58,16 @@ export function connectionProblem(error: unknown): string {
   return OWN.includes(error.code) ? somethingWrong() : sentence(error.message);
 }
 
+/** What an app whose sign-in no longer works says under its name, wherever it is drawn. */
+export function signInAgainNote(): string {
+  return $localize`:@@connectorRow.signInAgain:Sign in again to keep using it`;
+}
+
+/** The button that signs in to an app again, wherever it is drawn. */
+export function signInAgainLabel(): string {
+  return $localize`:@@connectorRow.again:Sign in again`;
+}
+
 /** What an app waiting for its sign-in says, as the tab for it opened or not. */
 export function signInWaiting(name: string, opened: boolean): string {
   return opened

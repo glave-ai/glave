@@ -9,22 +9,39 @@ import {
   input,
   signal,
 } from '@angular/core';
-import type { ConnectorInfo } from '@glave/client';
+import type { ConnectorInfo, ProjectId } from '@glave/client';
 import { GlzButtonComponent, GlzIconComponent, initials } from '@glave/glaze';
 import { LoaderCircle } from 'lucide';
 
-import { connectionProblem, openedTab, sentTo, signInWaiting } from '../../lib/connections';
+import {
+  connectionProblem,
+  openedTab,
+  sentTo,
+  signInAgainLabel,
+  signInAgainNote,
+  signInWaiting,
+} from '../../lib/connections';
 import type { SuggestionItem } from '../../lib/conversation';
 import { ConnectorsService } from '../../services/connectors.service';
 
-/** The card as it shows: offering to connect its connector, or saying it is connected. */
+/**
+ * The card as it shows: offering to connect its connector, or to sign in to it again where its
+ * sign-in no longer works, or saying it is connected.
+ */
 type Shown =
   | {
       readonly kind: 'offer';
       readonly letters: string;
       readonly name: string;
       readonly description: string;
-      readonly connect: string;
+      /** The server's sentence; to sign in again, the Connections page's words for it. */
+      readonly line: string;
+      /** Its button's word. */
+      readonly action: string;
+      /** The account its button connects, by its name (none: the one never named). */
+      readonly account: string | null;
+      /** Where that account is used alone: none for everywhere. */
+      readonly only: ProjectId | null;
     }
   | {
       readonly kind: 'connected';
@@ -49,11 +66,31 @@ function connectedLine(connector: ConnectorInfo, letters: string): Shown {
 }
 
 /**
+ * `connector`, whose sign-in no longer works, offered to sign in to again as the Connections
+ * page offers it: its account that needs it, where it is used.
+ */
+function againOffer(connector: ConnectorInfo, letters: string): Shown {
+  const accounts = connector.accounts ?? [];
+  const account = accounts.find((it) => it.status === 'sign_in_again') ?? accounts[0];
+  return {
+    kind: 'offer',
+    letters,
+    name: connector.name,
+    description: connector.description,
+    line: signInAgainNote(),
+    action: signInAgainLabel(),
+    account: account?.name ?? null,
+    only: account?.only ?? null,
+  };
+}
+
+/**
  * A connector a search suggested, as a card in the chat: its tile, name and what it reaches, as
  * the server lists it, then the server's sentence, Connect, which connects it everywhere as the
  * Connections page does (in a new tab where it asks for a sign-in, waiting until the server says
  * it is done), and Not now, which puts it off in this tab. Once connected, a line saying so and
- * where it is used. Nothing while the server lists no such connector to connect.
+ * where it is used; where its sign-in no longer works, Sign in again, in the Connections page's
+ * words. Nothing while the server lists no such connector to connect.
  */
 @Component({
   selector: 'app-connect-card',
@@ -93,11 +130,14 @@ export class ConnectCardComponent {
       return null;
     }
     const letters = initials(connector.name);
-    if (connector.status !== 'available') {
+    if (connector.status === 'connected') {
       return connectedLine(connector, letters);
     }
     if (this.service.notNow().has(connector.id)) {
       return null;
+    }
+    if (connector.status === 'sign_in_again') {
+      return againOffer(connector, letters);
     }
     const { name } = connector;
     return {
@@ -105,7 +145,10 @@ export class ConnectCardComponent {
       letters,
       name,
       description: connector.description,
-      connect: $localize`:@@connectCard.connect:Connect ${name}:NAME:`,
+      line: this.item().told,
+      action: $localize`:@@connectCard.connect:Connect ${name}:NAME:`,
+      account: null,
+      only: null,
     };
   });
 
@@ -117,13 +160,15 @@ export class ConnectCardComponent {
   }
 
   /**
-   * Connects it, used everywhere. A new tab opens at once, while the click is handled, so no
-   * browser blocks it: it goes to the sign-in once the server gives one, and closes when the
-   * connector needs none, or connecting failed first.
+   * Connects it, used everywhere, or signs in to its account again where it is used. A new tab
+   * opens at once, while the click is handled, so no browser blocks it: it goes to the sign-in
+   * once the server gives one, and closes when the connector needs none, or connecting failed
+   * first.
    */
   protected async connect(): Promise<void> {
     const connector = this.connector();
-    if (connector === null) {
+    const offer = this.shown();
+    if (connector === null || offer?.kind !== 'offer') {
       return;
     }
     this.stop?.abort();
@@ -134,7 +179,7 @@ export class ConnectCardComponent {
     this.busy.set(true);
     this.problem.set(null);
     try {
-      const link = await this.service.connect(connector.id, null, null);
+      const link = await this.service.connect(connector.id, offer.account, offer.only);
       if (link !== null) {
         opened = sentTo(tab, link.url);
         const waiting = signInWaiting(connector.name, opened);

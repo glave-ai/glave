@@ -18,7 +18,12 @@ import {
 } from '@glave/glaze';
 import { ExternalLink, LoaderCircle } from 'lucide';
 
-import { ACCOUNT_NAME_LIMIT, signInWaiting } from '../../lib/connections';
+import {
+  ACCOUNT_NAME_LIMIT,
+  signInAgainLabel,
+  signInAgainNote,
+  signInWaiting,
+} from '../../lib/connections';
 import { plural } from '../../lib/plural';
 import {
   type AccountAction,
@@ -157,10 +162,10 @@ export class ConnectorRowComponent {
 
   protected readonly copy = {
     connected: $localize`:@@connectorRow.connected:Connected`,
-    signInAgain: $localize`:@@connectorRow.signInAgain:Sign in again to keep using it`,
+    signInAgain: signInAgainNote(),
     connect: $localize`:@@connectorRow.connect:Connect`,
     connecting: $localize`:@@connectorRow.connecting:Connecting…`,
-    again: $localize`:@@connectorRow.again:Sign in again`,
+    again: signInAgainLabel(),
     cancel: $localize`:@@connectorRow.cancel:Cancel`,
     disconnect: $localize`:@@connectorRow.disconnect:Disconnect`,
     disconnecting: $localize`:@@connectorRow.disconnecting:Disconnecting…`,

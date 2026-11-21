@@ -169,4 +169,38 @@ describe('ConnectCardComponent', () => {
     ]);
     expect(tab.closed()).toBe(false);
   });
+
+  it('offers to sign in again to one whose sign-in stopped working, where its account is used', async () => {
+    let signedIn = false;
+    const expired: ConnectorInfo = {
+      ...LINEAR,
+      status: 'sign_in_again',
+      accounts: [{ name: 'Acme', only: 'p1', status: 'sign_in_again', used: 'Only in Acme Site' }],
+    };
+    const fake = new FakeSession()
+      .answer('connector/list', () => ({
+        categories: [],
+        connectors: [signedIn ? connected(LINEAR) : expired],
+      }))
+      .answer('connector/connect', { sign_in: { flow: 'f1', url: PAGE } })
+      .answer('connection/poll', () => {
+        signedIn = true;
+        return { connection: { url: PAGE, status: 'signed_in' } };
+      });
+    const tab = fakeTab();
+    vi.spyOn(window, 'open').mockReturnValue(tab.tab);
+    const { fixture, root } = await card(fake, suggestion('linear'));
+    // In the Connections page's words, not the suggestion's, which no longer holds.
+    expect(part(root, 'connect-card-told')).toBe('Sign in again to keep using it');
+    expect(part(root, 'connect-card-connect')).toBe('Sign in again');
+    await expectAccessible(root);
+
+    press(root, 'connect-card-connect');
+    await settle(fixture);
+    expect(fake.paramsOf('connector/connect')).toEqual([
+      { connector: 'linear', account: 'Acme', only: 'p1' },
+    ]);
+    expect(tab.sentTo).toEqual([PAGE]);
+    expect(part(root, 'connect-card-state')).toBe('Linear connected');
+  });
 });
