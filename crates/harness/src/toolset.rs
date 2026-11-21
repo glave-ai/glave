@@ -141,9 +141,9 @@ pub(crate) struct ToolSet {
     catalog: Vec<String>,
     /// What each connector says of itself, in a line, by its name.
     about: BTreeMap<String, String>,
-    /// The connectors of glave's catalog the person may connect and has not, which
-    /// `tool_search` suggests: only in a thread of theirs, never a subagent's.
-    pub(crate) connectable: Vec<Connectable>,
+    /// Where glave's catalog is offered, the connectors of it the person may connect and has
+    /// not, which `tool_search` suggests: only in a thread of theirs, never a subagent's.
+    pub(crate) connectable: Option<Vec<Connectable>>,
 }
 
 impl ToolSet {
@@ -161,7 +161,7 @@ impl ToolSet {
             connected: Vec::new(),
             catalog: Vec::new(),
             about: BTreeMap::new(),
-            connectable: Vec::new(),
+            connectable: None,
         };
         let mut missing = Vec::new();
         for (index, source) in sources.iter().enumerate() {
@@ -368,7 +368,7 @@ impl ToolSet {
             connected: self.connected.clone(),
             catalog,
             about: self.about.clone(),
-            connectable: Vec::new(),
+            connectable: None,
         }
         .told_again()
     }

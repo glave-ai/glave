@@ -35,14 +35,14 @@ pub struct Connectable {
 }
 
 /// The person's own tool sources: those every place has, each place's in their stead where it
-/// has connections of its own, the name of every connection they may connect, here or not, and
-/// those of glave's catalog they may connect and have not.
+/// has connections of its own, the name of every connection they may connect, here or not, and,
+/// where glave's catalog is offered to them, those of it they may connect and have not.
 #[derive(Clone, Default)]
 pub struct OwnTools {
     everywhere: Placed,
     places: BTreeMap<ProjectId, Placed>,
     connectors: Vec<String>,
-    connectable: Vec<Connectable>,
+    connectable: Option<Vec<Connectable>>,
 }
 
 impl OwnTools {
@@ -64,7 +64,7 @@ impl OwnTools {
             everywhere,
             places: BTreeMap::new(),
             connectors,
-            connectable: Vec::new(),
+            connectable: None,
         }
     }
 
@@ -76,11 +76,12 @@ impl OwnTools {
         self
     }
 
-    /// With `connectable`, the connectors of glave's catalog the person may connect and has
-    /// not, for `tool_search` to find in every place.
+    /// With glave's catalog offered, `connectable` the connectors of it the person may connect
+    /// and has not, none where they connected all: `tool_search` is listed to find them in
+    /// every place, from each thread's first call.
     #[must_use]
     pub fn with_connectable(mut self, connectable: Vec<Connectable>) -> Self {
-        self.connectable = connectable;
+        self.connectable = Some(connectable);
         self
     }
 
@@ -100,11 +101,11 @@ impl OwnTools {
 }
 
 /// The person's own for the threads of one place: its sources, the connections the person
-/// may connect that are not among them, and the connectors of glave's catalog they may connect
-/// and have not.
+/// may connect that are not among them, and, where glave's catalog is offered, the connectors
+/// of it they may connect and have not.
 #[derive(Clone, Default)]
 pub(crate) struct Mine {
     pub(crate) placed: Placed,
     pub(crate) away: Vec<String>,
-    pub(crate) connectable: Vec<Connectable>,
+    pub(crate) connectable: Option<Vec<Connectable>>,
 }

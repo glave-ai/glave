@@ -349,9 +349,9 @@ fn connectable(name: &str, description: &str, tag: &str) -> Connectable {
 /// `sources` gathered as [`set_of`] does, with what the person may connect, then framed for a
 /// window of `window` tokens.
 fn suggesting(sources: Vec<Arc<dyn ToolSource>>, window: u64) -> ToolSet {
-    // Listed in full while none is to connect.
+    // Listed in full while no catalog is offered.
     let mut set = set_of(sources, u64::MAX);
-    set.connectable = vec![
+    set.connectable = Some(vec![
         connectable("Linear", "Issues, projects and cycles.", "Issues and bugs"),
         connectable("Stripe", "Payments and subscriptions.", "Payments"),
         connectable(
@@ -359,7 +359,8 @@ fn suggesting(sources: Vec<Arc<dyn ToolSource>>, window: u64) -> ToolSet {
             "Documentation of public repositories.",
             "Documentation",
         ),
-    ];
+        connectable("Make", "Your scenarios, run when you ask.", "Automation"),
+    ]);
     set.frame(window);
     set
 }
@@ -395,7 +396,8 @@ fn services_the_person_may_connect_are_found_where_no_connected_tool_is() {
         "{said}"
     );
     assert!(!found.output.is_error);
-    // A connected tool found suggests nothing; one named is suggested whatever the words.
+    // A connected tool found suggests none the search does not name; one named by `connector`
+    // is suggested whatever the words.
     assert_eq!(set.search(Some("tool_1"), None).suggested, []);
     assert_eq!(ids(&set.search(Some("x"), Some("stripe"))), ["stripe"]);
     assert_eq!(set.search(Some("kubernetes"), None).suggested, []);
@@ -448,10 +450,65 @@ fn a_name_is_one_word_and_a_short_word_finds_no_service() {
         connectable("Stripe", "Payments, refunds and subscriptions.", "Payments"),
     ];
     let found = |query: &str| -> Vec<String> {
-        let found = suggest::matching(&catalog, query);
+        let found = suggest::matching(&catalog, query, false);
         found.iter().map(|it| it.id.clone()).collect()
     };
     assert_eq!(found("post to slack"), Vec::<String>::new());
     assert_eq!(found("refund a payment"), ["stripe"]);
     assert_eq!(found("posthog"), ["posthog"]);
+}
+
+/// A connected source of some of GitHub's tools, two of them about issues.
+fn github() -> Arc<dyn ToolSource> {
+    let tools = [
+        "issue_write",
+        "issue_read",
+        "pull_request_read",
+        "branch_list",
+        "file_read",
+        "repository_search",
+    ];
+    let tools = tools.map(|tool| info(&format!("mcp__github__{tool}"), Effect::Runs));
+    Arc::new(InMemoryTools::new(tools.into()).as_connected())
+}
+
+#[test]
+fn a_service_the_search_names_is_suggested_whatever_connected_tools_it_finds() {
+    let set = suggesting(vec![github()], 128_000);
+    let found = set.search(Some("make a linear issue"), None);
+    let said = text(&found.output);
+    assert!(said.contains("\"tool\":\"issue_write\""), "{said}");
+    assert_eq!(ids(&found), ["linear"], "GitHub's issues, and Linear named");
+    assert!(
+        said.contains("Linear isn't connected; the person can connect it."),
+        "{said}"
+    );
+    // Named alone, it is suggested; named among words it does not reach, it is not.
+    assert_eq!(ids(&set.search(Some("stripe"), None)), ["stripe"]);
+    assert_eq!(set.search(Some("make a pull request"), None).suggested, []);
+}
+
+#[test]
+fn a_name_that_is_a_plain_word_is_suggested_only_where_the_other_words_find_it() {
+    let set = suggesting(Vec::new(), 128_000);
+    assert_eq!(
+        ids(&set.search(Some("make a linear issue"), None)),
+        ["linear"]
+    );
+    assert_eq!(ids(&set.search(Some("make"), None)), ["make"]);
+    assert_eq!(
+        ids(&set.search(Some("make a scenario run"), None)),
+        ["make"]
+    );
+}
+
+#[test]
+fn the_search_is_listed_where_the_catalog_is_offered_with_none_left_to_connect() {
+    let mut set = set_of(vec![github()], u64::MAX);
+    set.connectable = Some(Vec::new());
+    set.frame(128_000);
+    assert_eq!(names(&set).last(), Some(&TOOL_SEARCH));
+    assert_eq!(set.search(Some("linear"), None).suggested, []);
+    // Offered none: not listed.
+    assert!(!names(&set_of(vec![github()], 128_000)).contains(&TOOL_SEARCH));
 }
