@@ -47,6 +47,8 @@ jobs:
         run: cargo build -p xtask
       - name: Read each connector from its vendor
         id: read
+        # Named, so the step runs with pipefail and fails when the check does, not with tee.
+        shell: bash
         run: cargo xtask connectors | tee read.txt
       - name: Open or update the issue
         if: failure() && steps.read.outcome == 'failure'
