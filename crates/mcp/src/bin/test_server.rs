@@ -581,6 +581,7 @@ fn main() -> ExitCode {
     let issuer = issuer.or_else(|| valued("--sign-in").into_iter().next());
     let above = flags.iter().any(|flag| flag == "--resource-above");
     let elsewhere = flags.iter().any(|flag| flag == "--get-elsewhere");
+    let metadata_at = valued("--metadata-at").into_iter().next();
     let needs = valued("--needs").into_iter().next();
     let ends = flags.iter().any(|flag| flag == "--ends-with-stdin");
     let http = flags.iter().any(|flag| flag == "--http");
@@ -590,6 +591,7 @@ fn main() -> ExitCode {
                 above,
                 needs,
                 elsewhere,
+                metadata_at,
             };
             serve_http(server, issuer, gating, ends).await
         } else {
@@ -644,6 +646,8 @@ struct Gating {
     /// `--get-elsewhere`: a GET with no token is sent to another origin's page, as some
     /// vendors send a browser to their docs.
     elsewhere: bool,
+    /// `--metadata-at`: where its 401's challenge says its metadata is, in place of its own.
+    metadata_at: Option<String>,
 }
 
 /// Serves until killed, or with `ends` until its standard input closes, after printing its
@@ -677,6 +681,7 @@ async fn serve_http(
             tokens,
             needs: gating.needs,
             elsewhere: gating.elsewhere,
+            metadata_at: gating.metadata_at,
         })
     });
     let mut connections = tokio::task::JoinSet::new();
@@ -720,6 +725,8 @@ struct Gate {
     needs: Option<String>,
     /// Whether a GET with no token is sent to another origin.
     elsewhere: bool,
+    /// Where its challenge says its metadata is, when not its own.
+    metadata_at: Option<String>,
 }
 
 type Answer = http::Response<BoxBody<Bytes, std::convert::Infallible>>;
@@ -728,7 +735,8 @@ impl Gate {
     /// The answer to `request` when it is not let through: its protected resource metadata,
     /// to anyone; a 401 pointing at that, to a request without a token of its own.
     fn refused<B>(&self, request: &http::Request<B>) -> Option<Answer> {
-        let metadata = format!("{}/.well-known/oauth-protected-resource/mcp", self.base);
+        let own = || format!("{}/.well-known/oauth-protected-resource/mcp", self.base);
+        let metadata = self.metadata_at.clone().unwrap_or_else(own);
         if request
             .uri()
             .path()
