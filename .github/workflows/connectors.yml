@@ -57,7 +57,11 @@ jobs:
           {
             echo "\`cargo xtask connectors\` found connectors of the catalog (\`crates/session/connectors.toml\`) that no longer offer what it says of them ($RUN):"
             echo
-            sed -n 's/^drifted  \(.*\)/- \1/p' read.txt
+            # The vendors' own words, in a code block so no @name, link or markup of theirs
+            # notifies anyone or renders; backticks dropped, so none can close the block.
+            echo '```text'
+            sed -n 's/^drifted  //p' read.txt | tr -d '`'
+            echo '```'
             echo
             echo "Each is a vendor's change or glave's own gap: decide each. Removing or changing an entry is a change people see."
           } > body.md
