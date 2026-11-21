@@ -4,7 +4,7 @@
 //! description, and the name of each category and tag (`protocol/connectors.rs`), is a Fluent
 //! message, written in the caller's language where the server answers; a vendor's name never is.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
 use glave_harness::Connectable;
@@ -58,6 +58,10 @@ pub struct Connector {
     pub docs: String,
     /// What it reaches, in English.
     pub description: String,
+    /// Whether its name is also a plain English word (Make, Close, Square), so a search that
+    /// says it may not mean the service: absent is false.
+    #[serde(default)]
+    pub plain_word: bool,
 }
 
 /// What a caller narrows `connector/list` by.
@@ -90,6 +94,27 @@ impl Catalog {
     /// The connector called `id`, if the catalog has one.
     pub fn connector(&self, id: &str) -> Option<&Connector> {
         self.connectors.iter().find(|connector| connector.id == id)
+    }
+
+    /// The words a quarter or more of its connectors' descriptions and tags have, in English,
+    /// as a search reads them: they say nothing of any one service (`and`).
+    pub fn common_words(&self) -> Vec<String> {
+        let mut having: BTreeMap<String, usize> = BTreeMap::new();
+        for connector in &self.connectors {
+            let tags = connector.tags.iter().map(|tag| (*tag.told()).to_owned());
+            let text = std::iter::once(connector.description.clone()).chain(tags);
+            let words: BTreeSet<String> = (text.collect::<Vec<_>>().iter())
+                .flat_map(|it| glave_harness::search_words(it))
+                .collect();
+            for word in words {
+                *having.entry(word).or_default() += 1;
+            }
+        }
+        let all = self.connectors.len();
+        (having.into_iter())
+            .filter(|(_, count)| count.saturating_mul(4) >= all)
+            .map(|(word, _)| word)
+            .collect()
     }
 
     /// The catalog `text` holds, once each id is a plain one and only its own, each company
@@ -182,6 +207,7 @@ impl Connector {
             description: self.description.clone(),
             tags: tags.map(|told| (*told).to_owned()).collect(),
             signs_in: self.sign_in == ConnectorSignIn::Dcr,
+            plain_word: self.plain_word,
         }
     }
 }
@@ -206,6 +232,19 @@ mod tests {
         assert_eq!(urls.len(), catalog.connectors.len(), "each server once");
         for connector in &catalog.connectors {
             assert!(connector.docs.starts_with("https://"), "{}", connector.id);
+        }
+    }
+
+    #[test]
+    fn a_name_that_is_a_plain_word_says_so_and_the_catalog_s_common_words_say_nothing() {
+        let catalog = Catalog::built_in().unwrap();
+        let plain = |id: &str| catalog.connector(id).unwrap().connectable().plain_word;
+        assert!(plain("make") && plain("close") && plain("square"));
+        assert!(!plain("stripe") && !plain("notion") && !plain("linear"));
+        let common = catalog.common_words();
+        assert!(common.contains(&"and".to_owned()), "{common:?}");
+        for distinctive in ["the", "issue", "run", "payment"] {
+            assert!(!common.contains(&distinctive.to_owned()), "{common:?}");
         }
     }
 

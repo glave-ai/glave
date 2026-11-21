@@ -32,17 +32,30 @@ pub struct Connectable {
     pub tags: Vec<String>,
     /// Whether connecting it signs the person in on its vendor's own page.
     pub signs_in: bool,
+    /// Whether its name is also a plain English word (Make, Close, Square), so a search that
+    /// says it may not mean the service.
+    pub plain_word: bool,
+}
+
+/// glave's catalog as it is offered to the person: the connectors of it they may connect and
+/// have not, none where they connected every one, and the words a quarter or more of the whole
+/// catalog's descriptions and tags have, as a search reads them, which say nothing of any one
+/// service (`and`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Offered {
+    pub connectable: Vec<Connectable>,
+    pub common: Vec<String>,
 }
 
 /// The person's own tool sources: those every place has, each place's in their stead where it
-/// has connections of its own, the name of every connection they may connect, here or not, and,
-/// where glave's catalog is offered to them, those of it they may connect and have not.
+/// has connections of its own, the name of every connection they may connect, here or not, and
+/// glave's catalog, where it is offered to them.
 #[derive(Clone, Default)]
 pub struct OwnTools {
     everywhere: Placed,
     places: BTreeMap<ProjectId, Placed>,
     connectors: Vec<String>,
-    connectable: Option<Vec<Connectable>>,
+    offered: Option<Offered>,
 }
 
 impl OwnTools {
@@ -64,7 +77,7 @@ impl OwnTools {
             everywhere,
             places: BTreeMap::new(),
             connectors,
-            connectable: None,
+            offered: None,
         }
     }
 
@@ -76,12 +89,12 @@ impl OwnTools {
         self
     }
 
-    /// With glave's catalog offered, `connectable` the connectors of it the person may connect
-    /// and has not, none where they connected all: `tool_search` is listed to find them in
-    /// every place, from each thread's first call.
+    /// With glave's catalog offered to the person as `offered` says, even with none of it left
+    /// to connect: `tool_search` is listed to find what is, in every place, from each thread's
+    /// first call.
     #[must_use]
-    pub fn with_connectable(mut self, connectable: Vec<Connectable>) -> Self {
-        self.connectable = Some(connectable);
+    pub fn with_catalog_offered(mut self, offered: Offered) -> Self {
+        self.offered = Some(offered);
         self
     }
 
@@ -95,17 +108,16 @@ impl OwnTools {
         Mine {
             placed: placed.clone(),
             away,
-            connectable: self.connectable.clone(),
+            offered: self.offered.clone(),
         }
     }
 }
 
 /// The person's own for the threads of one place: its sources, the connections the person
-/// may connect that are not among them, and, where glave's catalog is offered, the connectors
-/// of it they may connect and have not.
+/// may connect that are not among them, and glave's catalog, where it is offered to them.
 #[derive(Clone, Default)]
 pub(crate) struct Mine {
     pub(crate) placed: Placed,
     pub(crate) away: Vec<String>,
-    pub(crate) connectable: Option<Vec<Connectable>>,
+    pub(crate) offered: Option<Offered>,
 }

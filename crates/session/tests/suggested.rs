@@ -2,7 +2,7 @@
 //! not (`specs/session.md`, "Connectors"): the thread records it as a fact a client draws, its
 //! sentence the server's own, recorded in English and sent in the caller's language.
 
-use glave_harness::OwnTools;
+use glave_harness::{Offered, OwnTools};
 use glave_session::protocol::Request;
 use glave_session::{Catalog, Connector};
 use serde_json::{Value, json};
@@ -38,8 +38,15 @@ fn a_connector_a_search_suggests_is_recorded_in_english_and_told_in_the_callers_
     block_on!(async {
         let dir = folder("suggested");
         // Nothing connected: every connector of the catalog is one to connect.
-        let catalog = Catalog::built_in().unwrap().connectors;
-        let connectable = catalog.iter().map(Connector::connectable).collect();
+        let catalog = Catalog::built_in().unwrap();
+        let offered = Offered {
+            connectable: catalog
+                .connectors
+                .iter()
+                .map(Connector::connectable)
+                .collect(),
+            common: catalog.common_words(),
+        };
         let searching = vec![
             answer(
                 None,
@@ -48,7 +55,7 @@ fn a_connector_a_search_suggests_is_recorded_in_english_and_told_in_the_callers_
             answer(Some("Connect Linear and I'll make it."), None),
         ];
         let setup = Setup {
-            own: Box::new(OwnTools::default().with_connectable(connectable)),
+            own: Box::new(OwnTools::default().with_catalog_offered(offered)),
             ..Setup::new(searching)
         };
         let (served, mut reading, mut plain, thread) = read_in_two(setup.build(&dir).await.0).await;

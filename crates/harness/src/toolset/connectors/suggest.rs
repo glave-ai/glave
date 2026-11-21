@@ -10,7 +10,7 @@ use glave_ports::{ToolOutput, ToolSpec};
 use serde_json::json;
 
 use super::{TOOL_SEARCH, rank};
-use crate::own_tools::Connectable;
+use crate::own_tools::{Connectable, Offered};
 
 /// The most connectors one search suggests.
 const MOST_SUGGESTED: usize = 3;
@@ -75,18 +75,20 @@ impl Searched {
     }
 }
 
-/// Which of `connectable` a search for `query` suggests, at most [`MOST_SUGGESTED`]: those it
-/// names, by a word that is a connector's id or its name, whatever connected tools it found
-/// (`found_any`); then, where it found none, the best of the rest by BM25. A word of two letters
-/// or fewer says nothing of a service (`to` would find to-do lists), and a name is one word
-/// however it is cased, so `post` never finds PostHog. One named whose name is also a plain word
-/// (Make, Close, Square) is suggested only where the query's other words, if it has any, find
-/// what it reaches or its tags too: "make a linear issue" names Linear, not Make.
+/// Which of `offered`'s connectors a search for `query` suggests, at most [`MOST_SUGGESTED`]:
+/// those it names, by a word that is a connector's id or its name, whatever connected tools it
+/// found (`found_any`); else, where it found none, the best by BM25. A word of two
+/// letters or fewer says nothing of a service (`to` would find to-do lists), and a name is one
+/// word however it is cased, so `post` never finds PostHog. A distinctive name (Stripe, Notion)
+/// is suggested on its own; one that is also a plain word (Make, Close) only where every other
+/// word of the search that says anything, one the catalog has few of, is one of what it reaches
+/// or its tags: "make the tests run" is not Make, and "make a scenario run" is.
 pub(super) fn matching<'a>(
-    connectable: &'a [Connectable],
+    offered: &'a Offered,
     query: &str,
     found_any: bool,
 ) -> Vec<&'a Connectable> {
+    let connectable = &offered.connectable;
     let asked: Vec<String> = (super::words_of(query).into_iter())
         .filter(|word| word.chars().count() > 2)
         .collect();
@@ -94,14 +96,19 @@ pub(super) fn matching<'a>(
     let named: Vec<&Connectable> = (connectable.iter())
         .filter(|it| asked.iter().any(|word| calls(it, word)))
         .collect();
+    let says = |word: &String| {
+        rank::words(word)
+            .iter()
+            .all(|w| !offered.common.contains(w))
+    };
     let fits = |it: &Connectable| {
         let about = rank::words(&format!("{} {}", it.description, it.tags.join(" ")));
-        let mut others = asked.iter().filter(|word| !calls(it, word)).peekable();
-        others.peek().is_none()
-            || others.any(|word| rank::words(word).iter().any(|w| about.contains(w)))
+        let mut others = asked.iter().filter(|word| !calls(it, word) && says(word));
+        !it.plain_word || others.all(|word| rank::words(word).iter().all(|w| about.contains(w)))
     };
     let mut chosen: Vec<&Connectable> = named.iter().copied().filter(|it| fits(it)).collect();
-    if !found_any {
+    // A service the search names is the one it means: no other is ranked beside it.
+    if !found_any && chosen.is_empty() {
         let specs: Vec<ToolSpec> = (connectable.iter())
             .map(|it| ToolSpec {
                 name: it.id.clone(),
