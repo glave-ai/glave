@@ -11,6 +11,7 @@ mod fits;
 mod rank;
 mod suggest;
 
+pub use rank::words as search_words;
 pub(crate) use rank::words_of;
 pub(crate) use suggest::{Searched, suggestion};
 
@@ -264,7 +265,7 @@ impl ToolSet {
         let tokens = u64::try_from(chars).unwrap_or(u64::MAX) / CHARS_PER_TOKEN;
         let fits = tokens <= window_tokens / SHARE && self.specs.len() <= MOST_LISTED;
         if connected.is_empty() || fits {
-            if self.connectable.is_some() {
+            if self.offered.is_some() {
                 self.specs.push(suggest::spec());
             }
             return;
@@ -279,7 +280,7 @@ impl ToolSet {
                 None => connectors.push((connector, vec![spec])),
             }
         }
-        let mut framed = vec![search_spec(self.connectable.is_some())];
+        let mut framed = vec![search_spec(self.offered.is_some())];
         framed.extend(
             connectors.iter().map(|(connector, tools)| {
                 wrapper_spec(connector, tools, self.about.get(*connector))
@@ -516,9 +517,8 @@ impl ToolSet {
         if let Some(connector) = connector
             && tools.is_empty()
         {
-            let named: Vec<&Connectable> = (self.connectable.iter().flatten())
-                .filter(|it| it.id == connector)
-                .collect();
+            let offered = self.offered.iter().flat_map(|it| &it.connectable);
+            let named: Vec<&Connectable> = offered.filter(|it| it.id == connector).collect();
             if named.is_empty() {
                 return Searched::only(ToolOutput::text(true, self.no_connector(connector)));
             }
@@ -526,10 +526,9 @@ impl ToolSet {
         }
         let found = rank::matching(&tools, query);
         // A search within one connected connector suggests none.
-        let connectable = self.connectable.as_deref().unwrap_or_default();
-        let suggested = match connector {
-            None => suggest::matching(connectable, query, !found.is_empty()),
-            Some(_) => Vec::new(),
+        let suggested = match (connector, &self.offered) {
+            (None, Some(offered)) => suggest::matching(offered, query, !found.is_empty()),
+            _ => Vec::new(),
         };
         if !found.is_empty() {
             return Searched::with(Some(found_text(&found)), &suggested);

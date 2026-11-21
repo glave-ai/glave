@@ -17,12 +17,13 @@ use glave_ports::{Effect, Purpose, ToolError, ToolInfo, ToolSource, ToolSpec};
 use crate::prefix::Told;
 use crate::subagent::SubagentType;
 
+pub use connectors::search_words;
 pub(crate) use connectors::{
     Route, TOOL_SEARCH, connector_called, connector_of, one_line, short_of, suggestion, words_of,
     wrapper,
 };
 
-use crate::own_tools::Connectable;
+use crate::own_tools::Offered;
 
 /// Opens what the sources say about their tools, which follows glave's own instructions.
 const NOTES: &str = "# Notes from tool servers\n\nThe servers whose tools you have describe them \
@@ -141,9 +142,9 @@ pub(crate) struct ToolSet {
     catalog: Vec<String>,
     /// What each connector says of itself, in a line, by its name.
     about: BTreeMap<String, String>,
-    /// Where glave's catalog is offered, the connectors of it the person may connect and has
-    /// not, which `tool_search` suggests: only in a thread of theirs, never a subagent's.
-    pub(crate) connectable: Option<Vec<Connectable>>,
+    /// glave's catalog, where it is offered: the connectors of it the person may connect and has
+    /// not, which `tool_search` suggests, only in a thread of theirs, never a subagent's.
+    pub(crate) offered: Option<Offered>,
 }
 
 impl ToolSet {
@@ -161,7 +162,7 @@ impl ToolSet {
             connected: Vec::new(),
             catalog: Vec::new(),
             about: BTreeMap::new(),
-            connectable: None,
+            offered: None,
         };
         let mut missing = Vec::new();
         for (index, source) in sources.iter().enumerate() {
@@ -368,7 +369,7 @@ impl ToolSet {
             connected: self.connected.clone(),
             catalog,
             about: self.about.clone(),
-            connectable: None,
+            offered: None,
         }
         .told_again()
     }

@@ -4,6 +4,7 @@ use glave_event::CallId;
 use glave_ports::{Effect, InMemoryTools, ToolInfo, ToolSource, block_on};
 
 use super::*;
+use crate::own_tools::Offered;
 use crate::subagent::SubagentType;
 
 fn info(name: &str, effect: Effect) -> (ToolInfo, ToolOutput) {
@@ -335,7 +336,7 @@ fn a_subagent_never_gets_schedule() {
 }
 
 /// A connector of glave's catalog the person may connect, `name`, reaching `description`;
-/// DeepWiki asks no one to sign in.
+/// DeepWiki asks no one to sign in, and Make's and Close's names are plain words.
 fn connectable(name: &str, description: &str, tag: &str) -> Connectable {
     Connectable {
         id: name.to_ascii_lowercase(),
@@ -343,6 +344,15 @@ fn connectable(name: &str, description: &str, tag: &str) -> Connectable {
         description: description.to_owned(),
         tags: vec![tag.to_owned()],
         signs_in: name != "DeepWiki",
+        plain_word: ["Make", "Close"].contains(&name),
+    }
+}
+
+/// `connectable` offered, `and` the one word common to the catalog's descriptions and tags.
+fn offered(connectable: Vec<Connectable>) -> Offered {
+    Offered {
+        connectable,
+        common: vec!["and".to_owned()],
     }
 }
 
@@ -351,7 +361,7 @@ fn connectable(name: &str, description: &str, tag: &str) -> Connectable {
 fn suggesting(sources: Vec<Arc<dyn ToolSource>>, window: u64) -> ToolSet {
     // Listed in full while no catalog is offered.
     let mut set = set_of(sources, u64::MAX);
-    set.connectable = Some(vec![
+    set.offered = Some(offered(vec![
         connectable("Linear", "Issues, projects and cycles.", "Issues and bugs"),
         connectable("Stripe", "Payments and subscriptions.", "Payments"),
         connectable(
@@ -360,7 +370,10 @@ fn suggesting(sources: Vec<Arc<dyn ToolSource>>, window: u64) -> ToolSet {
             "Documentation",
         ),
         connectable("Make", "Your scenarios, run when you ask.", "Automation"),
-    ]);
+        connectable("Close", "Leads, opportunities and calls.", "Sales and CRM"),
+        connectable("Notion", "Pages, databases and search.", "Notes"),
+        connectable("Guru", "Cards of what your team knows.", "Team knowledge"),
+    ]));
     set.frame(window);
     set
 }
@@ -440,7 +453,7 @@ fn a_suggestion_tells_the_person_how_it_is_connected_in_one_plain_sentence() {
 
 #[test]
 fn a_name_is_one_word_and_a_short_word_finds_no_service() {
-    let catalog = [
+    let catalog = offered(vec![
         connectable(
             "PostHog",
             "Product analytics and feature flags.",
@@ -448,7 +461,7 @@ fn a_name_is_one_word_and_a_short_word_finds_no_service() {
         ),
         connectable("Todoist", "Tasks and projects.", "To-do lists"),
         connectable("Stripe", "Payments, refunds and subscriptions.", "Payments"),
-    ];
+    ]);
     let found = |query: &str| -> Vec<String> {
         let found = suggest::matching(&catalog, query, false);
         found.iter().map(|it| it.id.clone()).collect()
@@ -483,29 +496,41 @@ fn a_service_the_search_names_is_suggested_whatever_connected_tools_it_finds() {
         said.contains("Linear isn't connected; the person can connect it."),
         "{said}"
     );
-    // Named alone, it is suggested; named among words it does not reach, it is not.
-    assert_eq!(ids(&set.search(Some("stripe"), None)), ["stripe"]);
-    assert_eq!(set.search(Some("make a pull request"), None).suggested, []);
+    // A distinctive name is suggested on its own, among any other words.
+    let named = |query: &str| ids(&set.search(Some(query), None)).join(" ");
+    assert_eq!(named("stripe"), "stripe");
+    assert_eq!(named("use stripe to charge a card"), "stripe");
+    assert_eq!(named("save this to notion"), "notion");
+    // A plain word is not, where the search's other words are not what it reaches.
+    assert_eq!(named("make a pull request"), "");
+    assert_eq!(named("make the tests run"), "");
+    assert_eq!(named("close the issue and comment"), "");
 }
 
 #[test]
 fn a_name_that_is_a_plain_word_is_suggested_only_where_the_other_words_find_it() {
     let set = suggesting(Vec::new(), 128_000);
+    let named = |query: &str| ids(&set.search(Some(query), None)).join(" ");
+    assert_eq!(named("make a linear issue"), "linear", "not Make");
+    assert_eq!(named("make the tests run"), "", "nor Make ranked");
+    assert_eq!(named("make"), "make");
+    assert_eq!(named("make a scenario run"), "make");
+    // `and`, common to the catalog, says nothing either way.
+    assert_eq!(named("run make scenarios and"), "make");
+    // A service named is the one meant: none ranked beside it, though Guru has cards.
+    assert_eq!(named("use stripe to charge a card"), "stripe");
+    assert_eq!(named("save this to notion"), "notion");
     assert_eq!(
-        ids(&set.search(Some("make a linear issue"), None)),
-        ["linear"]
-    );
-    assert_eq!(ids(&set.search(Some("make"), None)), ["make"]);
-    assert_eq!(
-        ids(&set.search(Some("make a scenario run"), None)),
-        ["make"]
+        named("find the team's cards"),
+        "guru",
+        "ranked where none is named"
     );
 }
 
 #[test]
 fn the_search_is_listed_where_the_catalog_is_offered_with_none_left_to_connect() {
     let mut set = set_of(vec![github()], u64::MAX);
-    set.connectable = Some(Vec::new());
+    set.offered = Some(offered(Vec::new()));
     set.frame(128_000);
     assert_eq!(names(&set).last(), Some(&TOOL_SEARCH));
     assert_eq!(set.search(Some("linear"), None).suggested, []);

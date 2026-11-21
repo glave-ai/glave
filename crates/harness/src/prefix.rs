@@ -166,7 +166,7 @@ where
             set.offer_search();
         }
         if !thread.delegated() {
-            set.connectable = own.connectable;
+            set.offered = own.offered;
             set.offer_compact();
             for purpose in [Purpose::ImageGenerate, Purpose::ImageEdit] {
                 if self.provider.serves(purpose) {
