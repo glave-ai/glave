@@ -14,12 +14,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use anyhow::Context as _;
 use glave_config::policy::{Chosen, Constraints, check_own_servers};
-use glave_harness::{OwnTools, Placed};
+use glave_harness::{Connectable, OwnTools, Placed};
 use glave_mcp::{Limits, McpServer, Reachable};
 use glave_ports::ProjectId;
 use glave_ports::settings::mcp::ServerConfig;
 use glave_process::Processes;
-use glave_session::KeptConnector;
+use glave_session::{Connector, KeptConnector};
 
 use super::{FILE, Offered, environment, mine_untrusted, turned_on};
 use crate::connected::{Connected, Signed};
@@ -277,11 +277,10 @@ impl Servers {
         Arc::new(server.untrusted(wanted.untrusted))
     }
 
-    /// Offers the person the connectors `offered` names from now on.
-    pub(crate) fn offer(&self, offered: Offered) {
-        if let Some(connected) = &self.connected {
-            connected.offer(offered);
-        }
+    /// Offers the person the connectors `offered` names from now on: whether that changed what
+    /// they are offered.
+    pub(crate) fn offer(&self, offered: Offered) -> bool {
+        (self.connected.as_ref()).is_some_and(|connected| connected.offer(offered))
     }
 
     /// The addresses the person is signed in to, and the connectors they connected.
@@ -380,8 +379,14 @@ impl Servers {
             })
             .collect();
         let catalog = glave_session::Catalog::built_in().map(|it| it.connectors);
-        let connectors = catalog.unwrap_or_default().into_iter().map(|it| it.id);
-        let everywhere = OwnTools::new(of_place(None), connectors.collect());
+        let catalog = catalog.unwrap_or_default();
+        let offers = |id: &str| (self.connected.as_ref()).is_some_and(|it| it.offers(id));
+        let names: Vec<&str> = (running.servers.iter())
+            .map(|(w, _)| w.name.as_str())
+            .collect();
+        let connectable = connectable(&catalog, offers, &names);
+        let connectors = catalog.into_iter().map(|it| it.id).collect();
+        let everywhere = OwnTools::new(of_place(None), connectors).with_connectable(connectable);
         places.into_iter().fold(everywhere, |tools, place| {
             tools.with_place(place, of_place(Some(place)))
         })
@@ -439,10 +444,47 @@ fn serving<T>(servers: &[(Wanted, T)], place: Option<ProjectId>) -> Vec<&(Wanted
     here
 }
 
+/// The connectors of `catalog` the person may connect, as `offers` says, and has not: none of
+/// their servers, `running`, is named for one, connected or in their settings. A search
+/// suggests them (`specs/session.md`, "Connectors").
+fn connectable(
+    catalog: &[Connector],
+    offers: impl Fn(&str) -> bool,
+    running: &[&str],
+) -> Vec<Connectable> {
+    (catalog.iter())
+        .filter(|it| offers(&it.id) && !running.contains(&it.id.as_str()))
+        .map(Connector::connectable)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::gateway::tests::constraints;
+
+    #[test]
+    fn a_search_suggests_only_the_connectors_offered_that_are_not_connected() {
+        let catalog = glave_session::Catalog::built_in().unwrap().connectors;
+        let offered = Offered::by(&constraints(
+            "version = 1\n[mcp]\ncatalog = [\"linear\", \"stripe\", \"deepwiki\"]\n",
+        ));
+        let found = connectable(&catalog, |id| offered.allows(id), &["stripe", "mine"]);
+        let ids: Vec<&str> = found.iter().map(|it| it.id.as_str()).collect();
+        assert_eq!(ids, ["linear", "deepwiki"], "the catalog's order");
+        let linear = &found[0];
+        assert_eq!(linear.name, "Linear");
+        assert!(linear.signs_in && !found[1].signs_in);
+        assert!(
+            linear.tags.iter().any(|tag| tag == "Issues and bugs"),
+            "{:?}",
+            linear.tags
+        );
+        let every = connectable(&catalog, |id| Offered::Every.allows(id), &[]);
+        assert_eq!(every.len(), catalog.len());
+        let none = Offered::by(&constraints("version = 1\n[mcp]\nown = false\n"));
+        assert_eq!(connectable(&catalog, |id| none.allows(id), &[]), []);
+    }
 
     #[test]
     fn a_policy_that_forbids_people_s_own_servers_stops_them_starting() {

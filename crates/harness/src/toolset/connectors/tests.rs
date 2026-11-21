@@ -261,23 +261,23 @@ fn a_search_finds_full_definitions_in_one_connector_or_all() {
         vec![connector("github", 200), connector("jira", 200)],
         128_000,
     );
-    let found = text(&set.search(Some("tool_7"), None));
+    let found = text(&set.search(Some("tool_7"), None).output);
     assert!(found.contains("\"connector\":\"mcp__github\""), "{found}");
     assert!(found.contains("\"connector\":\"mcp__jira\""), "{found}");
     assert!(found.contains("\"parameters\":{"), "{found}");
-    let scoped = text(&set.search(Some("tool_7"), Some("mcp__jira")));
+    let scoped = text(&set.search(Some("tool_7"), Some("mcp__jira")).output);
     assert!(!scoped.contains("mcp__github"), "{scoped}");
     assert!(
         scoped.starts_with("Call one through its connector's tool"),
         "{scoped}"
     );
-    let unknown = set.search(Some("x"), Some("linear"));
+    let unknown = set.search(Some("x"), Some("linear")).output;
     assert!(
         text(&unknown).contains("The connectors are github, jira"),
         "{}",
         text(&unknown)
     );
-    assert!(set.search(None, None).is_error);
+    assert!(set.search(None, None).output.is_error);
 }
 
 #[test]
@@ -294,11 +294,11 @@ fn listed_as_a_prefix_lists_them_connected_tools_are_called_through_their_connec
         "{}",
         text(&output)
     );
-    assert!(text(&off.search(Some("tool"), Some("github"))).contains("not available"));
+    assert!(text(&off.search(Some("tool"), Some("github")).output).contains("not available"));
     // On again, with one more tool, which the search finds.
     let on = set_of(vec![connector("github", 201)], 128_000).listed_as(system, specs);
     assert!(on.get("mcp__github__tool_200").is_some());
-    assert!(text(&on.search(Some("tool_200"), None)).contains("\"tool\":\"tool_200\""));
+    assert!(text(&on.search(Some("tool_200"), None).output).contains("\"tool\":\"tool_200\""));
 }
 
 #[test]
@@ -311,7 +311,7 @@ fn an_explorer_keeps_the_search_and_the_connectors_with_tools_that_read() {
         github.starts_with("Calls a tool of the github connector (1 in all)"),
         "{github}"
     );
-    let found = text(&child.search(Some("tool"), None));
+    let found = text(&child.search(Some("tool"), None).output);
     assert!(found.contains("\"tool\":\"tool_0\""), "{found}");
     assert!(
         !found.contains("tool_1\""),
@@ -332,4 +332,126 @@ fn a_subagent_never_gets_schedule() {
         ["read"],
         "only a chat sets up repeating work"
     );
+}
+
+/// A connector of glave's catalog the person may connect, `name`, reaching `description`;
+/// DeepWiki asks no one to sign in.
+fn connectable(name: &str, description: &str, tag: &str) -> Connectable {
+    Connectable {
+        id: name.to_ascii_lowercase(),
+        name: name.to_owned(),
+        description: description.to_owned(),
+        tags: vec![tag.to_owned()],
+        signs_in: name != "DeepWiki",
+    }
+}
+
+/// `sources` gathered as [`set_of`] does, with what the person may connect, then framed for a
+/// window of `window` tokens.
+fn suggesting(sources: Vec<Arc<dyn ToolSource>>, window: u64) -> ToolSet {
+    // Listed in full while none is to connect.
+    let mut set = set_of(sources, u64::MAX);
+    set.connectable = vec![
+        connectable("Linear", "Issues, projects and cycles.", "Issues and bugs"),
+        connectable("Stripe", "Payments and subscriptions.", "Payments"),
+        connectable(
+            "DeepWiki",
+            "Documentation of public repositories.",
+            "Documentation",
+        ),
+    ];
+    set.frame(window);
+    set
+}
+
+fn ids(searched: &Searched) -> Vec<&str> {
+    (searched.suggested.iter())
+        .map(|it| it.id.as_str())
+        .collect()
+}
+
+#[test]
+fn services_the_person_may_connect_are_found_where_no_connected_tool_is() {
+    let set = suggesting(vec![connector("github", 3)], 128_000);
+    // Listed in full, the search last, to find them.
+    assert_eq!(names(&set).first(), Some(&"read"));
+    assert_eq!(names(&set).last(), Some(&TOOL_SEARCH));
+    let asked = call(TOOL_SEARCH, &json!({"query": "track issues"}));
+    let Route::Search { query, connector } = set.route(&asked) else {
+        panic!("not a search");
+    };
+    let found = set.search(query.as_deref(), connector.as_deref());
+    assert_eq!(ids(&found), ["linear"]);
+    let said = text(&found.output);
+    assert!(
+        said.starts_with("No connected tool matches \"track issues\".\n"),
+        "{said}"
+    );
+    assert!(
+        said.contains(
+            "Linear isn't connected; the person can connect it. It reaches: Issues, projects and \
+             cycles."
+        ),
+        "{said}"
+    );
+    assert!(!found.output.is_error);
+    // A connected tool found suggests nothing; one named is suggested whatever the words.
+    assert_eq!(set.search(Some("tool_1"), None).suggested, []);
+    assert_eq!(ids(&set.search(Some("x"), Some("stripe"))), ["stripe"]);
+    assert_eq!(set.search(Some("kubernetes"), None).suggested, []);
+    // A connected tool listed in full still runs as it is, unchecked.
+    let direct = call("mcp__github__tool_1", &json!({"tool": "x"}));
+    assert_eq!(set.route(&direct), Route::Run(direct.clone()));
+    // A subagent suggests nothing, and has no search where the tools fit.
+    let child = set.for_child(SubagentType::General);
+    assert!(!names(&child).contains(&TOOL_SEARCH));
+}
+
+#[test]
+fn where_each_connector_is_one_tool_the_search_says_it_finds_services_to_connect_too() {
+    let set = suggesting(vec![connector("github", 30)], 4_000);
+    assert_eq!(names(&set), ["read", TOOL_SEARCH, "mcp__github"]);
+    let search = &set.specs[1].description;
+    assert!(search.ends_with(suggest::ALSO), "{search}");
+    let plain = set_of(vec![connector("github", 30)], 4_000);
+    assert!(!plain.specs[1].description.contains(suggest::ALSO));
+    let found = set.search(Some("documentation of repositories"), None);
+    assert_eq!(ids(&found), ["deepwiki"]);
+}
+
+#[test]
+fn a_suggestion_tells_the_person_how_it_is_connected_in_one_plain_sentence() {
+    let call = CallId::new("call_3").unwrap();
+    let signs_in = suggestion(&call, &connectable("Linear", "Issues.", "Issues and bugs"));
+    assert_eq!(signs_in.connector, "linear");
+    assert_eq!(
+        signs_in.told,
+        "Linear isn't connected. Connect it to let me use it for you. You sign in on Linear's \
+         own page."
+    );
+    let at_once = suggestion(&call, &connectable("DeepWiki", "Docs.", "Documentation"));
+    assert_eq!(
+        at_once.told,
+        "DeepWiki isn't connected. Connect it to let me use it for you."
+    );
+}
+
+#[test]
+fn a_name_is_one_word_and_a_short_word_finds_no_service() {
+    let catalog = [
+        connectable(
+            "PostHog",
+            "Product analytics and feature flags.",
+            "Analytics",
+        ),
+        connectable("Todoist", "Tasks and projects.", "To-do lists"),
+        connectable("Stripe", "Payments, refunds and subscriptions.", "Payments"),
+    ];
+    let found = |query: &str| -> Vec<String> {
+        let found = suggest::matching(&catalog, query);
+        found.iter().map(|it| it.id.clone()).collect()
+    };
+    assert_eq!(found("post to slack"), Vec::<String>::new());
+    assert_eq!(found("refund a payment"), ["stripe"]);
+    assert_eq!(found("posthog"), ["posthog"]);
 }

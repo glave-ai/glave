@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Arguments, Body, StopReason};
-use glave_harness::{AllowAll, Decision, OwnTools};
+use glave_harness::{AllowAll, Connectable, Decision, OwnTools};
 use glave_ports::{
     BoxFuture, Cancellation, Completion, Effect, InMemoryLog, InMemoryTools, ModelRequest,
     ToolError, ToolInfo, ToolOutput, ToolSource, ToolSpec,
@@ -351,6 +351,94 @@ fn a_connection_that_takes_the_list_past_its_room_lists_every_connector_by_its_t
             "{news}"
         );
         assert!(news.contains("by their connector: `mcp__github`"), "{news}");
+    });
+}
+
+/// Linear and Stripe, of glave's catalog, as a person who has not connected them may.
+fn linear() -> Connectable {
+    Connectable {
+        id: "linear".into(),
+        name: "Linear".into(),
+        description: "Issues, projects and cycles.".into(),
+        tags: vec!["Developer tools".into(), "Issues and bugs".into()],
+        signs_in: true,
+    }
+}
+
+fn stripe() -> Connectable {
+    Connectable {
+        id: "stripe".into(),
+        name: "Stripe".into(),
+        description: "Payments, customers and subscriptions.".into(),
+        tags: vec!["Business".into(), "Payments".into()],
+        signs_in: true,
+    }
+}
+
+#[test]
+fn a_service_the_person_has_not_connected_is_found_suggested_and_used_once_they_connect_it() {
+    let dir = folder("tool-search-suggest");
+    block_on!(async {
+        let answers = vec![
+            calls(vec![("tool_search", json!({"query": "make an issue"}))]),
+            done("Connect Linear and I'll make it."),
+            calls(vec![("mcp__linear__tool_1", json!({"number": 1}))]),
+            done("Made it."),
+        ];
+        let log = InMemoryLog::new();
+        let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, settings()).await;
+        let both = vec![linear(), stripe()];
+        harness.set_own_tools(OwnTools::everywhere(Vec::new()).with_connectable(both));
+        let mut thread = harness.start_thread(scope()).await.unwrap();
+        turn(
+            &harness,
+            &mut thread,
+            "make a Linear issue for the login bug",
+        )
+        .await;
+        // The person connects it: its tools come, and it is no longer one to connect.
+        let connected = connection("linear", 2);
+        let own = vec![Arc::clone(&connected) as Arc<dyn ToolSource>];
+        harness.set_own_tools(OwnTools::everywhere(own).with_connectable(vec![stripe()]));
+        turn(&harness, &mut thread, "connected, go on").await;
+
+        let events = events(harness.log(), thread.id).await;
+        let suggested: Vec<(usize, &glave_event::ConnectorSuggested)> = (events.iter())
+            .enumerate()
+            .filter_map(|(at, event)| match &event.body {
+                Body::ConnectorSuggested(suggested) => Some((at, suggested)),
+                _ => None,
+            })
+            .collect();
+        let [(at, suggestion)] = suggested.as_slice() else {
+            panic!("one suggestion: {suggested:?}")
+        };
+        assert_eq!(suggestion.connector, "linear");
+        assert_eq!(
+            suggestion.told,
+            "Linear isn't connected. Connect it to let me use it for you. You sign in on \
+             Linear's own page."
+        );
+        // Between the search and its result, which tells the model.
+        let completed = (events.iter()).position(|event| {
+            matches!(&event.body, Body::ToolCallCompleted(done) if done.call_id == suggestion.call_id)
+        });
+        assert!(completed.is_some_and(|completed| completed > *at));
+        let outputs = outputs(harness.log(), thread.id).await;
+        assert!(
+            outputs[0].contains("Linear isn't connected; the person can connect it."),
+            "{}",
+            outputs[0]
+        );
+        assert_eq!(connected.calls().len(), 1, "used once connected");
+
+        // The search listed from the first call, on one prefix until the connection came.
+        let requests = seen.lock().unwrap().clone();
+        assert_eq!(names(&requests[0]).last(), Some(&"tool_search"));
+        assert!(prefix(&requests[1]) == prefix(&requests[0]), "one prefix");
+        assert!(names(&requests[2]).contains(&"mcp__linear__tool_1"));
+        assert!(names(&requests[2]).contains(&"tool_search"));
+        assert!(prefix(&requests[3]) == prefix(&requests[2]), "made once");
     });
 }
 

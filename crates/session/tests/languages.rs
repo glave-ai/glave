@@ -19,7 +19,7 @@ use tokio::task::JoinHandle;
 use glave_session::signin::{LocalToken, SignIn};
 
 use crate::support::issuer::{Issuer, Signer, fixed_clock};
-use crate::support::web::{Web, serve_http, serve_with};
+use crate::support::web::{Web, read_in_two, serve_http, serve_with};
 use crate::support::*;
 
 /// A thread nobody has.
@@ -183,25 +183,8 @@ fn an_approval_asks_in_the_callers_language_as_it_streams_and_in_its_history() {
     block_on!(async {
         // The person here, whose commands may ask to run outside the sandbox.
         let dir = folder("languages-approval");
-        let local = LocalToken::new([7; 32]);
-        let signin = SignIn::local(local.clone(), Box::new(fixed_clock()));
-        let served = serve_with(server(&dir, asking(), Answering::NoOne).await, signin, None).await;
-        let token = local.reveal().to_owned();
-        let mut reading = Web::new(&served, Some(token.clone())).reading("en-XA");
-        let mut plain = Web::new(&served, Some(token));
-        let started = reading
-            .call(&Request::ThreadStart {
-                project: None,
-                background: false,
-                worktree: None,
-                computer: None,
-                model: None,
-                permissions: None,
-                effort: None,
-            })
-            .await;
-        let thread: ThreadId =
-            serde_json::from_value(started["result"]["thread"]["id"].clone()).unwrap();
+        let tested = server(&dir, asking(), Answering::NoOne).await;
+        let (served, mut reading, mut plain, thread) = read_in_two(tested).await;
         let (message, _) = reading.message(&turn_start(thread, "touch it", None));
         let streamed = asked(&reading.post(&message).await.messages);
         assert_eq!(streamed.len(), 1, "{streamed:?}");

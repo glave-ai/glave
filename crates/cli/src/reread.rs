@@ -126,12 +126,13 @@ impl Rereading {
             .clone()
     }
 
-    /// The person's own servers as `setup` turns them on, when they changed. A rule that now
-    /// forbids them puts them all away; a `mcp.json` that no longer reads leaves them running.
+    /// The person's own servers as `setup` turns them on, when they or the connectors offered
+    /// changed. A rule that now forbids them puts them all away; a `mcp.json` that no longer
+    /// reads leaves them running.
     async fn own_servers(&self, setup: &Setup) -> Option<OwnTools> {
         let constraints = &setup.loaded.constraints;
         let mcp = setup.choices.mcp.as_ref();
-        self.servers.offer(mcp::Offered::by(constraints));
+        let offered = self.servers.offer(mcp::Offered::by(constraints));
         let signed = self.servers.signed().await;
         let wanted = mcp::wanted(&self.home, mcp, constraints, &signed);
         let wanted = match wanted.await {
@@ -148,7 +149,7 @@ impl Rereading {
                 return None;
             }
         };
-        self.servers.reconcile(wanted).then(|| {
+        (self.servers.reconcile(wanted) || offered).then(|| {
             self.projects.set_taken(self.servers.names());
             self.servers.tools()
         })

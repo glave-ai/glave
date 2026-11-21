@@ -82,7 +82,7 @@ pub use install::{ASKED_BY_GLAVE, Own};
 pub use instructions::{AGENTS_MD, Instructions, agents_md, agents_md_alone};
 pub use judge::{JudgeCase, Ruling, judge};
 pub use memory::MemoryVerb;
-pub use own_tools::{OwnTools, Placed};
+pub use own_tools::{Connectable, OwnTools, Placed};
 pub use plan::{MAX_STEP, MAX_STEPS, Plan};
 pub use project_folders::{Brought, ProjectFolders, Settled};
 pub use prompt::system_prompt;

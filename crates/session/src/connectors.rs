@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 
+use glave_harness::Connectable;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -168,6 +169,20 @@ impl Connector {
     /// What it reaches, as the caller reads it.
     pub(crate) fn told(&self) -> Told {
         Told::catalogued(format!("connector-{}", self.id), self.description.clone())
+    }
+
+    /// What `tool_search` finds of it, in English, for a person who may connect it and has
+    /// not: its name, what it reaches and the names of its categories and tags.
+    pub fn connectable(&self) -> Connectable {
+        let categories = self.categories.iter().map(|it| it.told());
+        let tags = categories.chain(self.tags.iter().map(|it| it.told()));
+        Connectable {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            description: self.description.clone(),
+            tags: tags.map(|told| (*told).to_owned()).collect(),
+            signs_in: self.sign_in == ConnectorSignIn::Dcr,
+        }
     }
 }
 

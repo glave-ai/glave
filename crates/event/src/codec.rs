@@ -11,23 +11,24 @@ use crate::payload::{
     AcmeRegistered, AppearanceSet, ApprovalDecided, ApprovalRequested, AwakeSet, BrandSet,
     BrowserSignedIn, BrowserSignedOut, BrowserUsed, CatalogRefreshed, CertificateIssued,
     CommandEnded, CommandStarted, ConnectionConnected, ConnectionRemoved, ConnectorConnected,
-    ConnectorDisconnected, CredentialConnected, CredentialRemoved, CreditsAdded, CreditsCharged,
-    CreditsHeld, CreditsLimitSet, EffortChosen, FiltersSet, GroupingSet, HookRan, InstructionsRead,
-    InviteAccepted, InviteCreated, InviteRevoked, LanguageSet, LibraryKept, LibraryRemoved,
-    MailAsked, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemorySet, MemoryTidied,
-    MessageAdded, ModelChosen, ModelResponded, OrganizationMade, PasskeyAdded, PasskeyRemoved,
-    PasskeyUsed, PermissionsChosen, PersonJoined, PersonRemoved, PlanApproved, PlanUpdated,
-    ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, PushClaimed, PushKeyMade,
-    PushSubscribed, PushUnsubscribed, RoleSet, ScheduleCreated, ScheduleDeleted, SchedulePaused,
-    SchedulePlaced, ScheduleSkipped, ScheduleUnplaced, SearchSet, SecretAdded, SecretRemoved,
-    ServiceAnswered, ServiceAsked, SignupFinished, SignupStarted, TaskEnded, TaskStarted,
-    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked, ThreadRenamed, ThreadStarted,
-    ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted, TrustDecided,
-    TurnMade, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance,
-    approval, awake, browser, catalog, certificate, chosen, command, connection, connector,
-    credential, credits, filters, fork, grouping, hook, instructions, language, library, made,
-    memory, message, model, passkey, people, plan, project, provider, push, remembering, search,
-    secrets, service, signup, standing, task, thread, tool, trust, turn, workspace, zone,
+    ConnectorDisconnected, ConnectorSuggested, CredentialConnected, CredentialRemoved,
+    CreditsAdded, CreditsCharged, CreditsHeld, CreditsLimitSet, EffortChosen, FiltersSet,
+    GroupingSet, HookRan, InstructionsRead, InviteAccepted, InviteCreated, InviteRevoked,
+    LanguageSet, LibraryKept, LibraryRemoved, MailAsked, MemoryEdited, MemoryForgotten,
+    MemoryRestored, MemorySaved, MemorySet, MemoryTidied, MessageAdded, ModelChosen,
+    ModelResponded, OrganizationMade, PasskeyAdded, PasskeyRemoved, PasskeyUsed, PermissionsChosen,
+    PersonJoined, PersonRemoved, PlanApproved, PlanUpdated, ProjectFolderSet, ProjectRemoved,
+    ProviderConnected, ProviderRemoved, PushClaimed, PushKeyMade, PushSubscribed, PushUnsubscribed,
+    RoleSet, ScheduleCreated, ScheduleDeleted, SchedulePaused, SchedulePlaced, ScheduleSkipped,
+    ScheduleUnplaced, SearchSet, SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked,
+    SignupFinished, SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
+    ThreadDeleted, ThreadForked, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
+    ToolCallRequested, ToolCallStarted, TrustDecided, TurnMade, TurnResult, TurnStarted,
+    WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance, approval, awake, browser, catalog,
+    certificate, chosen, command, connection, connector, credential, credits, filters, fork,
+    grouping, hook, instructions, language, library, made, memory, message, model, passkey, people,
+    plan, project, provider, push, remembering, search, secrets, service, signup, standing, task,
+    thread, tool, trust, turn, workspace, zone,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -100,6 +101,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (connection::REMOVED, 1),
     (connector::CONNECTED, 1),
     (connector::DISCONNECTED, 1),
+    (connector::SUGGESTED, 1),
     (secrets::ADDED, 1),
     (secrets::REMOVED, 1),
     (project::FOLDER_SET, 1),
@@ -186,6 +188,7 @@ pub enum Body {
     ApprovalDecided(ApprovalDecided),
     ServiceAsked(ServiceAsked),
     ServiceAnswered(ServiceAnswered),
+    ConnectorSuggested(ConnectorSuggested),
     PlanUpdated(PlanUpdated),
     PlanApproved(PlanApproved),
     WorkspaceBound(WorkspaceBound),
@@ -350,6 +353,9 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         service::ANSWERED => {
             service::decode_answered(version, data).map(|r| r.map(Body::ServiceAnswered))
         }
+        connector::SUGGESTED => {
+            connector::decode_suggested(version, data).map(|r| r.map(Body::ConnectorSuggested))
+        }
         workspace::BOUND => workspace::decode(version, data).map(|r| r.map(Body::WorkspaceBound)),
         workspace::REMOVED => {
             workspace::decode_removed(version, data).map(|r| r.map(Body::WorkspaceRemoved))
@@ -411,6 +417,7 @@ impl Event {
             Body::ApprovalDecided(payload) => encode(header, payload),
             Body::ServiceAsked(payload) => encode(header, payload),
             Body::ServiceAnswered(payload) => encode(header, payload),
+            Body::ConnectorSuggested(payload) => encode(header, payload),
             Body::PlanUpdated(payload) => encode(header, payload),
             Body::PlanApproved(payload) => encode(header, payload),
             Body::WorkspaceBound(payload) => encode(header, payload),
