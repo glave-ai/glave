@@ -42,7 +42,7 @@ impl Http {
             reqwest::Client::builder()
                 .timeout(CALL)
                 .redirect(reqwest::redirect::Policy::none())
-                .user_agent(concat!("glave/", env!("CARGO_PKG_VERSION")))
+                .user_agent(glave_ports::host::USER_AGENT)
         };
         Ok(Self {
             through_proxy: builder().build()?,

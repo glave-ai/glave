@@ -10,7 +10,7 @@ use std::fmt;
 use std::net::IpAddr;
 use std::sync::Arc;
 
-use glave_ports::host::{Lookup, is_this_computer};
+use glave_ports::host::{Lookup, USER_AGENT, is_this_computer};
 
 /// The addresses a remote server may be at. Cloud metadata is out of reach in both, as a tool
 /// server is never there.
@@ -139,7 +139,9 @@ impl Reach {
 
     /// A client whose names are looked up under this rule.
     pub(crate) fn client(&self) -> reqwest::ClientBuilder {
-        let client = reqwest::Client::builder().dns_resolver(Arc::new(self.lookup()));
+        let client = reqwest::Client::builder()
+            .dns_resolver(Arc::new(self.lookup()))
+            .user_agent(USER_AGENT);
         match self {
             Self::Anywhere => client,
             Self::Nowhere | Self::Only(_) => client.no_proxy(),
@@ -342,7 +344,7 @@ mod tests {
     }
 
     #[test]
-    fn the_client_looks_names_up_under_the_rule() {
+    fn the_client_looks_names_up_under_the_rule_and_says_it_is_glave() {
         let here = FakeHttp::always(200, "here").unwrap();
         let port = here.host.rsplit_once(':').unwrap().1;
         let url = format!("http://localhost:{port}/");
@@ -357,7 +359,14 @@ mod tests {
             assert!(refused, "{error}");
             assert_eq!(get(Reachable::AlsoPrivate).await.unwrap().status(), 200);
         });
-        assert_eq!(here.received().len(), 1, "reached only where it may be");
+        let received = here.received();
+        assert_eq!(received.len(), 1, "reached only where it may be");
+        let agent = received.first().and_then(|it| it.headers.get("user-agent"));
+        assert_eq!(
+            agent.map(String::as_str),
+            Some(USER_AGENT),
+            "some hosts refuse no name"
+        );
     }
 
     #[test]
