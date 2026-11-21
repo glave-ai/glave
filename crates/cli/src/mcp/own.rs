@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use anyhow::Context as _;
 use glave_config::policy::{Chosen, Constraints, check_own_servers};
-use glave_harness::{Offered as CatalogOffered, OwnTools, Placed};
+use glave_harness::{Connectable, OwnTools, Placed};
 use glave_mcp::{Limits, McpServer, Reachable};
 use glave_ports::ProjectId;
 use glave_ports::settings::mcp::ServerConfig;
@@ -448,24 +448,22 @@ fn serving<T>(servers: &[(Wanted, T)], place: Option<ProjectId>) -> Vec<&(Wanted
     here
 }
 
-/// `catalog` as `offers` offers it to the person, where it offers any connector: those they
-/// may connect and have not (none of their servers, `running`, is named for one, connected or
-/// in their settings), which a search suggests (`specs/session.md`, "Connectors"), and the
-/// catalog's common words. Offered none, there is no search for them.
+/// Where `offers` offers any connector of `catalog`, those the person may connect and have not:
+/// none of their servers, `running`, is named for one, connected or in their settings. A search
+/// suggests them (`specs/session.md`, "Connectors"); offered none, there is no search for them.
 fn catalog_offered(
     catalog: &Catalog,
     offers: impl Fn(&str) -> bool,
     running: &[&str],
-) -> Option<CatalogOffered> {
+) -> Option<Vec<Connectable>> {
     let offered: Vec<&Connector> = (catalog.connectors.iter())
         .filter(|it| offers(&it.id))
         .collect();
-    (!offered.is_empty()).then(|| CatalogOffered {
-        connectable: (offered.into_iter())
+    (!offered.is_empty()).then(|| {
+        (offered.into_iter())
             .filter(|it| !running.contains(&it.id.as_str()))
             .map(Connector::connectable)
-            .collect(),
-        common: catalog.common_words(),
+            .collect()
     })
 }
 
@@ -481,7 +479,7 @@ mod tests {
             "version = 1\n[mcp]\ncatalog = [\"linear\", \"stripe\", \"deepwiki\"]\n",
         ));
         let connectable = |offers: &Offered, running: &[&str]| {
-            catalog_offered(&catalog, |id| offers.allows(id), running).map(|it| it.connectable)
+            catalog_offered(&catalog, |id| offers.allows(id), running)
         };
         let found = connectable(&offered, &["stripe", "mine"]).unwrap();
         let ids: Vec<&str> = found.iter().map(|it| it.id.as_str()).collect();
@@ -501,8 +499,6 @@ mod tests {
         assert_eq!(all, Some(Vec::new()));
         let none = Offered::by(&constraints("version = 1\n[mcp]\nown = false\n"));
         assert_eq!(connectable(&none, &[]), None);
-        let common = catalog_offered(&catalog, |_| true, &[]).unwrap().common;
-        assert_eq!(common, catalog.common_words());
     }
 
     #[test]

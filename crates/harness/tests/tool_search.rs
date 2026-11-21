@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Arguments, Body, StopReason};
-use glave_harness::{AllowAll, Connectable, Decision, Offered, OwnTools};
+use glave_harness::{AllowAll, Connectable, Decision, OwnTools};
 use glave_ports::{
     BoxFuture, Cancellation, Completion, Effect, InMemoryLog, InMemoryTools, ModelRequest,
     ToolError, ToolInfo, ToolOutput, ToolSource, ToolSpec,
@@ -377,14 +377,6 @@ fn stripe() -> Connectable {
     }
 }
 
-/// glave's catalog offered with `connectable` left to connect.
-fn offered(connectable: Vec<Connectable>) -> Offered {
-    Offered {
-        connectable,
-        common: vec!["and".into()],
-    }
-}
-
 #[test]
 fn a_service_the_person_has_not_connected_is_found_suggested_and_used_once_they_connect_it() {
     let dir = folder("tool-search-suggest");
@@ -398,7 +390,7 @@ fn a_service_the_person_has_not_connected_is_found_suggested_and_used_once_they_
         let log = InMemoryLog::new();
         let (harness, seen) = harness_seeing(&dir, answers, AllowAll, log, 1, settings()).await;
         let both = vec![linear(), stripe()];
-        harness.set_own_tools(OwnTools::everywhere(Vec::new()).with_catalog_offered(offered(both)));
+        harness.set_own_tools(OwnTools::everywhere(Vec::new()).with_catalog_offered(both));
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(
             &harness,
@@ -409,8 +401,7 @@ fn a_service_the_person_has_not_connected_is_found_suggested_and_used_once_they_
         // The person connects it: its tools come, and it is no longer one to connect.
         let connected = connection("linear", 2);
         let own = vec![Arc::clone(&connected) as Arc<dyn ToolSource>];
-        harness
-            .set_own_tools(OwnTools::everywhere(own).with_catalog_offered(offered(vec![stripe()])));
+        harness.set_own_tools(OwnTools::everywhere(own).with_catalog_offered(vec![stripe()]));
         turn(&harness, &mut thread, "connected, go on").await;
 
         let events = events(harness.log(), thread.id).await;
@@ -472,15 +463,15 @@ fn a_thread_begun_with_none_to_connect_lists_the_search_and_is_made_again_only_o
             OwnTools::everywhere(std::iter::once(mine).chain(more).collect())
         };
         // The organization offers Linear alone, connected: none is left to connect.
-        harness.set_own_tools(own(None).with_catalog_offered(offered(Vec::new())));
+        harness.set_own_tools(own(None).with_catalog_offered(Vec::new()));
         let mut thread = harness.start_thread(scope()).await.unwrap();
         turn(&harness, &mut thread, "hello").await;
         // It offers Stripe too now: the search, listed from the first call, suggests it.
-        harness.set_own_tools(own(None).with_catalog_offered(offered(vec![stripe()])));
+        harness.set_own_tools(own(None).with_catalog_offered(vec![stripe()]));
         turn(&harness, &mut thread, "take payments").await;
         // Stripe connected: the prefix is made again, once.
         let stripe_tools = connection("stripe", 2) as Arc<dyn ToolSource>;
-        harness.set_own_tools(own(Some(stripe_tools)).with_catalog_offered(offered(Vec::new())));
+        harness.set_own_tools(own(Some(stripe_tools)).with_catalog_offered(Vec::new()));
         turn(&harness, &mut thread, "connected").await;
         turn(&harness, &mut thread, "and now?").await;
 

@@ -17,13 +17,12 @@ use glave_ports::{Effect, Purpose, ToolError, ToolInfo, ToolSource, ToolSpec};
 use crate::prefix::Told;
 use crate::subagent::SubagentType;
 
-pub use connectors::search_words;
 pub(crate) use connectors::{
     Route, TOOL_SEARCH, connector_called, connector_of, one_line, short_of, suggestion, words_of,
     wrapper,
 };
 
-use crate::own_tools::Offered;
+use crate::own_tools::Connectable;
 
 /// Opens what the sources say about their tools, which follows glave's own instructions.
 const NOTES: &str = "# Notes from tool servers\n\nThe servers whose tools you have describe them \
@@ -144,7 +143,7 @@ pub(crate) struct ToolSet {
     about: BTreeMap<String, String>,
     /// glave's catalog, where it is offered: the connectors of it the person may connect and has
     /// not, which `tool_search` suggests, only in a thread of theirs, never a subagent's.
-    pub(crate) offered: Option<Offered>,
+    pub(crate) offered: Option<Vec<Connectable>>,
 }
 
 impl ToolSet {

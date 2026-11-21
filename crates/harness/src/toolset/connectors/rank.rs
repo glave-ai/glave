@@ -141,7 +141,7 @@ fn counted(text: &str) -> HashMap<String, u32> {
 
 /// `text`'s words, lowercase and without a plural's `s`: `listOpenIssues` is `list`, `open`,
 /// `issue`.
-pub fn words(text: &str) -> Vec<String> {
+fn words(text: &str) -> Vec<String> {
     words_of(text).into_iter().map(singular).collect()
 }
 

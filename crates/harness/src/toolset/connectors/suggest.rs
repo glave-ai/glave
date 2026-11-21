@@ -1,16 +1,16 @@
 //! The connectors of glave's catalog the person may connect and has not, which `tool_search`
 //! finds for them to connect: those a search names, whatever connected tools it finds, and,
-//! when it finds none, the best by BM25 over each one's name, what it reaches and its tags. The
-//! model is told each in a plain line, and the thread records each as a suggestion the person
-//! sees (`connector.suggested`); only the person connects one. The catalog is static, so the
-//! tool's listing never changes as they are found or connected.
+//! when it names none and finds no connected tool, the best by BM25 over each one's name, what
+//! it reaches and its tags. The model is told each in a plain line, and the thread records each
+//! as a suggestion the person sees (`connector.suggested`); only the person connects one. The
+//! catalog is static, so the tool's listing never changes as they are found or connected.
 
 use glave_event::{CallId, ConnectorSuggested, Suggests, Worded as _};
 use glave_ports::{ToolOutput, ToolSpec};
 use serde_json::json;
 
 use super::{TOOL_SEARCH, rank};
-use crate::own_tools::{Connectable, Offered};
+use crate::own_tools::Connectable;
 
 /// The most connectors one search suggests.
 const MOST_SUGGESTED: usize = 3;
@@ -75,64 +75,63 @@ impl Searched {
     }
 }
 
-/// Which of `offered`'s connectors a search for `query` suggests, at most [`MOST_SUGGESTED`]:
-/// those it names, by a word that is a connector's id or its name, whatever connected tools it
-/// found (`found_any`); else, where it found none, the best by BM25. A word of two
-/// letters or fewer says nothing of a service (`to` would find to-do lists), and a name is one
-/// word however it is cased, so `post` never finds PostHog. A distinctive name (Stripe, Notion)
-/// is suggested on its own; one that is also a plain word (Make, Close) only where every other
-/// word of the search that says anything, one the catalog has few of, is one of what it reaches
-/// or its tags: "make the tests run" is not Make, and "make a scenario run" is.
+/// Whether `word`, as the search wrote it, names `it`: a name that is also a plain word (Make,
+/// Close, Linear) only written as the catalog spells it (`Make`, `monday` of `monday.com`), as
+/// the model writes a service's name; any other in any case, by its id or its name.
+fn names(it: &Connectable, word: &str) -> bool {
+    if it.plain_word {
+        return it.name.split('.').next() == Some(word);
+    }
+    word.eq_ignore_ascii_case(&it.id) || word.to_lowercase() == it.name.to_lowercase()
+}
+
+/// Which of `connectable` a search for `query` suggests, at most [`MOST_SUGGESTED`]: those it
+/// names ([`names`]), whatever connected tools it found (`found_any`), and no other beside them;
+/// else, where it found none, the best by BM25 over each one's name, what it reaches and its
+/// tags, a plain word's name left out, so the verbs `make` and `close` never rank Make or Close.
+/// A word of two letters or fewer says nothing of a service (`to` would find to-do lists), and a
+/// name is one word however it is cased, so `post` never finds PostHog.
 pub(super) fn matching<'a>(
-    offered: &'a Offered,
+    connectable: &'a [Connectable],
     query: &str,
     found_any: bool,
 ) -> Vec<&'a Connectable> {
-    let connectable = &offered.connectable;
+    let written: Vec<&str> = (query.split(|c: char| !c.is_alphanumeric()))
+        .filter(|word| word.chars().count() > 2)
+        .collect();
+    let named: Vec<&Connectable> = (connectable.iter())
+        .filter(|it| written.iter().any(|word| names(it, word)))
+        .take(MOST_SUGGESTED)
+        .collect();
+    if found_any || !named.is_empty() {
+        return named;
+    }
+    let specs: Vec<ToolSpec> = (connectable.iter())
+        .map(|it| {
+            let about = format!("{} {}", it.description, it.tags.join(" "));
+            let description = if it.plain_word {
+                about
+            } else {
+                format!("{id} {id} {} {about}", it.name.to_lowercase(), id = it.id)
+            };
+            ToolSpec {
+                name: String::new(),
+                description,
+                parameters: json!({}),
+            }
+        })
+        .collect();
+    let specs: Vec<&ToolSpec> = specs.iter().collect();
     let asked: Vec<String> = (super::words_of(query).into_iter())
         .filter(|word| word.chars().count() > 2)
         .collect();
-    let calls = |it: &Connectable, word: &str| it.id == word || it.name.to_lowercase() == word;
-    let named: Vec<&Connectable> = (connectable.iter())
-        .filter(|it| asked.iter().any(|word| calls(it, word)))
-        .collect();
-    let says = |word: &String| {
-        rank::words(word)
-            .iter()
-            .all(|w| !offered.common.contains(w))
-    };
-    let fits = |it: &Connectable| {
-        let about = rank::words(&format!("{} {}", it.description, it.tags.join(" ")));
-        let mut others = asked.iter().filter(|word| !calls(it, word) && says(word));
-        !it.plain_word || others.all(|word| rank::words(word).iter().all(|w| about.contains(w)))
-    };
-    let mut chosen: Vec<&Connectable> = named.iter().copied().filter(|it| fits(it)).collect();
-    // A service the search names is the one it means: no other is ranked beside it.
-    if !found_any && chosen.is_empty() {
-        let specs: Vec<ToolSpec> = (connectable.iter())
-            .map(|it| ToolSpec {
-                name: it.id.clone(),
-                description: format!(
-                    "{} {} {}",
-                    it.name.to_lowercase(),
-                    it.description,
-                    it.tags.join(" ")
-                ),
-                parameters: json!({}),
-            })
-            .collect();
-        let specs: Vec<&ToolSpec> = specs.iter().collect();
-        for found in rank::matching(&specs, &asked.join(" ")) {
-            // One named that the query's other words do not find stays out, however it ranks.
-            let unnamed = connectable
-                .iter()
-                .find(|it| it.id == found.name)
-                .filter(|it| !named.iter().any(|known| known.id == it.id));
-            chosen.extend(unnamed);
-        }
-    }
-    chosen.truncate(MOST_SUGGESTED);
-    chosen
+    (rank::matching(&specs, &asked.join(" ")).into_iter())
+        .filter_map(|found| {
+            let at = specs.iter().position(|spec| std::ptr::eq(*spec, found))?;
+            connectable.get(at)
+        })
+        .take(MOST_SUGGESTED)
+        .collect()
 }
 
 /// The record that the search `call` suggests the person connect `it`.
