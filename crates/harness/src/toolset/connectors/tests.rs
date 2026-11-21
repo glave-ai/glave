@@ -4,7 +4,6 @@ use glave_event::CallId;
 use glave_ports::{Effect, InMemoryTools, ToolInfo, ToolSource, block_on};
 
 use super::*;
-use crate::own_tools::Offered;
 use crate::subagent::SubagentType;
 
 fn info(name: &str, effect: Effect) -> (ToolInfo, ToolOutput) {
@@ -336,7 +335,8 @@ fn a_subagent_never_gets_schedule() {
 }
 
 /// A connector of glave's catalog the person may connect, `name`, reaching `description`;
-/// DeepWiki asks no one to sign in, and Make's and Close's names are plain words.
+/// DeepWiki asks no one to sign in, and Linear's, Make's, Close's and Railway's names are plain
+/// words.
 fn connectable(name: &str, description: &str, tag: &str) -> Connectable {
     Connectable {
         id: name.to_ascii_lowercase(),
@@ -344,15 +344,7 @@ fn connectable(name: &str, description: &str, tag: &str) -> Connectable {
         description: description.to_owned(),
         tags: vec![tag.to_owned()],
         signs_in: name != "DeepWiki",
-        plain_word: ["Make", "Close"].contains(&name),
-    }
-}
-
-/// `connectable` offered, `and` the one word common to the catalog's descriptions and tags.
-fn offered(connectable: Vec<Connectable>) -> Offered {
-    Offered {
-        connectable,
-        common: vec!["and".to_owned()],
+        plain_word: ["Linear", "Make", "Close", "Railway"].contains(&name),
     }
 }
 
@@ -361,7 +353,7 @@ fn offered(connectable: Vec<Connectable>) -> Offered {
 fn suggesting(sources: Vec<Arc<dyn ToolSource>>, window: u64) -> ToolSet {
     // Listed in full while no catalog is offered.
     let mut set = set_of(sources, u64::MAX);
-    set.offered = Some(offered(vec![
+    set.offered = Some(vec![
         connectable("Linear", "Issues, projects and cycles.", "Issues and bugs"),
         connectable("Stripe", "Payments and subscriptions.", "Payments"),
         connectable(
@@ -371,9 +363,11 @@ fn suggesting(sources: Vec<Arc<dyn ToolSource>>, window: u64) -> ToolSet {
         ),
         connectable("Make", "Your scenarios, run when you ask.", "Automation"),
         connectable("Close", "Leads, opportunities and calls.", "Sales and CRM"),
+        connectable("Attio", "Records, lists and notes.", "Sales and CRM"),
+        connectable("Railway", "Projects, services and deploys.", "Hosting"),
         connectable("Notion", "Pages, databases and search.", "Notes"),
         connectable("Guru", "Cards of what your team knows.", "Team knowledge"),
-    ]));
+    ]);
     set.frame(window);
     set
 }
@@ -453,7 +447,7 @@ fn a_suggestion_tells_the_person_how_it_is_connected_in_one_plain_sentence() {
 
 #[test]
 fn a_name_is_one_word_and_a_short_word_finds_no_service() {
-    let catalog = offered(vec![
+    let catalog = [
         connectable(
             "PostHog",
             "Product analytics and feature flags.",
@@ -461,17 +455,18 @@ fn a_name_is_one_word_and_a_short_word_finds_no_service() {
         ),
         connectable("Todoist", "Tasks and projects.", "To-do lists"),
         connectable("Stripe", "Payments, refunds and subscriptions.", "Payments"),
-    ]);
+    ];
     let found = |query: &str| -> Vec<String> {
         let found = suggest::matching(&catalog, query, false);
         found.iter().map(|it| it.id.clone()).collect()
     };
     assert_eq!(found("post to slack"), Vec::<String>::new());
     assert_eq!(found("refund a payment"), ["stripe"]);
-    assert_eq!(found("posthog"), ["posthog"]);
+    assert_eq!(found("PostHog"), ["posthog"]);
 }
 
-/// A connected source of some of GitHub's tools, two of them about issues.
+/// A connected source of some of GitHub's tools: two about issues, one that searches, one
+/// that runs a workflow.
 fn github() -> Arc<dyn ToolSource> {
     let tools = [
         "issue_write",
@@ -480,6 +475,7 @@ fn github() -> Arc<dyn ToolSource> {
         "branch_list",
         "file_read",
         "repository_search",
+        "workflow_run",
     ];
     let tools = tools.map(|tool| info(&format!("mcp__github__{tool}"), Effect::Runs));
     Arc::new(InMemoryTools::new(tools.into()).as_connected())
@@ -488,52 +484,48 @@ fn github() -> Arc<dyn ToolSource> {
 #[test]
 fn a_service_the_search_names_is_suggested_whatever_connected_tools_it_finds() {
     let set = suggesting(vec![github()], 128_000);
-    let found = set.search(Some("make a linear issue"), None);
+    let found = set.search(Some("make a Linear issue"), None);
     let said = text(&found.output);
     assert!(said.contains("\"tool\":\"issue_write\""), "{said}");
-    assert_eq!(ids(&found), ["linear"], "GitHub's issues, and Linear named");
+    assert_eq!(
+        ids(&found),
+        ["linear"],
+        "GitHub's issues, and Linear named, not Make"
+    );
     assert!(
         said.contains("Linear isn't connected; the person can connect it."),
         "{said}"
     );
-    // A distinctive name is suggested on its own, among any other words.
     let named = |query: &str| ids(&set.search(Some(query), None)).join(" ");
-    assert_eq!(named("stripe"), "stripe");
     assert_eq!(named("use stripe to charge a card"), "stripe");
-    assert_eq!(named("save this to notion"), "notion");
-    // A plain word is not, where the search's other words are not what it reaches.
-    assert_eq!(named("make a pull request"), "");
+    // A plain word written as a plain word names nothing.
     assert_eq!(named("make the tests run"), "");
-    assert_eq!(named("close the issue and comment"), "");
+    assert_eq!(named("linear search over the array"), "");
 }
 
 #[test]
-fn a_name_that_is_a_plain_word_is_suggested_only_where_the_other_words_find_it() {
+fn a_name_that_is_a_plain_word_names_its_service_only_as_the_catalog_spells_it() {
     let set = suggesting(Vec::new(), 128_000);
     let named = |query: &str| ids(&set.search(Some(query), None)).join(" ");
-    assert_eq!(named("make a linear issue"), "linear", "not Make");
-    assert_eq!(named("make the tests run"), "", "nor Make ranked");
-    assert_eq!(named("make"), "make");
-    assert_eq!(named("make a scenario run"), "make");
-    // `and`, common to the catalog, says nothing either way.
-    assert_eq!(named("run make scenarios and"), "make");
+    assert_eq!(named("Make a scenario that posts to my sheet"), "make");
+    assert_eq!(named("deploy to Railway"), "railway");
+    assert_eq!(named("update a lead in Close"), "close");
+    assert_eq!(named("move leads from Close to Attio"), "close attio");
     // A service named is the one meant: none ranked beside it, though Guru has cards.
     assert_eq!(named("use stripe to charge a card"), "stripe");
     assert_eq!(named("save this to notion"), "notion");
-    assert_eq!(
-        named("find the team's cards"),
-        "guru",
-        "ranked where none is named"
-    );
+    // Ranked, a plain word's name counts for nothing: `make` and `close` are verbs.
+    assert_eq!(named("make the deal close"), "");
+    assert_eq!(named("find the team's cards"), "guru");
 }
 
 #[test]
 fn the_search_is_listed_where_the_catalog_is_offered_with_none_left_to_connect() {
     let mut set = set_of(vec![github()], u64::MAX);
-    set.offered = Some(offered(Vec::new()));
+    set.offered = Some(Vec::new());
     set.frame(128_000);
     assert_eq!(names(&set).last(), Some(&TOOL_SEARCH));
-    assert_eq!(set.search(Some("linear"), None).suggested, []);
+    assert_eq!(set.search(Some("Linear"), None).suggested, []);
     // Offered none: not listed.
     assert!(!names(&set_of(vec![github()], 128_000)).contains(&TOOL_SEARCH));
 }

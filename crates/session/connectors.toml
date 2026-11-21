@@ -9,8 +9,8 @@
 # the first category is the connector's home, where a client that shows it once puts it.
 # `returns` is `files` when the vendor's docs show a tool that hands back a file or media,
 # `text` when they list the tools and none does, and `unknown` when they don't say.
-# `plain_word = true` marks a name that is also a common English word (Make, Close, Square): a
-# search that says it suggests the connector only where its other words are what it reaches.
+# `plain_word = true` marks a name that is also a common English word (Make, Close, Linear): a
+# search names the connector only by its name written as here, as the model writes a brand.
 
 [[company]]
 id = "airtable"
@@ -532,6 +532,7 @@ returns = "text"
 sign_in = "dcr"
 docs = "https://linear.app/docs/mcp"
 description = "Issues, projects and cycles."
+plain_word = true
 
 [[connector]]
 id = "sentry"
@@ -1537,6 +1538,7 @@ returns = "text"
 sign_in = "dcr"
 docs = "https://docs.apollo.io/docs/apollo-mcp"
 description = "Prospects, companies and sequences."
+plain_word = true
 
 [[connector]]
 id = "gorgias"
@@ -1707,6 +1709,7 @@ returns = "text"
 sign_in = "dcr"
 docs = "https://www.mux.com/docs/integrations/mcp-server"
 description = "Videos, live streams and their analytics."
+plain_word = true
 
 [[connector]]
 id = "sanity"

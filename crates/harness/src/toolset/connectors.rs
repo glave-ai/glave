@@ -11,7 +11,6 @@ mod fits;
 mod rank;
 mod suggest;
 
-pub use rank::words as search_words;
 pub(crate) use rank::words_of;
 pub(crate) use suggest::{Searched, suggestion};
 
@@ -517,7 +516,7 @@ impl ToolSet {
         if let Some(connector) = connector
             && tools.is_empty()
         {
-            let offered = self.offered.iter().flat_map(|it| &it.connectable);
+            let offered = self.offered.iter().flatten();
             let named: Vec<&Connectable> = offered.filter(|it| it.id == connector).collect();
             if named.is_empty() {
                 return Searched::only(ToolOutput::text(true, self.no_connector(connector)));

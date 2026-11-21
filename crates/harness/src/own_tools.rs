@@ -32,19 +32,9 @@ pub struct Connectable {
     pub tags: Vec<String>,
     /// Whether connecting it signs the person in on its vendor's own page.
     pub signs_in: bool,
-    /// Whether its name is also a plain English word (Make, Close, Square), so a search that
-    /// says it may not mean the service.
+    /// Whether its name is also a plain English word (Make, Close, Linear): a search names it
+    /// only written as the catalog spells it.
     pub plain_word: bool,
-}
-
-/// glave's catalog as it is offered to the person: the connectors of it they may connect and
-/// have not, none where they connected every one, and the words a quarter or more of the whole
-/// catalog's descriptions and tags have, as a search reads them, which say nothing of any one
-/// service (`and`).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Offered {
-    pub connectable: Vec<Connectable>,
-    pub common: Vec<String>,
 }
 
 /// The person's own tool sources: those every place has, each place's in their stead where it
@@ -55,7 +45,7 @@ pub struct OwnTools {
     everywhere: Placed,
     places: BTreeMap<ProjectId, Placed>,
     connectors: Vec<String>,
-    offered: Option<Offered>,
+    offered: Option<Vec<Connectable>>,
 }
 
 impl OwnTools {
@@ -89,12 +79,12 @@ impl OwnTools {
         self
     }
 
-    /// With glave's catalog offered to the person as `offered` says, even with none of it left
-    /// to connect: `tool_search` is listed to find what is, in every place, from each thread's
-    /// first call.
+    /// With glave's catalog offered to the person, `connectable` the connectors of it they may
+    /// connect and have not, none where they connected all: `tool_search` is listed to find
+    /// them in every place, from each thread's first call.
     #[must_use]
-    pub fn with_catalog_offered(mut self, offered: Offered) -> Self {
-        self.offered = Some(offered);
+    pub fn with_catalog_offered(mut self, connectable: Vec<Connectable>) -> Self {
+        self.offered = Some(connectable);
         self
     }
 
@@ -119,5 +109,5 @@ impl OwnTools {
 pub(crate) struct Mine {
     pub(crate) placed: Placed,
     pub(crate) away: Vec<String>,
-    pub(crate) offered: Option<Offered>,
+    pub(crate) offered: Option<Vec<Connectable>>,
 }
