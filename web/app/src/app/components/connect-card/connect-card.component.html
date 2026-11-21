@@ -1,0 +1,53 @@
+@if (shown(); as shown) {
+  @switch (shown.kind) {
+    @case ('offer') {
+      <div class="card" data-testid="connect-card" [attr.data-connector]="item().connector">
+        <div class="head">
+          <span class="tile" aria-hidden="true">{{ shown.letters }}</span>
+          <div class="text">
+            <span class="name" dir="auto" data-testid="connect-card-name">{{ shown.name }}</span>
+            <span class="description" data-testid="connect-card-description">
+              {{ shown.description }}
+            </span>
+          </div>
+        </div>
+        <p class="told" data-testid="connect-card-told">{{ item().told }}</p>
+        @if (waiting(); as waiting) {
+          <p class="waiting" data-testid="connect-card-waiting">
+            <glz-icon class="glz-spin" [icon]="icons.waiting" />
+            {{ waiting }}
+          </p>
+        }
+        @if (problem(); as problem) {
+          <p class="problem" role="alert" data-testid="connect-card-problem">{{ problem }}</p>
+        }
+        <div class="actions">
+          <button
+            glzButton
+            variant="primary"
+            data-testid="connect-card-connect"
+            [disabled]="busy()"
+            (click)="connect()"
+          >
+            {{ shown.connect }}
+          </button>
+          <button glzButton data-testid="connect-card-not-now" (click)="notNow()">
+            {{ copy.notNow }}
+          </button>
+        </div>
+      </div>
+    }
+    @case ('connected') {
+      <p
+        class="connected"
+        data-testid="connect-card-connected"
+        [attr.data-connector]="item().connector"
+      >
+        <span class="tile small" aria-hidden="true">{{ shown.letters }}</span>
+        <span dir="auto" data-testid="connect-card-state">{{ shown.state }}</span>
+        <span class="between" aria-hidden="true">{{ copy.between }}</span>
+        <span dir="auto" data-testid="connect-card-used">{{ shown.used }}</span>
+      </p>
+    }
+  }
+}

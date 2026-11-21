@@ -31,6 +31,7 @@ import type {
   QuestionItem,
   RepeatAsk,
   ServiceItem,
+  SuggestionItem,
   ThreadItem,
 } from '../../lib/conversation';
 import { toolIcon } from '../../lib/steps';
@@ -38,6 +39,7 @@ import { threadTitle } from '../../lib/threads';
 import { ProjectsService } from '../../services/projects.service';
 import { SessionService } from '../../services/session.service';
 import { ThreadService } from '../../services/thread.service';
+import { ConnectCardComponent } from '../connect-card/connect-card.component';
 import { MessageTextComponent } from '../message-text/message-text.component';
 import { ThoughtComponent } from '../thought/thought.component';
 
@@ -85,7 +87,13 @@ interface ShownRepeat {
 }
 
 type ShownItem =
-  ShownMessage | ShownCall | ApprovalItem | QuestionItem | ShownService | ShownRepeat;
+  | ShownMessage
+  | ShownCall
+  | ApprovalItem
+  | QuestionItem
+  | ShownService
+  | ShownRepeat
+  | SuggestionItem;
 
 /** What the server says of a chat, by its id, as the person's lists hold it, if they do. */
 type Chats = (chat: string) => ThreadSummary | undefined;
@@ -136,6 +144,7 @@ function shown(item: ThreadItem, locale: string, interim: boolean, chats: Chats)
     case 'approval':
       return item.repeat === undefined ? item : shownRepeat(item, item.repeat, chats);
     case 'question':
+    case 'suggestion':
       return item;
     case 'service':
       return {
@@ -152,12 +161,13 @@ function shown(item: ThreadItem, locale: string, interim: boolean, chats: Chats)
  * as a quiet line, an approval, questions or what a service asks as a card that needs the person,
  * answered in place, which rises into place when it `rises`; a card asking to repeat work,
  * answered Repeat it or Not now, folds to a line in the server's words that opens the schedule's
- * chat, or away.
+ * chat, or away; a connector a search suggests, as a card that connects it.
  */
 @Component({
   selector: 'app-thread-item',
   imports: [
     RouterLink,
+    ConnectCardComponent,
     GlzApprovalCardComponent,
     GlzAttachmentComponent,
     GlzCopyButtonComponent,

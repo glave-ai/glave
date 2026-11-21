@@ -254,7 +254,8 @@ describe('results', () => {
     );
     // A call the server has not told yet joins its run, under the line already told.
     expect(drawn(shown.parts)).toEqual(['m2', 'Ran 1 command: c3 c4']);
-    // Untold, words, a question or a service's end a run, as the server reads them; reasoning does not.
+    // Untold, words, a question, a service's or a suggestion end a run, as the server reads them;
+    // reasoning does not.
     const untold = turnResults(
       turn([
         ask,
@@ -267,6 +268,8 @@ describe('results', () => {
         call(8),
         service(9, 'You answered GitHub'),
         call(10),
+        { kind: 'suggestion', key: 'suggestion-11', seq: 11, connector: 'linear', told: 'Linear…' },
+        call(12),
       ]),
       null,
       null,
@@ -281,10 +284,12 @@ describe('results', () => {
       'untold: c8',
       'service-9',
       'untold: c10',
+      'suggestion-11',
+      'untold: c12',
     ]);
     // Keyed as the server will tell them, so nothing is drawn again when it does.
     const keys = untold.parts.filter((part) => part.kind === 'run').map((part) => part.key);
-    expect(keys).toEqual(['run-2', 'run-6', 'run-8', 'run-10']);
+    expect(keys).toEqual(['run-2', 'run-6', 'run-8', 'run-10', 'run-12']);
     expect(NO_STEPS.runs.size).toBe(0);
   });
 

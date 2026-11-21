@@ -243,10 +243,10 @@ export default defineConfig({
           {
             name: 'webkit',
             use: { ...devices['Desktop Safari'] },
-            // These two change a real glave (its first model, a connected account), which the
-            // Chromium run owns: run twice, they would race on its state. How the app feels
-            // only Chromium reports.
-            testIgnore: ['first-run.e2e.ts', 'accounts.e2e.ts', FEEL],
+            // These three change a real glave (its first model, a connected account, an app
+            // connected), which the Chromium run owns: run twice, they would race on its state.
+            // How the app feels only Chromium reports.
+            testIgnore: ['first-run.e2e.ts', 'accounts.e2e.ts', 'suggestions.e2e.ts', FEEL],
           },
         ]
       : []),

@@ -146,8 +146,21 @@ export interface ServiceItem extends Placed {
   readonly told: string | null;
 }
 
+/**
+ * A connector of glave's catalog a search found that the person may connect and has not, as the
+ * server suggests it: the person connects it, never the model.
+ */
+export interface SuggestionItem extends Placed {
+  readonly kind: 'suggestion';
+  /** The connector, by its id in the catalog: `linear`. */
+  readonly connector: string;
+  /** What the server tells the person of it, in its sentences. */
+  readonly told: string;
+}
+
 /** One thing in a thread, in order. */
-export type ThreadItem = MessageItem | CallItem | ApprovalItem | QuestionItem | ServiceItem;
+export type ThreadItem =
+  MessageItem | CallItem | ApprovalItem | QuestionItem | ServiceItem | SuggestionItem;
 
 /** The reply being written while a turn streams, before its message is recorded. */
 export interface Draft {
@@ -360,8 +373,8 @@ export function byGlave(data: Data): boolean {
 
 /**
  * A thread's items from its stored events, in order: messages, tool calls with their
- * results, approvals with their decisions, questions with their answers, and what services ask
- * with what came of it. A message of the
+ * results, approvals with their decisions, questions with their answers, what services ask
+ * with what came of it, and the connectors a search suggests. A message of the
  * person's after the one that started a turn, before the turn ended, is one they sent while it
  * ran: `steered`.
  */
@@ -546,6 +559,15 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
         update(asking.get(text(data['call_id'])) ?? '', (item) =>
           item.kind === 'service' ? { ...item, told: text(data['told']) } : item,
         );
+        break;
+      case 'connector.suggested':
+        put({
+          kind: 'suggestion',
+          key: `suggestion-${String(event.seq)}`,
+          seq: event.seq,
+          connector: text(data['connector']),
+          told: text(data['told']),
+        });
         break;
       default:
         break;

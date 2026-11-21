@@ -92,4 +92,7 @@
       (decline)="answerService(item.call, item.seq, null)"
     />
   }
+  @case ('suggestion') {
+    <app-connect-card [item]="item" />
+  }
 }

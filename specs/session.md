@@ -613,6 +613,7 @@ Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Connector metadata** (#1163): companies, several categories, tags, what each returns and its sign-in on `connector/list`, which lists by any of them.
 - **Connectors on the Connections page** (#1159): Apps, a search over them, those connected first with Disconnect, then the rest by category with Connect, a letter for each.
 - **Connect suggestions** (#1620): `tool_search` finding the connectors the person may connect and has not, `connector.suggested` with its sentence in the caller's language, and its line in the terminal.
+- **Connect suggestions in the chat** (#1620): the card that connects a suggested connector everywhere, or is put off in the tab, and its line once connected.
 - **Connections** (#42): signing in to a connection's remote server in the browser through the session API and from the terminal, kept sealed, renewed, and sent with every request of the person's own servers to it.
 - **Settings heard of** (#827): `settings/changed` on the person's list watches, and the web app reading again what it names: the models and accounts, git hosts, connections, web search, grouping, keeping awake and passkeys. Not yet: a change recorded by another server.
 - **Settings heard in their organization** (#1020): a person's change of a setting is heard only by their list watches in the organization it was made in; passkeys and their name in all of them.
