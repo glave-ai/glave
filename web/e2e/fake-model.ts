@@ -17,6 +17,15 @@ export const LEFT_ALONE = 'Left it alone.';
 export const RAN = 'Ran it.';
 
 /**
+ * What it searches for when asked to find an app (`tool_search`): DeepWiki, of glave's
+ * catalog, which asks no one to sign in.
+ */
+export const APP_SEARCHED = 'deepwiki';
+
+/** What it says once its search has a result. */
+export const CONNECT_FIRST = 'Connect DeepWiki and I will look it up.';
+
+/**
  * The command it asks to run when asked to run one, outside the sandbox, so it asks in Ask
  * first with a sandbox or without one; it leaves nothing behind.
  */
@@ -158,6 +167,28 @@ function ask(response: ServerResponse): void {
   ]);
 }
 
+/** A reply asking to search for `APP_SEARCHED`. */
+function search(response: ServerResponse): void {
+  const call = {
+    index: 0,
+    id: 'call_search',
+    type: 'function',
+    function: { name: 'tool_search', arguments: JSON.stringify({ query: APP_SEARCHED }) },
+  };
+  stream(response, [
+    { id: 'gen-search', model: LIVE_MODEL, choices: [{ index: 0, delta: { tool_calls: [call] } }] },
+    { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: USAGE },
+  ]);
+}
+
+/** What it says once a call of `tool` has a result. */
+function after(tool: unknown): string {
+  if (tool === 'bash') {
+    return RAN;
+  }
+  return tool === 'tool_search' ? CONNECT_FIRST : LEFT_ALONE;
+}
+
 interface Message {
   readonly role?: unknown;
   readonly content?: unknown;
@@ -220,8 +251,9 @@ function answer(request: IncomingMessage, response: ServerResponse): void {
     const text = textOf(last?.content);
     const reply = (): void => {
       if (last?.role === 'tool') {
-        const ran = before?.tool_calls?.[0]?.function?.name === 'bash';
-        say(response, ran ? RAN : LEFT_ALONE);
+        say(response, after(before?.tool_calls?.[0]?.function?.name));
+      } else if (text.toLowerCase().includes('find an app')) {
+        search(response);
       } else if (text.toLowerCase().includes('ask me')) {
         ask(response);
       } else if (text.toLowerCase().includes('run a command')) {
@@ -248,7 +280,8 @@ function answer(request: IncomingMessage, response: ServerResponse): void {
  * consumer.e2e.ts), on a port the system picks, and answers its OpenAI-compatible address.
  * Asked to touch a file, it asks to write one; once that call has a result, it says it left the
  * file alone. Asked to run a command, it asks to run one, and asked to serve a page, to keep a
- * server running; once that has a result, it says it ran it. To anything else, it says hello. A prompt that holds its reply (`holding`) waits for the
+ * server running; once that has a result, it says it ran it. Asked to find an app, it searches
+ * for one to connect. To anything else, it says hello. A prompt that holds its reply (`holding`) waits for the
  * test to let it go. It does not keep the process alive.
  */
 export async function startFakeModel(): Promise<string> {
