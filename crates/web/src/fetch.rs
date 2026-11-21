@@ -7,7 +7,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use glave_ports::host::reachable;
+use glave_ports::host::{USER_AGENT, reachable};
 use glave_ports::settings::{HostRule, WebPolicy};
 use reqwest::header::{ACCEPT, CONTENT_TYPE, LOCATION};
 use reqwest::{Client, Url, redirect};
@@ -103,7 +103,7 @@ impl Fetcher {
             .redirect(redirect::Policy::none())
             .connect_timeout(limits.timeout)
             .dns_resolver(Arc::new(guarded(Arc::clone(&policy))))
-            .user_agent(concat!("glave/", env!("CARGO_PKG_VERSION")))
+            .user_agent(USER_AGENT)
             .build()
             .map_err(|e| FetchError::Failed(e.to_string()))?;
         Ok(Self {

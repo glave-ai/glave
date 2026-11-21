@@ -26,6 +26,9 @@ pub use named::Host;
 pub use pattern::{BadHostPattern, HostPattern};
 pub use shown::{has_password, shown, shown_with_path, urls_shown};
 
+/// What glave says it is to a host it calls: some refuse a request that names no client (#1615).
+pub const USER_AGENT: &str = concat!("glave/", env!("CARGO_PKG_VERSION"));
+
 /// Whether `host`, as a URL or a connection names it, is this computer: `localhost` in any
 /// case, or a loopback address, bare (`::1`) or bracketed (`[::1]`).
 pub fn is_this_computer(host: &str) -> bool {
