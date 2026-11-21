@@ -10,8 +10,6 @@ on:
   schedule:
     - cron: "41 6 * * 2"
   workflow_dispatch:
-  push:
-    branches: [feat/connectors-drift-check]
 
 permissions:
   contents: read
@@ -61,7 +59,7 @@ jobs:
             echo
             sed -n 's/^drifted  \(.*\)/- \1/p' read.txt
             echo
-            echo "Removing or changing an entry is a change people see: decide each, then fix the catalog."
+            echo "Each is a vendor's change or glave's own gap: decide each. Removing or changing an entry is a change people see."
           } > body.md
           number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number,title --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
           if [ -n "$number" ]; then
