@@ -47,7 +47,8 @@ async function tunnel(context: BrowserContext): Promise<void> {
  * (`specs/session.md`, "Signing in"): the setup link glave on its computer makes opens a page
  * that makes a passkey on this device and signs the browser in, the link working once; a new
  * tab is signed in with it, and once signed out the passkey signs it in again, and Settings
- * lists it.
+ * lists it. It is a person's own server, its owner's alone, so nothing offers an invite: not
+ * the sign-in page, nor the person's menu.
  */
 test('a setup link makes a passkey here, and the passkey signs the browser in again', async ({
   context,
@@ -83,10 +84,9 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
       await expect(byTestId(again, 'sign-in')).toContainText(
         'Your AI, on your own computer in the cloud.',
       );
-      // It takes no sign-ups, so the greeting says an invite is the way in.
-      await expect(byTestId(again, 'sign-in-invite-only')).toHaveText(
-        'Glave is invite-only. Got an invite? Open its link to start.',
-      );
+      // A person's own server is its owner's alone: it invites no one, so the greeting names
+      // no invite as a way in.
+      await expect(byTestId(again, 'sign-in-invite-only')).toHaveCount(0);
       await expect(byTestId(page, 'sign-in')).toBeVisible();
     }),
   );
@@ -94,6 +94,10 @@ test('a setup link makes a passkey here, and the passkey signs the browser in ag
   await byTestId(again, 'sign-in-passkey').click();
   await expect(byTestId(again, 'home-composer-input')).toBeVisible();
   await byTestId(again, 'person').click();
+  // Nor does its menu offer to invite anyone.
+  await expect(byTestId(again, 'nav-settings')).toBeVisible();
+  await expect(byTestId(again, 'nav-invite')).toHaveCount(0);
+  await expect(byTestId(again, 'nav-create-to-invite')).toHaveCount(0);
   await byTestId(again, 'nav-settings').click();
   await expect(byTestId(again, 'passkeys-passkey').first()).toBeVisible();
   await expectAccessible(again);

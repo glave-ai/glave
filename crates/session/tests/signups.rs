@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{OrgRole, Secret};
+use glave_harness::Homes;
 use glave_identity::testing::Authenticator;
 use glave_ports::host::PublicOrigin;
 use glave_ports::testing::Outbox;
@@ -18,14 +19,15 @@ use glave_session::signin::{Accounts, Browsers, LocalToken, SignIn};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::homes::Here;
 use crate::support::issuer::fixed_clock;
 use crate::support::web::{
     ORIGIN, Served, Web, asked, elsewhere, make_named_passkey, make_passkey, serve_with,
 };
 use crate::support::*;
 
-/// A server reached at [`ORIGIN`] keeping glave accounts, sending its email to `outbox`, and
-/// taking sign-ups if `signup`.
+/// A server reached at [`ORIGIN`] keeping glave accounts, each person with a computer of their
+/// own there, as on Glave Cloud, sending its email to `outbox`, and taking sign-ups if `signup`.
 pub(crate) async fn serve(dir: &Path, signup: bool, outbox: &Arc<Outbox>) -> Served {
     serve_timed(dir, signup, outbox).await.0
 }
@@ -99,6 +101,7 @@ async fn serve_keeping(
     let accounts = Accounts::new(store.log(), directory, server, &origin, Arc::new(clock));
     setup.accounts = Some(Arc::new(accounts.unwrap()));
     setup.origin = Some(origin);
+    setup.homes = Some(Arc::new(Here::new(&dir.join("people"))) as Arc<dyn Homes>);
     setup.signup = signup;
     setup.forwarded = forwarded;
     let ticks = setup.clock.clone();

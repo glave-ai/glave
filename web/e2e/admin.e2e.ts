@@ -71,7 +71,7 @@ test('A person on their own server has no Admin, and Admin sends them to their c
   await expect(page).not.toHaveURL(/\/admin/u);
 });
 
-test('A person alone on their own server invites someone from their menu, with no Admin', async ({
+test('A person alone in an organization of theirs invites someone from their menu, with no Admin', async ({
   page,
 }) => {
   await fakeApi(page);

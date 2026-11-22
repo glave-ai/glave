@@ -319,8 +319,8 @@ fn where_no_one_else_reaches_the_server_there_is_no_one_to_invite_or_accept() {
         assert_eq!(refused.code, code::NOT_ALLOWED);
         assert_eq!(
             refused.message.to_string(),
-            "no one else can reach this glave, so there is no one to invite: give it an address \
-             people reach it at first"
+            "this glave is yours alone, so it invites no one: to work with others, use a glave \
+             that gives each person a computer of their own"
         );
         // Only someone signed in through the identity provider opens an invite.
         let guessed = Secret::new("0".repeat(64));

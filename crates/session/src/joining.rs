@@ -1,6 +1,6 @@
 //! Invited people making a glave account (`specs/model.md`, "Identity", "Invites"): where the
-//! organization has no company login and the server is reached at a public origin, an invite's
-//! link makes a passkey. Opening it begins making the first passkey of a new account; making
+//! organization has no company login and the server takes invites by passkey (`joins_by`), an
+//! invite's link makes one. Opening it begins making the first passkey of a new account; making
 //! it checks the passkey, spends the invite, recording the person as joined with its role in
 //! one append, and only then keeps the account and its organization, so a code someone else
 //! spent meanwhile makes no account.
@@ -54,6 +54,7 @@ where
     /// Answers `passkey/create_options` with an invite's `code`: begins making the first passkey
     /// of a new account, when the code opens an invite now.
     pub(crate) async fn join_options(&self, code: &Secret) -> Result<Reply, ApiError> {
+        self.joins_by()?;
         let accounts = self.accounts()?;
         let org = self.invited_to(code.expose());
         let presented = kept(code.expose());

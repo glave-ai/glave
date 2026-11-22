@@ -61,10 +61,10 @@ pub struct ServerInfo {
     /// public origin always, a setup link making the first; on this computer once one is made.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signin: Vec<SignInWay>,
-    /// Whether someone new comes here only by an invite's link: it keeps glave accounts for
-    /// people other than the person on its computer and takes no sign-ups (`[serve] signup`),
-    /// so a sign-in page can tell a stranger how to get in. Absent where anyone may sign up, and
-    /// where no one else signs in at all, as on a laptop.
+    /// Whether someone new comes here only by an invite's link: its invites make glave accounts
+    /// for people other than the person on its computer and it takes no sign-ups (`[serve]
+    /// signup`), so a sign-in page can tell a stranger how to get in. Absent where anyone may
+    /// sign up, and where no one is invited at all, as on a laptop or a person's own server.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub invite_only: bool,
     /// What it has beyond the one person a server works for on its own; absent where it has
@@ -80,9 +80,10 @@ pub struct ServerInfo {
     /// a client asks for an address only where one is used.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub email: bool,
-    /// Whether the caller may invite someone here: the server takes invites (glave accounts
-    /// at a public origin, or a company login), and the caller's role permits it. So a person
-    /// alone, whose organization is shown to no one, can still make the first.
+    /// Whether the caller may invite someone here: the server takes invites (a company login,
+    /// or glave accounts where people have computers of their own or share this one at its
+    /// `localhost`), and the caller's role permits it. So a person alone, whose organization is
+    /// shown to no one, can still make the first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub invites: bool,
     /// Whether the caller works in their personal space: the one signing up made them, never

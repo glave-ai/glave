@@ -103,7 +103,9 @@ export async function fakeAdmin(
     ? { people: [DANA], invites: [] }
     : { people: [DANA, SAM, PRIYA], invites: [samsInvite(Date.now())] };
   const sent: unknown[] = [];
-  // Alone, the server shows no organization, but says she may invite.
+  // Alone, the server shows no organization, but says she may invite: its people have
+  // computers of their own, as on Glave Cloud, unlike a person's own server, which invites no
+  // one (passkeys.e2e.ts).
   const server: ServerInfo = alone
     ? { ...discovered(), origin: 'https://glave.example', invites: true }
     : {

@@ -73,8 +73,8 @@ sentences! {
         "only an owner can make someone an owner, or change an owner's role",
     NoSuchPerson { person: String } = "no-such-person"
         "no one with the id { $person } has signed in here",
-    NoOrganization = "no-organization"
-        "no one else can reach this glave, so there is no one to invite: give it an address people reach it at first",
+    YoursAlone = "yours-alone"
+        "this glave is yours alone, so it invites no one: to work with others, use a glave that gives each person a computer of their own",
     InNoOrganization = "in-no-organization"
         "your account belongs to no organization here: ask its admins for an invite",
     Removed = "removed"
