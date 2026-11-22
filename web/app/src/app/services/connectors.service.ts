@@ -32,6 +32,9 @@ export class ConnectorsService {
   readonly problem = this.failure.asReadonly();
   /** The project the list is for: where a connector connected from it is used. */
   private readonly forProject = signal<ProjectId | null>(null);
+  private readonly putOff = signal<ReadonlySet<string>>(new Set());
+  /** The connectors whose suggestions the person put off in this tab, by their ids. */
+  readonly notNow = this.putOff.asReadonly();
 
   constructor() {
     onChange('connections', () => void this.load());
@@ -115,6 +118,11 @@ export class ConnectorsService {
       ...(only === null ? {} : { only }),
     });
     await this.load();
+  }
+
+  /** Puts off the suggestions of the connector `id` in this tab: Not now. */
+  putOffSuggesting(id: string): void {
+    this.putOff.update((ids) => new Set([...ids, id]));
   }
 
   /** Calls the account `account` of the connector `id` `name` from now on, then lists again. */

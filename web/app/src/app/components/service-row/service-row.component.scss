@@ -1,3 +1,5 @@
+@use '../tile';
+
 // A row of a card that lists services: the tile, the name over its line, then the action.
 :host {
   display: flex;
@@ -8,18 +10,7 @@
 }
 
 .tile {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: var(--glz-control-height-sm);
-  height: var(--glz-control-height-sm);
-  border: var(--glz-border-width) solid var(--glz-color-border);
-  border-radius: var(--glz-radius-row);
-  background: var(--glz-surface-sunken);
-  color: var(--glz-color-text-secondary);
-  font-size: var(--glz-text-xs);
-  font-weight: var(--glz-weight-bold);
+  @include tile.tile;
 }
 
 .text {

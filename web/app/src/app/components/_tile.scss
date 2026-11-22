@@ -1,0 +1,16 @@
+// A service's tile: its letters, until it has a logo, as a list of services and a card in a
+// chat draw it, `$size` square.
+@mixin tile($size: var(--glz-control-height-sm)) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: $size;
+  height: $size;
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-row);
+  background: var(--glz-surface-sunken);
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-xs);
+  font-weight: var(--glz-weight-bold);
+}

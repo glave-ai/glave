@@ -287,6 +287,28 @@ describe('conversation', () => {
     });
   });
 
+  it('reads a connector a search suggests, after the search, in the server’s words', () => {
+    const told = "Linear isn't connected. Connect it to let me use it for you.";
+    const items = threadItems([
+      event('tool.call.requested', { call_id: 'c1', tool: 'tool_search', arguments: {} }),
+      event('connector.suggested', {
+        call_id: 'c1',
+        connector: 'linear',
+        told,
+        suggests: { says: 'suggest-connect', name: 'Linear' },
+      }),
+      event('tool.call.completed', { call_id: 'c1', is_error: false, output: [] }),
+    ]);
+    expect(items.map((item) => item.kind)).toEqual(['call', 'suggestion']);
+    expect(items[1]).toEqual({
+      kind: 'suggestion',
+      key: 'suggestion-2',
+      seq: 2,
+      connector: 'linear',
+      told,
+    });
+  });
+
   it('reads a request to run outside the sandbox, with the model’s reason apart', () => {
     const items = threadItems([
       event('approval.requested', {

@@ -19,7 +19,11 @@ import { ThreadItemComponent } from './thread-item.component';
 async function render(
   item: ThreadItem,
   fake = new FakeSession(),
-): Promise<{ readonly root: HTMLElement; readonly fake: FakeSession }> {
+): Promise<{
+  readonly root: HTMLElement;
+  readonly fake: FakeSession;
+  readonly stable: () => Promise<unknown>;
+}> {
   TestBed.configureTestingModule({
     providers: [provideRouter([]), ...provideFakeSession(fake), ThreadService],
   });
@@ -28,7 +32,7 @@ async function render(
   const fixture = TestBed.createComponent(ThreadItemComponent);
   fixture.componentRef.setInput('item', item);
   await fixture.whenStable();
-  return { root: fixture.nativeElement as HTMLElement, fake };
+  return { root: fixture.nativeElement as HTMLElement, fake, stable: () => fixture.whenStable() };
 }
 
 /** The lines of a card asking to repeat work, as the server writes them. */
@@ -446,5 +450,37 @@ describe('ThreadItemComponent', () => {
       'You declined GitHub’s question',
     );
     expect(told.root.querySelector('[data-testid="thread-service-send"]')).toBeNull();
+  });
+
+  it('draws a connector a search suggests as a card that connects it', async () => {
+    const url = 'https://mcp.linear.example.com/mcp';
+    const fake = new FakeSession().answer('connector/list', {
+      categories: [],
+      connectors: [
+        {
+          id: 'linear',
+          name: 'Linear',
+          company: 'linear',
+          url,
+          categories: ['dev'],
+          tags: ['issues'],
+          returns: 'text',
+          sign_in: 'dcr',
+          description: 'Issues, projects and cycles.',
+          docs: url,
+          status: 'available',
+        },
+      ],
+    });
+    const told = "Linear isn't connected. Connect it to let me use it for you.";
+    const item = { kind: 'suggestion', key: 's', seq: 3, connector: 'linear', told } as const;
+    const { root, stable } = await render(item, fake);
+    await new Promise((resolve) => setTimeout(resolve));
+    await stable();
+    expect(root.querySelector('[data-testid="connect-card-told"]')?.textContent).toBe(told);
+    expect(root.querySelector('[data-testid="connect-card-connect"]')?.textContent.trim()).toBe(
+      'Connect Linear',
+    );
+    await expectAccessible(root);
   });
 });
