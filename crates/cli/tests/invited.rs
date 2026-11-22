@@ -1,7 +1,8 @@
-//! Someone invited to a person's own server (`specs/model.md`, "Invites"), the real binary at a
-//! public origin: what the agent adds for them never reaches the owner's own folder, whose
-//! `mcp.json` runs as the owner with the server's whole environment, and their commands never
-//! leave the sandbox, which hides the server's token; the owner does both as ever.
+//! Someone invited to a glave the people of one computer share at its `localhost`
+//! (`specs/model.md`, "Invites"), the real binary: what the agent adds for them never reaches
+//! the owner's own folder, whose `mcp.json` runs as the owner with the server's whole
+//! environment, and their commands never leave the sandbox, which hides the server's token; the
+//! owner does both as ever.
 
 use glave_event::{Body, ServiceAnswer, ThreadId, decode};
 use glave_identity::testing::Authenticator;

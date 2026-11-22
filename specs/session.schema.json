@@ -3867,11 +3867,11 @@
           ]
         },
         "invite_only": {
-          "description": "Whether someone new comes here only by an invite's link: it keeps glave accounts for\npeople other than the person on its computer and takes no sign-ups (`[serve] signup`),\nso a sign-in page can tell a stranger how to get in. Absent where anyone may sign up, and\nwhere no one else signs in at all, as on a laptop.",
+          "description": "Whether someone new comes here only by an invite's link: its invites make glave accounts\nfor people other than the person on its computer and it takes no sign-ups (`[serve]\nsignup`), so a sign-in page can tell a stranger how to get in. Absent where anyone may\nsign up, and where no one is invited at all, as on a laptop or a person's own server.",
           "type": "boolean"
         },
         "invites": {
-          "description": "Whether the caller may invite someone here: the server takes invites (glave accounts\nat a public origin, or a company login), and the caller's role permits it. So a person\nalone, whose organization is shown to no one, can still make the first.",
+          "description": "Whether the caller may invite someone here: the server takes invites (a company login,\nor glave accounts where people have computers of their own or share this one at its\n`localhost`), and the caller's role permits it. So a person alone, whose organization is\nshown to no one, can still make the first.",
           "type": "boolean"
         },
         "model_accounts": {
