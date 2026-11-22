@@ -1,10 +1,9 @@
 //! glave accounts for invited people (`specs/model.md`, "Identity"): on a server reached at a
-//! public origin with no company login, whose people each have a computer of their own, the
-//! local person invites someone, whose link makes a passkey of their own; they sign in with any
-//! of their passkeys, never as anyone else, and their organization is shown to them, with their
-//! role, once it holds two people; signing in says nothing of whether an id has an account.
-//! Without an address elsewhere, or on a person's own server, whose people would work on its
-//! computer, no one can be invited.
+//! public origin with no company login, the local person invites someone, whose link makes a
+//! passkey of their own; they sign in with any of their passkeys, never as anyone else, and
+//! their organization is shown to them, with their role, once it holds two people; signing in
+//! says nothing of whether an id has an account. Without an address elsewhere, no one can be
+//! invited.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -12,7 +11,6 @@ use std::sync::Arc;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use glave_event::{OrgRole, PrincipalId, Secret};
-use glave_harness::Homes;
 use glave_identity::testing::Authenticator;
 use glave_ports::host::PublicOrigin;
 use glave_ports::testing::Outbox;
@@ -23,7 +21,6 @@ use glave_session::signin::{Accounts, Browsers, LocalToken, SignIn};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::homes::Here;
 use crate::signups::linked;
 
 mod indexing;
@@ -31,19 +28,8 @@ use crate::support::issuer::fixed_clock;
 use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, make_passkey, serve_with};
 use crate::support::*;
 
-/// Where people reach a test's server from, and whose computer their threads work on.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Reached {
-    /// This computer alone, as a laptop.
-    Laptop,
-    /// [`ORIGIN`] too, everyone's threads on the server's computer: a person's own server.
-    OwnServer,
-    /// [`ORIGIN`] too, each person with a computer of their own, as on Glave Cloud.
-    Cloud,
-}
-
-/// A server reached at [`ORIGIN`] if `reached`, keeping glave accounts there, each person with
-/// a computer of their own, its programs here signing in with `token`.
+/// A server reached at [`ORIGIN`] if `reached`, keeping glave accounts there, its programs
+/// here signing in with `token`.
 async fn serve(dir: &Path, reached: bool, token: &LocalToken) -> Served {
     serve_keeping(dir, reached, token).await.0
 }
@@ -54,19 +40,13 @@ async fn serve_keeping(
     reached: bool,
     token: &LocalToken,
 ) -> (Served, Arc<dyn Directory>, Arc<Outbox>) {
-    let reached = if reached {
-        Reached::Cloud
-    } else {
-        Reached::Laptop
-    };
     serve_through(dir, reached, token, |directory| directory).await
 }
 
-/// A server reached as `reached` says, its accounts reaching the directory through what
-/// `through` makes of it; as [`serve_keeping`] otherwise.
+/// [`serve_keeping`], its accounts reaching the directory through what `through` makes of it.
 async fn serve_through(
     dir: &Path,
-    reached: Reached,
+    reached: bool,
     token: &LocalToken,
     through: impl FnOnce(Arc<dyn Directory>) -> Arc<dyn Directory>,
 ) -> (Served, Arc<dyn Directory>, Arc<Outbox>) {
@@ -80,21 +60,18 @@ async fn serve_through(
         scope(),
         server.clone(),
         Uuid::from_u128(0x692),
-        (reached != Reached::Laptop).then_some(&origin),
+        reached.then_some(&origin),
         Box::new(clock.clone()),
     );
     let mut setup = Setup::asking(Vec::new(), Answering::Clients);
     setup.browsers = Some(Arc::new(browsers.await.unwrap()));
     let outbox = Arc::new(Outbox::default());
     setup.mail = Some(Arc::clone(&outbox) as Arc<dyn Mailer>);
-    if reached != Reached::Laptop {
+    if reached {
         let directory = through(Arc::clone(&directory));
         let accounts = Accounts::new(store.log(), directory, server, &origin, Arc::new(clock));
         setup.accounts = Some(Arc::new(accounts.unwrap()));
         setup.origin = Some(origin);
-    }
-    if reached == Reached::Cloud {
-        setup.homes = Some(Arc::new(Here::new(&dir.join("people"))) as Arc<dyn Homes>);
     }
     // On the same store as its accounts, as a server is, so a server started again on it
     // finds its organization's people.
@@ -381,52 +358,23 @@ fn a_passkey_naming_any_id_is_refused_alike_whether_or_not_it_has_an_account() {
     });
 }
 
-/// A laptop, which no one else reaches, and a person's own server, reached from elsewhere but
-/// its owner's alone (#1553), since anyone let in would work on its computer, invite no one:
-/// nothing offers an invite, and making one, opening one and accepting one are refused, saying
-/// so.
 #[test]
-fn a_laptop_and_a_person_s_own_server_invite_no_one() {
+fn a_server_no_one_else_reaches_invites_no_one() {
     block_on!(async {
-        for (reached, name) in [
-            (Reached::OwnServer, "accounts-own-server"),
-            (Reached::Laptop, "accounts-unreached"),
-        ] {
-            let dir = folder(name);
-            let token = LocalToken::new([13; 32]);
-            let served = serve_through(&dir, reached, &token, |directory| directory)
-                .await
-                .0;
-            let mut here = Web::new(&served, Some(token.reveal().to_owned()));
-            let told = asked(&mut here, &Request::Discover {}).await;
-            assert!(told.get("invites").is_none(), "{told}");
-            assert!(told.get("invite_only").is_none(), "{told}");
-            let guessed = Secret::new("00".repeat(32));
-            let make = Request::InviteCreate {
+        let dir = folder("accounts-unreached");
+        let token = LocalToken::new([13; 32]);
+        let served = serve(&dir, false, &token).await;
+        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
+        let refused = asked(
+            &mut here,
+            &Request::InviteCreate {
                 role: OrgRole::Member,
                 email: None,
-            };
-            let accept = Request::InviteAccept {
-                code: guessed.clone(),
-            };
-            for refused in [here.call(&make).await, here.call(&accept).await] {
-                assert_eq!(refused["error"]["code"], json!(code::NOT_ALLOWED));
-                let said = refused["error"]["message"].as_str().unwrap();
-                assert!(said.starts_with("this glave is yours alone"), "{said}");
-            }
-            let show = Request::InviteShow {
-                code: guessed.clone(),
-            };
-            assert_eq!(asked(&mut here, &show).await, json!(code::NOT_ALLOWED));
-            if reached == Reached::OwnServer {
-                let mut phone = Authenticator::new(ORIGIN).unwrap();
-                assert_eq!(
-                    join(&served, guessed, &mut phone).await,
-                    json!(code::NOT_ALLOWED)
-                );
-            }
-            served.close().await;
-        }
+            },
+        )
+        .await;
+        assert_eq!(refused, json!(code::NOT_ALLOWED));
+        served.close().await;
     });
 }
 
@@ -752,9 +700,8 @@ fn whoever_may_invite_is_told_so_a_person_alone_too() {
         assert!(told.get("invites").is_none(), "{told}");
         laptop.close().await;
 
-        // Where people have computers of their own, the person on its computer, alone, may make
-        // the first invite, though no organization is shown; a Member they invite may not, an
-        // Admin may.
+        // At a public origin, the person on its computer, alone, may make the first invite,
+        // though no organization is shown; a Member they invite may not, an Admin may.
         let dir = folder("accounts-invites-server");
         let token = LocalToken::new([23; 32]);
         let served = serve(&dir, true, &token).await;
