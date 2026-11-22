@@ -1,7 +1,8 @@
 //! `glave signup link`, the real binary through the person's server at a public origin, with no
 //! sign-up or email configured: whoever runs it makes a link, which someone opens in a browser
 //! of their own, gives their name and makes a passkey, landing in their own personal space; a
-//! second time it opens nothing. A server no one else reaches says it makes none.
+//! second time it opens nothing. A server no one else reaches says it makes none, and so does
+//! a person's own server, its owner's alone, which signs up and invites no one.
 
 use glave_identity::testing::Authenticator;
 use glave_ports::block_on;
@@ -61,11 +62,51 @@ fn a_server_no_one_else_reaches_makes_no_sign_up_links() {
     let place = place("signup-link-none");
     let model = FakeServer::start(vec![]).unwrap();
     let (_served, _) = serve_http(&place, &model, &["--model", "m"]);
-    let output = glave(&place, &model, &["signup", "link"], "");
+    makes_no_sign_up_link(&place, &model);
+}
+
+/// `glave signup link` for `place`'s server, which is refused: it makes no organizations by
+/// sign-up.
+fn makes_no_sign_up_link(place: &Place, model: &FakeServer) {
+    let output = glave(place, model, &["signup", "link"], "");
     assert!(!output.status.success());
     let said = text(&output);
     assert!(
         said.contains("doesn't make organizations by sign-up"),
         "{said}"
     );
+}
+
+/// A person's own server, reached at its public origin, is its owner's alone (#1553): it keeps
+/// no glave accounts for anyone else, so it makes no sign-up link, takes no sign-ups though its
+/// settings ask for them and it sends email, invites no one, saying so, and no one creates an
+/// organization there.
+#[test]
+fn a_person_s_own_server_signs_up_and_invites_no_one_but_its_owner() {
+    let place = place("signup-own-server");
+    let model = FakeServer::start(vec![]).unwrap();
+    let serve = "{ origin = \"https://glave.example.com\", signup = true }";
+    choose(&place, "serve", serve);
+    let email = "{ host = \"127.0.0.1\", from = \"glave <glave@example.com>\" }";
+    choose(&place, "email", email);
+    let (_served, url) = serve_http(&place, &model, &["--model", "m"]);
+    makes_no_sign_up_link(&place, &model);
+    let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
+    block_on!(async {
+        let owner = Remote::new(&url, token.trim().to_owned()).unwrap();
+        let found = owner.request(&request("server/discover", json!({}))).await;
+        let found = serde_json::to_value(found.unwrap()).unwrap();
+        assert!(found.get("invites").is_none(), "{found}");
+        assert!(found.get("invite_only").is_none(), "{found}");
+        assert!(found.get("organizations").is_none(), "{found}");
+        assert!(!found["signin"].to_string().contains("signup"), "{found}");
+        let invite = request("invite/create", json!({"role": "member"}));
+        let refused = owner.request(&invite).await.unwrap_err();
+        let refused = serde_json::to_string(&refused).unwrap();
+        assert!(refused.contains("this glave is yours alone"), "{refused}");
+        let create = request("organization/create", json!({"name": "Nurfz"}));
+        let refused = owner.request(&create).await.unwrap_err();
+        let refused = serde_json::to_string(&refused).unwrap();
+        assert!(refused.contains("create an organization here"), "{refused}");
+    });
 }

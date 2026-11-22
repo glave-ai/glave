@@ -130,7 +130,9 @@ pub struct Wiring<P, L, B> {
     /// nothing, as where its policy turns that off.
     pub push: Option<Arc<Pushing>>,
     /// The glave accounts it keeps for people other than the local person, where its
-    /// organization has none of a company's login and people reach it at a public origin.
+    /// organization has none of a company's login, people reach it at a public origin, and
+    /// each has a computer of their own or shares this one at its `localhost`: never on a
+    /// person's own server, its owner's alone (`specs/model.md`, "Identity").
     pub accounts: Option<Arc<Accounts>>,
     /// Where people reach the server from elsewhere, through what serves HTTPS for it; none
     /// where it answers only on its own computer.

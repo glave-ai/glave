@@ -267,18 +267,23 @@ pub(crate) async fn browsers(
 }
 
 /// The glave accounts a server keeps for people other than the local person (`specs/model.md`,
-/// "Identity"): where it serves over HTTP, is reached from elsewhere at a public origin, and
-/// its organization signs no one in through a company login, since an organization has one
-/// identity source.
+/// "Identity"): where it serves over HTTP, is reached at a public origin, and its organization
+/// signs no one in through a company login, since an organization has one identity source; and
+/// where whoever it lets in works `apart`, on a computer of their own, or shares this computer
+/// at its `localhost`. A person's own server is its owner's alone, so it keeps none.
 pub(crate) async fn accounts(
     args: &Args,
     choices: &Choices,
     store: &Data,
+    apart: bool,
 ) -> anyhow::Result<Option<Arc<Accounts>>> {
     let origin = choices.origin.as_ref().map(|origin| &origin.value);
     let (true, Some(origin), true) = (args.http.is_some(), origin, args.issuers.is_empty()) else {
         return Ok(None);
     };
+    if !apart && !origin.on_this_computer() {
+        return Ok(None);
+    }
     let server = store.server(random_uuid()?).await?.to_string();
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let accounts = Accounts::new(store.log(), store.directory(), server, origin, clock)?;

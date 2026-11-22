@@ -10,7 +10,7 @@ use glave_ports::{BoxFuture, Directory, DirectoryError, IdentityKey, OrgId};
 use glave_session::protocol::Request;
 use glave_session::signin::LocalToken;
 
-use super::{Reached, invite, invited, join, serve_keeping, serve_through, sign_in};
+use super::{invite, invited, join, serve_keeping, serve_through, sign_in};
 use crate::support::web::{ORIGIN, Web, asked};
 use crate::support::*;
 
@@ -146,7 +146,7 @@ fn a_person_whose_passkeys_cant_be_indexed_at_the_start_is_skipped() {
         unindexed(&directory, &[failing, other]).await;
         served.close().await;
 
-        let (served, _, _) = serve_through(&dir, Reached::Cloud, &token, |inner| {
+        let (served, _, _) = serve_through(&dir, true, &token, |inner| {
             Arc::new(FailingFor {
                 inner,
                 person: Mutex::new(Some(failing)),

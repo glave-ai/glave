@@ -169,7 +169,7 @@ pub(crate) async fn wire(
     // Memory is tidied once the server answers the filters its calls keep to.
     let (filters, tidier) = (lined.switch.filters(), lined.switch.clone());
     let tidy_model = settings.model.clone();
-    let accounts = crate::serving::accounts(args, choices, &store).await?;
+    let accounts = crate::serving::accounts(args, choices, &store, homes.is_some()).await?;
     let wiring = Wiring {
         // Before the lineup's parts move into the rest.
         rereads: Some(rereading(args, &folder, &setup, &lined, &servers, &projects).await?),

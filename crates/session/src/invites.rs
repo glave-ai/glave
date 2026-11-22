@@ -11,7 +11,6 @@ use glave_event::{
     Principal, PrincipalId, Profile, Secret,
 };
 use glave_identity::signin::{kept, one_time_code, same_kept};
-use glave_ports::host::PublicOrigin;
 use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, OrgId};
 use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
@@ -230,16 +229,13 @@ where
     }
 
     /// How someone not signed in joins this server's organizations by an invite: through its
-    /// company login, or by making a passkey where it keeps glave accounts and either gives
-    /// each person a computer of their own (`[computers]`) or is shared at this computer's
-    /// `localhost`, by people who share its one account already. Refused anywhere else: a
-    /// person's own server is theirs alone (`specs/model.md`, "Invites").
+    /// company login, or by making a passkey where it keeps glave accounts, which it does only
+    /// where people have computers of their own or share this one (`specs/model.md`,
+    /// "Identity"). Refused anywhere else: a laptop, or a person's own server, is theirs alone.
     pub(crate) fn joins_by(&self) -> Result<JoinWay, ApiError> {
-        let origin = self.inner.origin.as_ref();
-        let shared_here = origin.is_some_and(PublicOrigin::on_this_computer);
         if self.inner.identity_provider {
             Ok(JoinWay::Company)
-        } else if self.inner.accounts.is_some() && (self.inner.homes.is_some() || shared_here) {
+        } else if self.inner.accounts.is_some() {
             Ok(JoinWay::Passkey)
         } else {
             Err(ApiError::new(code::NOT_ALLOWED, Sentence::YoursAlone))

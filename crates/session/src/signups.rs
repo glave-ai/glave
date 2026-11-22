@@ -24,7 +24,7 @@ use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, OrgId, Scope
 use jiff::{SignedDuration, Timestamp};
 
 use crate::mailing::{ASKED_WITHIN, just_now};
-use crate::protocol::{ApiError, JoinWay, Reply, code};
+use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
 use crate::words::{Language, Sentence, say};
 use glave_ports::stream::in_order;
@@ -171,10 +171,10 @@ where
             && self.inner.origin.is_some()
     }
 
-    /// Whether someone new comes here only by an invite: its invites make glave accounts, and
-    /// it takes no sign-ups.
+    /// Whether someone new comes here only by an invite: it keeps glave accounts, and takes no
+    /// sign-ups.
     pub(crate) fn invite_only(&self) -> bool {
-        matches!(self.joins_by(), Ok(JoinWay::Passkey)) && !self.takes_signups()
+        self.inner.accounts.is_some() && !self.takes_signups()
     }
 
     /// Answers `signup/start` and `recovery/start` for `caller`: a link of the kind `emailed`
