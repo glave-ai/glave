@@ -79,7 +79,8 @@ fn makes_no_sign_up_link(place: &Place, model: &FakeServer) {
 
 /// A person's own server, reached at its public origin, is its owner's alone (#1553): it keeps
 /// no glave accounts for anyone else, so it makes no sign-up link, takes no sign-ups though its
-/// settings ask for them and it sends email, and invites no one, saying so.
+/// settings ask for them and it sends email, invites no one, saying so, and no one creates an
+/// organization there.
 #[test]
 fn a_person_s_own_server_signs_up_and_invites_no_one_but_its_owner() {
     let place = place("signup-own-server");
@@ -97,10 +98,15 @@ fn a_person_s_own_server_signs_up_and_invites_no_one_but_its_owner() {
         let found = serde_json::to_value(found.unwrap()).unwrap();
         assert!(found.get("invites").is_none(), "{found}");
         assert!(found.get("invite_only").is_none(), "{found}");
+        assert!(found.get("organizations").is_none(), "{found}");
         assert!(!found["signin"].to_string().contains("signup"), "{found}");
         let invite = request("invite/create", json!({"role": "member"}));
         let refused = owner.request(&invite).await.unwrap_err();
         let refused = serde_json::to_string(&refused).unwrap();
         assert!(refused.contains("this glave is yours alone"), "{refused}");
+        let create = request("organization/create", json!({"name": "Nurfz"}));
+        let refused = owner.request(&create).await.unwrap_err();
+        let refused = serde_json::to_string(&refused).unwrap();
+        assert!(refused.contains("create an organization here"), "{refused}");
     });
 }
