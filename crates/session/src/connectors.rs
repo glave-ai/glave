@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 
+use glave_harness::Connectable;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -57,6 +58,10 @@ pub struct Connector {
     pub docs: String,
     /// What it reaches, in English.
     pub description: String,
+    /// Whether its name is also a plain English word (Make, Close, Linear), so a search names it
+    /// only written as the catalog spells it: absent is false.
+    #[serde(default)]
+    pub plain_word: bool,
 }
 
 /// What a caller narrows `connector/list` by.
@@ -169,6 +174,21 @@ impl Connector {
     pub(crate) fn told(&self) -> Told {
         Told::catalogued(format!("connector-{}", self.id), self.description.clone())
     }
+
+    /// What `tool_search` finds of it, in English, for a person who may connect it and has
+    /// not: its name, what it reaches and the names of its categories and tags.
+    pub fn connectable(&self) -> Connectable {
+        let categories = self.categories.iter().map(|it| it.told());
+        let tags = categories.chain(self.tags.iter().map(|it| it.told()));
+        Connectable {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            description: self.description.clone(),
+            tags: tags.map(|told| (*told).to_owned()).collect(),
+            signs_in: self.sign_in == ConnectorSignIn::Dcr,
+            plain_word: self.plain_word,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -191,6 +211,20 @@ mod tests {
         assert_eq!(urls.len(), catalog.connectors.len(), "each server once");
         for connector in &catalog.connectors {
             assert!(connector.docs.starts_with("https://"), "{}", connector.id);
+        }
+    }
+
+    #[test]
+    fn a_name_that_is_a_plain_word_says_so() {
+        let catalog = Catalog::built_in().unwrap();
+        let plain = |id: &str| catalog.connector(id).unwrap().connectable().plain_word;
+        for id in [
+            "make", "close", "square", "railway", "linear", "apollo", "mux",
+        ] {
+            assert!(plain(id), "{id}");
+        }
+        for id in ["stripe", "notion", "postman", "attio"] {
+            assert!(!plain(id), "{id}");
         }
     }
 

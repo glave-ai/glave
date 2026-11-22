@@ -31,7 +31,7 @@ use crate::homes::{CredentialsOf, Homes, ShortOfRoom};
 use crate::inbox::Inbox;
 use crate::install::Install;
 use crate::memory::MemoryState;
-use crate::own_tools::{OwnTools, Placed};
+use crate::own_tools::{Mine, OwnTools};
 use crate::plan::Planning;
 use crate::prefix::Prefixed;
 use crate::project_folders::{Brought, ProjectFolders};
@@ -473,14 +473,14 @@ where
     /// the harness's other sources, the person's own when the thread is theirs, then its
     /// project's.
     pub(crate) fn sources_for(&self, thread: &Thread) -> Vec<Arc<dyn ToolSource>> {
-        self.sources_with(thread, &self.own_for(thread).0.sources)
+        self.sources_with(thread, &self.own_for(thread).placed.sources)
     }
 
     /// The person's own tools for `thread`, when it is theirs: those of the place it works in,
-    /// and the connections they may connect that are not among them.
-    pub(crate) fn own_for(&self, thread: &Thread) -> (Placed, Vec<String>) {
+    /// the connections they may connect that are not among them, and the catalog's they have not.
+    pub(crate) fn own_for(&self, thread: &Thread) -> Mine {
         if !self.trusting(thread.for_) {
-            return (Placed::default(), Vec::new());
+            return Mine::default();
         }
         let own = self.own.read().unwrap_or_else(PoisonError::into_inner);
         own.of(thread.scope.project())

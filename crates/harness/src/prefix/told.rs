@@ -123,7 +123,9 @@ impl Told {
         let lists = |name: &str| listed.iter().any(|spec| spec.name == name);
         let searching = lists(TOOL_SEARCH);
         let mut came = Came::default();
-        for name in now.tools.keys().filter(|n| !self.tools.contains_key(*n)) {
+        // The search is glave's own, connecting nothing: listed or not, it says nothing came.
+        let new = |name: &&String| !self.tools.contains_key(*name) && *name != TOOL_SEARCH;
+        for name in now.tools.keys().filter(new) {
             let called = connector_called(name);
             let connector =
                 called.or_else(|| connector_of(name).filter(|_| now.connected.contains(name)));

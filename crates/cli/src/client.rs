@@ -282,6 +282,10 @@ impl Client<'_> {
                     Body::ServiceAnswered(answered) if *thread == self.thread => {
                         printer.status(&answered.told);
                     }
+                    // A connector a search suggests the person connect, in the server's line.
+                    Body::ConnectorSuggested(suggested) if *thread == self.thread => {
+                        printer.status(&suggested.told);
+                    }
                     // Asked about once pending; dropped once decided.
                     Body::ApprovalRequested(asked) => {
                         requested.insert((*thread, asked.call_id.clone()), asked);

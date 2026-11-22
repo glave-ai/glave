@@ -6,17 +6,48 @@
 //! Where its threads use it is recorded with it: everywhere, or only in one project, which may be
 //! the person's Chats; connecting it again records where it is used now, in place of before. A
 //! person may connect one service more than once, each account named (`Acme`), and each
-//! account's sign-in is its own.
+//! account's sign-in is its own. `connector.suggested`, in a thread, is glave's record that
+//! `tool_search` found a connector the person may connect and has not.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
 use crate::codec::{Payload, parse};
+use crate::id::CallId;
 use crate::payload::principal::Principal;
 
 pub(crate) const CONNECTED: &str = "connector.connected";
 pub(crate) const DISCONNECTED: &str = "connector.disconnected";
+pub(crate) const SUGGESTED: &str = "connector.suggested";
+
+crate::worded! {
+    /// What glave tells the person of a connector it suggests, by whether connecting it signs
+    /// them in on its vendor's own page.
+    Suggests {
+        Connect { name } = "suggest-connect"
+            "{ $name } isn't connected. Connect it to let me use it for you.",
+        SignIn { name } = "suggest-sign-in"
+            "{ $name } isn't connected. Connect it to let me use it for you. You sign in on { $name }'s own page.",
+    }
+}
+
+/// `tool_search` found a connector of glave's catalog that the person may connect and has
+/// not, for what the model looked for: glave's own record beside the search, which a client
+/// offers the person to connect. The model is told so in the search's result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectorSuggested {
+    /// The search that found it.
+    pub call_id: CallId,
+    /// Its id in the catalog: `linear`.
+    pub connector: String,
+    /// What glave tells the person of it, in sentences of its own ("Linear isn't connected.
+    /// …"): recorded in English, written again in the reader's language from `suggests`.
+    pub told: String,
+    /// What `told` was written from.
+    pub suggests: Suggests,
+}
 
 /// A connector of glave's catalog was connected.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +104,11 @@ impl Payload for ConnectorDisconnected {
     const VERSION: u32 = 1;
 }
 
+impl Payload for ConnectorSuggested {
+    const TYPE: &'static str = SUGGESTED;
+    const VERSION: u32 = 1;
+}
+
 pub(crate) fn decode_connected(
     version: u32,
     data: &RawValue,
@@ -84,5 +120,12 @@ pub(crate) fn decode_disconnected(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<ConnectorDisconnected>> {
+    (version == 1).then(|| parse(data))
+}
+
+pub(crate) fn decode_suggested(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<ConnectorSuggested>> {
     (version == 1).then(|| parse(data))
 }

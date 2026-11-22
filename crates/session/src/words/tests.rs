@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
-use glave_event::{Ask, Caution, Phrase, Risk, Settled, Worded};
+use glave_event::{Ask, Caution, Phrase, Risk, Settled, Suggests, Worded};
 use glave_ports::computer::{Reason, Refusal};
 
 use super::*;
@@ -335,8 +335,12 @@ fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_wha
     let asks = Ask::every()
         .into_iter()
         .map(|it| Box::new(it) as Box<dyn Worded>);
+    let suggests = Suggests::every()
+        .into_iter()
+        .map(|it| Box::new(it) as Box<dyn Worded>);
     let all = worded.chain(phrases).chain(refusals).chain(projects);
-    for words in all.chain(memories).chain(brings).chain(asks) {
+    let more = memories.chain(brings).chain(asks).chain(suggests);
+    for words in all.chain(more) {
         assert!(ids.insert(words.id()), "{} is in a table twice", words.id());
         let said = word(Language::English, words.as_ref());
         assert_eq!(said, words.english(), "{}", words.id());
@@ -358,6 +362,7 @@ fn every_word_of_another_crates_table_is_one_fluent_message_whose_english_is_wha
             + glave_ports::memories::MemoryRefusal::ALL.len()
             + glave_ports::settings::Brings::ALL.len()
             + Ask::ALL.len()
+            + Suggests::ALL.len()
     );
 }
 

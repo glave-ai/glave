@@ -130,10 +130,10 @@ where
     /// used where it works, then its project's; and what they would tell the model of what can
     /// change.
     async fn on_offer(&self, thread: &Thread) -> (ToolSet, Told) {
-        let (own, away) = self.own_for(thread);
-        let sources = self.sources_with(thread, &own.sources);
+        let own = self.own_for(thread);
+        let sources = self.sources_with(thread, &own.placed.sources);
         let mut set = ToolSet::gather(&sources, &self.system_for(thread)).await;
-        set.away = away;
+        set.away = own.away;
         let mut signed_in = None;
         if let Some(credentials) = self.workspace_for(thread).credentials() {
             signed_in = crate::prompt::signed_in(&credentials.hosts().await);
@@ -166,6 +166,7 @@ where
             set.offer_search();
         }
         if !thread.delegated() {
+            set.offered = own.offered;
             set.offer_compact();
             for purpose in [Purpose::ImageGenerate, Purpose::ImageEdit] {
                 if self.provider.serves(purpose) {

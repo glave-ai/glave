@@ -84,6 +84,8 @@ fn a_servers_tools_reach_the_model_and_its_calls_run() {
             "agent",
             "update_plan",
             "compact",
+            // Last, to find the apps of glave's catalog the person may connect.
+            "tool_search",
         ]
     );
     let system = said(&received[0].body, "system").join("\n");

@@ -84,6 +84,7 @@ mod standing;
 mod steer;
 mod steps;
 mod subagents;
+mod suggested;
 mod tasks;
 mod terminals;
 mod thought;
