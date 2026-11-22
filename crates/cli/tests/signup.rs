@@ -62,7 +62,13 @@ fn a_server_no_one_else_reaches_makes_no_sign_up_links() {
     let place = place("signup-link-none");
     let model = FakeServer::start(vec![]).unwrap();
     let (_served, _) = serve_http(&place, &model, &["--model", "m"]);
-    let output = glave(&place, &model, &["signup", "link"], "");
+    makes_no_sign_up_link(&place, &model);
+}
+
+/// `glave signup link` for `place`'s server, which is refused: it makes no organizations by
+/// sign-up.
+fn makes_no_sign_up_link(place: &Place, model: &FakeServer) {
+    let output = glave(place, model, &["signup", "link"], "");
     assert!(!output.status.success());
     let said = text(&output);
     assert!(
@@ -83,13 +89,7 @@ fn a_person_s_own_server_signs_up_and_invites_no_one_but_its_owner() {
     let email = "{ host = \"127.0.0.1\", from = \"glave <glave@example.com>\" }";
     choose(&place, "email", email);
     let (_served, url) = serve_http(&place, &model, &["--model", "m"]);
-    let output = glave(&place, &model, &["signup", "link"], "");
-    assert!(!output.status.success());
-    let said = text(&output);
-    assert!(
-        said.contains("doesn't make organizations by sign-up"),
-        "{said}"
-    );
+    makes_no_sign_up_link(&place, &model);
     let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
     block_on!(async {
         let owner = Remote::new(&url, token.trim().to_owned()).unwrap();
