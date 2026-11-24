@@ -12,6 +12,7 @@ use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, read_all};
 use hyper::body::Bytes;
 use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
 use hyper::{Method, Response, StatusCode};
+use pulldown_cmark::{Event, Options, Parser};
 
 use super::body::Answer;
 use crate::server::Server;
@@ -151,14 +152,27 @@ where
     let Some(bytes) = read(server, scope, &preview.blob.sha256, MOST_PREVIEW).await else {
         return String::new();
     };
-    let markdown = escaped(&String::from_utf8_lossy(&bytes));
+    let page = drawn(&String::from_utf8_lossy(&bytes));
     let cut = if preview.cut {
         let said = escaped(&say(language, &Sentence::PreviewCut));
         format!("<p class=\"note\">{said}</p>")
     } else {
         String::new()
     };
-    format!("<pre class=\"preview\">{markdown}</pre>{cut}")
+    format!("<div class=\"preview\">{page}</div>{cut}")
+}
+
+/// `markdown` drawn as HTML: its headings, paragraphs, lists and tables, any HTML it holds shown
+/// as text, so nothing in a file glave read becomes markup of the page's.
+fn drawn(markdown: &str) -> String {
+    let options = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH;
+    let events = Parser::new_ext(markdown, options).map(|event| match event {
+        Event::Html(html) | Event::InlineHtml(html) => Event::Text(html),
+        other => other,
+    });
+    let mut page = String::with_capacity(markdown.len());
+    pulldown_cmark::html::push_html(&mut page, events);
+    page
 }
 
 /// The page a link that opens nothing answers with.
@@ -338,6 +352,19 @@ mod tests {
         assert_eq!(
             escaped("<script>\"a\" & 'b'</script>"),
             "&lt;script&gt;&quot;a&quot; &amp; &#39;b&#39;&lt;/script&gt;"
+        );
+    }
+
+    #[test]
+    fn a_preview_is_drawn_as_a_page_and_its_html_as_text() {
+        let page = drawn(
+            "# Budget\n\n| Item | Total |\n|---|---|\n| Flights | 780 |\n\n<script>x</script>",
+        );
+        assert!(page.contains("<h1>Budget</h1>"), "{page}");
+        assert!(page.contains("<td>Flights</td>"), "{page}");
+        assert!(
+            page.contains("&lt;script&gt;") && !page.contains("<script>"),
+            "{page}"
         );
     }
 

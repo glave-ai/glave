@@ -39,6 +39,8 @@ glave-push.workspace = true
 getrandom.workspace = true
 # Whose browser a push endpoint is, kept in a stream named by its hash (push.rs).
 sha2.workspace = true
+# A shared document's preview, Markdown, drawn as the page its link opens (http/shared.rs).
+pulldown-cmark.workspace = true
 # The HTTP transport's server.
 hyper = { workspace = true, features = ["http1", "server"] }
 hyper-util = { workspace = true, features = ["tokio"] }
