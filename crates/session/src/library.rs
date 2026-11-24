@@ -32,7 +32,7 @@ where
     B: BlobStore + 'static,
 {
     /// The scopes of every project `caller` owns in the organization the request works in.
-    async fn libraries(&self, caller: &Caller) -> Result<Vec<Scope>, ApiError> {
+    pub(crate) async fn libraries(&self, caller: &Caller) -> Result<Vec<Scope>, ApiError> {
         let org = self.org_of(caller);
         let person = self.person_of(caller)?;
         let projects = self
@@ -176,6 +176,9 @@ where
         let removed = LibraryRemoved { asset };
         self.keep_latest(&scope, Reserved::Library.id(), &kinds, &removed)
             .await?;
+        // Its share stops with it: nothing shared outlives the place its owner sees it.
+        let item = SharedFrom::Item { asset };
+        self.stop_shares(&scope, |of| *of == item).await?;
         Ok(Reply::Done {})
     }
 }

@@ -23,7 +23,7 @@ use crate::support::web::serve_with;
 use crate::support::*;
 
 /// The share domain the tests share at.
-fn domain() -> ShareDomain {
+pub(crate) fn domain() -> ShareDomain {
     ShareDomain {
         origin: PublicOrigin::parse("https://share.example.net").unwrap(),
         report: Some("abuse@example.net".to_owned()),
@@ -31,7 +31,7 @@ fn domain() -> ShareDomain {
 }
 
 /// A server sharing at [`domain`], whose model draws a fox, and the fox in its Library.
-async fn shared_fox(dir: &std::path::Path) -> (Tested, LibraryItem) {
+pub(crate) async fn shared_fox(dir: &std::path::Path) -> (Tested, LibraryItem) {
     let mut setup = Setup::new(Vec::new());
     setup.model = Some(drawing(vec![
         answer(
@@ -50,7 +50,7 @@ async fn shared_fox(dir: &std::path::Path) -> (Tested, LibraryItem) {
     (server, items.into_iter().next().unwrap())
 }
 
-fn item_of(item: &LibraryItem) -> ShareOf {
+pub(crate) fn item_of(item: &LibraryItem) -> ShareOf {
     ShareOf::Item {
         project: item.project,
         asset: item.asset,
@@ -58,7 +58,7 @@ fn item_of(item: &LibraryItem) -> ShareOf {
 }
 
 /// `share/set` of `of` for `audience`, moving it to `of`'s version when `update`.
-async fn set(
+pub(crate) async fn set(
     server: &Tested,
     of: ShareOf,
     audience: Option<Audience>,
@@ -76,7 +76,7 @@ async fn set(
     }
 }
 
-async fn get(server: &Tested, of: ShareOf) -> Option<ShareInfo> {
+pub(crate) async fn get(server: &Tested, of: ShareOf) -> Option<ShareInfo> {
     match server.request(Request::ShareGet { of }).await.unwrap() {
         Reply::Share { share } => Some(share),
         Reply::Done {} => None,
@@ -85,7 +85,7 @@ async fn get(server: &Tested, of: ShareOf) -> Option<ShareInfo> {
 }
 
 /// The id a link names under the share domain.
-fn id_of(link: &str) -> String {
+pub(crate) fn id_of(link: &str) -> String {
     let rest = link.strip_prefix("https://").unwrap();
     let (id, domain) = rest.split_once('.').unwrap();
     assert_eq!(domain, "share.example.net/");
@@ -170,7 +170,7 @@ fn without_a_share_domain_nothing_is_offered_or_shared() {
 }
 
 /// A reader standing in for glave's own: a CSV file's preview is its text.
-fn previewing() -> ReadMade {
+pub(crate) fn previewing() -> ReadMade {
     Arc::new(|bytes, _| {
         Box::pin(async move {
             Some(MadeRead {
@@ -259,7 +259,11 @@ fn a_made_file_is_shared_as_it_was_until_moved_to_its_newer_version() {
 }
 
 /// A GET of `path` at `id`'s name under the share domain, on the server served at `address`.
-async fn fetch(address: std::net::SocketAddr, host: &str, path: &str) -> reqwest::Response {
+pub(crate) async fn fetch(
+    address: std::net::SocketAddr,
+    host: &str,
+    path: &str,
+) -> reqwest::Response {
     let client = reqwest::Client::builder()
         .resolve(host, address)
         .no_proxy()

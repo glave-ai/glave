@@ -7,7 +7,6 @@
 //! the reason: never made, stopped, or its project erased.
 
 use glave_event::{AssetKind, ShareSet};
-use glave_harness::MAX_FILE;
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, read_all};
 use hyper::body::Bytes;
 use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
@@ -49,11 +48,9 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let language = (headers.get(header::ACCEPT_LANGUAGE))
-        .and_then(|value| value.to_str().ok())
-        .and_then(Language::accepted)
-        .unwrap_or(Language::English);
-    if *method != Method::GET && *method != Method::HEAD {
+    let language = language_of(headers);
+    let head = *method == Method::HEAD;
+    if *method != Method::GET && !head {
         let mut refused = answered(StatusCode::METHOD_NOT_ALLOWED, Answer::empty());
         refused
             .headers_mut()
@@ -81,8 +78,8 @@ where
     }
     match path {
         "/" => page(server, &scope, &share, language).await,
-        "/file" if shown(share.kind) => file(server, &scope, &share, false).await,
-        "/download" => file(server, &scope, &share, true).await,
+        "/file" if shown(share.kind) => file(server, &scope, &share, (false, head)).await,
+        "/download" => file(server, &scope, &share, (true, head)).await,
         _ => answered(StatusCode::NOT_FOUND, Answer::empty()),
     }
 }
@@ -161,6 +158,14 @@ where
     format!("<pre class=\"preview\">{markdown}</pre>{cut}")
 }
 
+/// The first language of `headers`'s `Accept-Language` the server writes, else English.
+fn language_of(headers: &HeaderMap) -> Language {
+    (headers.get(header::ACCEPT_LANGUAGE))
+        .and_then(|value| value.to_str().ok())
+        .and_then(Language::accepted)
+        .unwrap_or(Language::English)
+}
+
 /// The page a link that opens nothing answers with.
 fn gone(language: Language) -> Response<Answer> {
     let said = escaped(&say(language, &Sentence::LinkGone));
@@ -177,14 +182,15 @@ async fn file<P, L, B>(
     server: &Server<P, L, B>,
     scope: &Scope,
     share: &ShareSet,
-    download: bool,
+    (download, head): (bool, bool),
 ) -> Response<Answer>
 where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let Some(bytes) = read(server, scope, &share.blob.sha256, MAX_FILE).await else {
+    let blobs = server.inner.harness.blobs();
+    let Ok(Some(found)) = blobs.get(scope, &share.blob.sha256).await else {
         return answered(StatusCode::NOT_FOUND, Answer::empty());
     };
     let policy = if !download && share.kind == AssetKind::Pdf {
@@ -197,7 +203,16 @@ where
     } else {
         share.blob.media_type.as_str()
     };
-    let mut response = typed(Bytes::from(bytes), media_type, policy);
+    let length = found.reference.bytes;
+    let body = if head {
+        Answer::empty()
+    } else {
+        Answer::file(found.bytes, length)
+    };
+    let mut response = sent(body, media_type, policy);
+    response
+        .headers_mut()
+        .insert(header::CONTENT_LENGTH, HeaderValue::from(length));
     if download && let Ok(disposition) = HeaderValue::from_str(&disposition(&share.file_name)) {
         response
             .headers_mut()
@@ -248,7 +263,12 @@ fn html(status: StatusCode, title: &str, body: &str, language: Language) -> Resp
 
 /// `bytes` as `media_type`, under `policy`, with what every answer here carries.
 fn typed(bytes: Bytes, media_type: &str, policy: &'static str) -> Response<Answer> {
-    let mut response = answered(StatusCode::OK, Answer::bytes(bytes));
+    sent(Answer::bytes(bytes), media_type, policy)
+}
+
+/// `body` as `media_type`, under `policy`, with what every answer here carries.
+fn sent(body: Answer, media_type: &str, policy: &'static str) -> Response<Answer> {
+    let mut response = answered(StatusCode::OK, body);
     let headers = response.headers_mut();
     if let Ok(media_type) = HeaderValue::from_str(media_type) {
         headers.insert(header::CONTENT_TYPE, media_type);

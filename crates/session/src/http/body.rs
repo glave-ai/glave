@@ -12,6 +12,7 @@ use std::task::{Context, Poll, ready};
 use std::time::Duration;
 
 use glave_event::ThreadId;
+use glave_ports::Chunks;
 use hyper::body::{Body, Bytes, Frame, SizeHint};
 use tokio::time::{Instant, Sleep, sleep};
 
@@ -26,8 +27,14 @@ pub(crate) const KEEP_ALIVE: Duration = Duration::from_secs(15);
 /// The next item of a stream, with the stream handed back for the one after.
 type Next = Pin<Box<dyn Future<Output = (Streamed, Option<Item>)> + Send>>;
 
+/// The next piece of a file being sent, with what reads the rest handed back.
+type Piece = Pin<Box<dyn Future<Output = (Box<dyn Chunks>, Option<Vec<u8>>)> + Send>>;
+
 /// An HTTP answer's body.
 pub(crate) enum Answer {
+    /// A file's bytes, sent a piece at a time as they are read, `bytes` long; a piece that
+    /// can't be read ends it, cut short.
+    File { next: Option<Piece>, bytes: u64 },
     /// One whole message, or nothing.
     Once(Option<Bytes>),
     /// A stream as `text/event-stream`, until its response has been sent.
@@ -53,6 +60,14 @@ impl Answer {
         Self::Once(Some(bytes))
     }
 
+    /// The bytes `chunks` yields, `bytes` of them, sent as they are read.
+    pub(crate) fn file(chunks: Box<dyn Chunks>, bytes: u64) -> Self {
+        Self::File {
+            next: Some(piece(chunks)),
+            bytes,
+        }
+    }
+
     pub(crate) fn empty() -> Self {
         Self::Once(None)
     }
@@ -68,6 +83,13 @@ impl Answer {
             language,
         }
     }
+}
+
+fn piece(mut chunks: Box<dyn Chunks>) -> Piece {
+    Box::pin(async move {
+        let next = chunks.next_chunk().await.ok().flatten();
+        (chunks, next)
+    })
 }
 
 fn following(mut streamed: Streamed) -> Next {
@@ -106,6 +128,19 @@ impl Body for Answer {
     ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
         match self.get_mut() {
             Self::Once(bytes) => Poll::Ready(bytes.take().map(|bytes| Ok(Frame::data(bytes)))),
+            Self::File { next, .. } => {
+                let Some(pending) = next.as_mut() else {
+                    return Poll::Ready(None);
+                };
+                let (chunks, read) = ready!(pending.as_mut().poll(cx));
+                if let Some(read) = read {
+                    *next = Some(piece(chunks));
+                    Poll::Ready(Some(Ok(Frame::data(Bytes::from(read)))))
+                } else {
+                    *next = None;
+                    Poll::Ready(None)
+                }
+            }
             Self::Stream {
                 next,
                 id,
@@ -147,6 +182,7 @@ impl Body for Answer {
     fn is_end_stream(&self) -> bool {
         match self {
             Self::Once(bytes) => bytes.is_none(),
+            Self::File { next, .. } => next.is_none(),
             Self::Stream { next, .. } => next.is_none(),
         }
     }
@@ -157,6 +193,7 @@ impl Body for Answer {
                 SizeHint::with_exact(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
             }
             Self::Once(None) => SizeHint::with_exact(0),
+            Self::File { bytes, .. } => SizeHint::with_exact(*bytes),
             Self::Stream { .. } => SizeHint::default(),
         }
     }

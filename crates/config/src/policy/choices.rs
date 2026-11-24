@@ -220,6 +220,37 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
 }
 
 /// `chosen`, or glave's default `value`.
+/// Refuses a share domain on glave's own site, as `choices` resolved them: its registrable
+/// domain (one label past its public suffix, by the Public Suffix List) must differ from that of
+/// glave's public origin, so a shared page can neither use glave's passkeys nor set cookies on
+/// its site. `localhost` may be both, to try sharing on one computer: browsers take it as a
+/// public suffix by the list's default rule, each name under it a site of its own.
+pub(super) fn apart(choices: &Choices) -> crate::Result<()> {
+    let (Some(origin), Some(shares)) = (&choices.origin, &choices.shares) else {
+        return Ok(());
+    };
+    let (own, shared) = (site(origin.value.host()), site(shares.value.host()));
+    if own.is_some() && own == shared {
+        crate::error::refuse!(
+            "shares = {:?} is on glave's own site, {:?}, where a shared page could reach \
+             glave's sign-in: name a domain apart, such as https://share.example.net",
+            shares.value.as_str(),
+            origin.value.as_str()
+        );
+    }
+    Ok(())
+}
+
+/// The registrable domain of `host`, by the Public Suffix List; none for `localhost` and the
+/// names under it, each a site of its own.
+fn site(host: &str) -> Option<String> {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if host == "localhost" || host.ends_with(".localhost") {
+        return None;
+    }
+    Some(psl::domain_str(&host).unwrap_or(&host).to_owned())
+}
+
 fn defaulted<T>(chosen: Option<Chosen<T>>, value: T) -> Chosen<T> {
     chosen.unwrap_or(Chosen {
         value,
