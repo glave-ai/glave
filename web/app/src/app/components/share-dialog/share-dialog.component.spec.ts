@@ -1,6 +1,7 @@
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode, type ShareInfo, type ShareGetParams } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
+import { settle } from '@glave/glaze/testing/settle';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { ShareDialogComponent } from './share-dialog.component';
@@ -17,14 +18,8 @@ const SHARED: ShareInfo = {
   said: 'Shared with anyone who has the link',
 };
 
-async function settle(fixture: { whenStable(): Promise<unknown> }): Promise<void> {
-  for (let turn = 0; turn < 5; turn += 1) {
-    await new Promise((resolve) => setTimeout(resolve));
-  }
-  await fixture.whenStable();
-}
-
-function byTestId<T extends HTMLElement>(testId: string): T | null {
+/** The element the dialog marks `testId`, wherever the dialog draws it. */
+function hook<T extends HTMLElement>(testId: string): T | null {
   return document.querySelector<T>(`[data-testid="${testId}"]`);
 }
 
@@ -54,17 +49,17 @@ describe('ShareDialogComponent', () => {
     const fake = new FakeSession().answer('share/get', {}).answer('share/set', { share: SHARED });
     const { fixture, changes } = await opened(fake);
     await expectAccessible(document.body);
-    expect(byTestId('share-link')).toBeNull();
+    expect(hook('share-link')).toBeNull();
     expect(document.body.textContent).toContain('Share “Trip budget”');
     choose('anyone');
     await settle(fixture);
-    byTestId('share-apply')?.click();
+    hook('share-apply')?.click();
     await settle(fixture);
     expect(fake.paramsOf('share/set')).toEqual([
       { ...BUDGET, audience: { kind: 'anyone' }, update: false },
     ]);
-    expect(byTestId<HTMLInputElement>('share-link')?.value).toBe(SHARED.link);
-    expect(byTestId('share-copy')).not.toBeNull();
+    expect(hook<HTMLInputElement>('share-link')?.value).toBe(SHARED.link);
+    expect(hook('share-copy')).not.toBeNull();
     expect(changes).toEqual([SHARED]);
     await expectAccessible(document.body);
   });
@@ -75,10 +70,10 @@ describe('ShareDialogComponent', () => {
     expect(document.body.textContent).toContain('The link stops working');
     choose('only_you');
     await settle(fixture);
-    byTestId('share-apply')?.click();
+    hook('share-apply')?.click();
     await settle(fixture);
     expect(fake.paramsOf('share/set')).toEqual([BUDGET]);
-    expect(byTestId('share-link')).toBeNull();
+    expect(hook('share-link')).toBeNull();
     expect(changes).toEqual([null]);
   });
 
@@ -88,14 +83,14 @@ describe('ShareDialogComponent', () => {
       .answer('share/get', { share: older })
       .answer('share/set', { share: SHARED });
     const { fixture } = await opened(fake);
-    expect(byTestId('share-older')).not.toBeNull();
+    expect(hook('share-older')).not.toBeNull();
     await expectAccessible(document.body);
-    byTestId('share-update')?.click();
+    hook('share-update')?.click();
     await settle(fixture);
     expect(fake.paramsOf('share/set')).toEqual([
       { ...BUDGET, audience: { kind: 'anyone' }, update: true },
     ]);
-    expect(byTestId('share-older')).toBeNull();
+    expect(hook('share-older')).toBeNull();
   });
 
   it('never offers a Library item a newer version', async () => {
@@ -103,7 +98,7 @@ describe('ShareDialogComponent', () => {
     const fake = new FakeSession().answer('share/get', { share: SHARED });
     await opened(fake, item);
     expect(fake.paramsOf('share/get')).toEqual([item]);
-    expect(byTestId('share-older')).toBeNull();
+    expect(hook('share-older')).toBeNull();
   });
 
   it('says why it could not share, in the server’s words', async () => {
@@ -115,8 +110,8 @@ describe('ShareDialogComponent', () => {
     const { fixture } = await opened(fake);
     choose('anyone');
     await settle(fixture);
-    byTestId('share-apply')?.click();
+    hook('share-apply')?.click();
     await settle(fixture);
-    expect(byTestId('share-problem')?.textContent).toContain("This server doesn't share files.");
+    expect(hook('share-problem')?.textContent).toContain("This server doesn't share files.");
   });
 });
