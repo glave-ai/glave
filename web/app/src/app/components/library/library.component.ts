@@ -15,7 +15,7 @@ import {
   GlzFigureComponent,
   GlzMenuSelectComponent,
 } from '@glave/glaze';
-import type { ShareOf } from '@glave/client';
+import type { ShareGetParams } from '@glave/client';
 import { Image } from 'lucide';
 
 import {
@@ -120,7 +120,7 @@ export class LibraryComponent {
   protected readonly deleteOpen = signal(false);
   protected readonly shareOpen = signal(false);
   /** The item opened, as sharing names it, while its Share dialog is open. */
-  protected readonly shareOf = computed<ShareOf | null>(() => {
+  protected readonly shareOf = computed<ShareGetParams | null>(() => {
     const item = this.opened()?.item;
     return this.shareOpen() && item !== undefined
       ? { kind: 'item', project: item.project, asset: item.asset }

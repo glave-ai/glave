@@ -4,8 +4,10 @@ import { ApiError, ErrorCode, type MadeFile } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { settle } from '@glave/glaze/testing/settle';
 
+import { ServerService } from '../../services/server.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { SERVER } from '../../testing/fixtures';
 import { FilePreviewComponent } from './file-preview.component';
 
 const BUDGET: MadeFile = {
@@ -27,6 +29,7 @@ async function render(
   TestBed.configureTestingModule({
     providers: [provideRouter([]), ...provideFakeSession(fake), ThreadService],
   });
+  await TestBed.inject(ServerService).load();
   await TestBed.inject(ThreadService).open('thread-1');
   const fixture = TestBed.createComponent(FilePreviewComponent);
   fixture.componentRef.setInput('file', file);
@@ -49,6 +52,22 @@ describe('FilePreviewComponent', () => {
     expect(root.querySelector('table')?.textContent).toContain('Flights');
     expect(part(root, 'cut')?.textContent).toBe(cut);
     await expectAccessible(root);
+  });
+
+  it('shares a link where the server shares files, never the file itself', async () => {
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
+    const fake = new FakeSession()
+      .answer('server/discover', { ...SERVER, shares: ['anyone'] })
+      .answer('share/get', {});
+    const fixture = await render(fake, BUDGET);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(part(root, 'share')).toBeNull();
+    part(root, 'share-link')?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('share/get')).toEqual([
+      { kind: 'file', thread: 'thread-1', sha256: BUDGET.sha256 },
+    ]);
+    Reflect.deleteProperty(navigator, 'canShare');
   });
 
   it('reads the file as it opens where the browser shares files, so the tap shares it at once', async () => {

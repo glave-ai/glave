@@ -1,12 +1,12 @@
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
-import { ApiError, ErrorCode, type ShareInfo, type ShareOf } from '@glave/client';
+import { ApiError, ErrorCode, type ShareInfo, type ShareGetParams } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { ShareDialogComponent } from './share-dialog.component';
 
 /** A file a turn made, at the version its card shows. */
-const BUDGET: ShareOf = { kind: 'file', thread: 't1', sha256: 'b'.repeat(64) };
+const BUDGET: ShareGetParams = { kind: 'file', thread: 't1', sha256: 'b'.repeat(64) };
 
 /** The budget shared with anyone, at the card's version. */
 const SHARED: ShareInfo = {
@@ -36,7 +36,7 @@ function choose(value: string): void {
 
 async function opened(
   fake: FakeSession,
-  of: ShareOf = BUDGET,
+  of: ShareGetParams = BUDGET,
 ): Promise<{ fixture: ComponentFixture<ShareDialogComponent>; changes: (ShareInfo | null)[] }> {
   TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
   const fixture = TestBed.createComponent(ShareDialogComponent);
@@ -51,9 +51,7 @@ async function opened(
 
 describe('ShareDialogComponent', () => {
   it('shares a file with anyone, then shows its link to copy', async () => {
-    const fake = new FakeSession()
-      .answer('share/get', {})
-      .answer('share/set', { share: SHARED });
+    const fake = new FakeSession().answer('share/get', {}).answer('share/set', { share: SHARED });
     const { fixture, changes } = await opened(fake);
     await expectAccessible(document.body);
     expect(byTestId('share-link')).toBeNull();
@@ -101,7 +99,7 @@ describe('ShareDialogComponent', () => {
   });
 
   it('never offers a Library item a newer version', async () => {
-    const item: ShareOf = { kind: 'item', project: 'p1', asset: 'a1' };
+    const item: ShareGetParams = { kind: 'item', project: 'p1', asset: 'a1' };
     const fake = new FakeSession().answer('share/get', { share: SHARED });
     await opened(fake, item);
     expect(fake.paramsOf('share/get')).toEqual([item]);

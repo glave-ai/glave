@@ -6,9 +6,11 @@ import { ApiError, ErrorCode, type MadeFile } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { settle } from '@glave/glaze/testing/settle';
 
+import { ServerService } from '../../services/server.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { SERVER } from '../../testing/fixtures';
 import { objectUrls } from '../../testing/object-urls';
 import { MadeFileComponent } from './made-file.component';
 
@@ -55,6 +57,7 @@ async function render(
       },
     ],
   });
+  await TestBed.inject(ServerService).load();
   await TestBed.inject(ThreadService).open('thread-1');
   const fixture = TestBed.createComponent(MadeFileComponent);
   fixture.componentRef.setInput('file', file);
@@ -81,6 +84,30 @@ describe('MadeFileComponent', () => {
     expect(part(root, 'open')?.getAttribute('aria-label')).toBe('Open Packing list');
     expect(part(root, 'download')?.getAttribute('aria-label')).toBe('Download Packing list');
     await expectAccessible(root);
+  });
+
+  it('offers Share only where the server shares files, its line saying with whom', async () => {
+    const plain = await render(new FakeSession());
+    expect(part(plain.fixture.nativeElement as HTMLElement, 'share')).toBeNull();
+    TestBed.resetTestingModule();
+    const sharing = new FakeSession()
+      .answer('server/discover', { ...SERVER, shares: ['anyone'] })
+      .answer('share/get', {});
+    const shared = { ...PACKING, shared: 'Shared with anyone who has the link' };
+    const { fixture } = await render(sharing, shared);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(part(root, 'line')?.textContent).toBe(
+      'Document · 3 pages · Shared with anyone who has the link',
+    );
+    const share = part(root, 'share');
+    expect(share?.getAttribute('aria-label')).toBe('Share Packing list');
+    share?.click();
+    await settle(fixture);
+    expect(sharing.paramsOf('share/get')).toEqual([
+      { kind: 'file', thread: 'thread-1', sha256: PACKING.sha256 },
+    ]);
+    expect(document.querySelector('[data-testid="share"]')).not.toBeNull();
+    await expectAccessible(document.body);
   });
 
   it('opens the file in the chat’s panel, and is marked while it is open there', async () => {

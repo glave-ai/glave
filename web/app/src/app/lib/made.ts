@@ -5,7 +5,7 @@ import {
   type MadeFile,
   type MadeLeft,
   type RawEvent,
-  type ShareOf,
+  type ShareGetParams,
   type TurnFiles,
 } from '@glave/client';
 
@@ -168,7 +168,7 @@ export function whyNot(error: unknown): string {
 }
 
 /** `file` of `thread` as sharing names it: only once it was kept, so it can be shared. */
-export function shareOf(thread: string | null, file: MadeFile): ShareOf | null {
+export function shareOf(thread: string | null, file: MadeFile): ShareGetParams | null {
   return thread === null || file.sha256 == null
     ? null
     : { kind: 'file', thread, sha256: file.sha256 };

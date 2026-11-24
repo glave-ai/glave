@@ -58,7 +58,7 @@ export class MadeFileComponent {
   private readonly thread = inject(ThreadService);
   private readonly announcer = inject(LiveAnnouncer);
   private readonly server = inject(ServerService);
-  private readonly made = inject(MadeFilesService);
+  private readonly made = inject(MadeFilesService, { optional: true });
 
   protected readonly copy = {
     open: $localize`:@@madeFile.open:Open`,
@@ -126,7 +126,7 @@ export class MadeFileComponent {
 
   /** Reads the files again once the share changed, so the card says who it is shared with. */
   protected shared(): void {
-    void this.made.refresh();
+    void this.made?.refresh();
   }
 
   protected async download(): Promise<void> {

@@ -1,5 +1,15 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, model, output, signal } from '@angular/core';
-import type { Audience, Methods, ShareInfo, ShareOf } from '@glave/client';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  model,
+  output,
+  signal,
+} from '@angular/core';
+import type { Audience, Methods, ShareInfo, ShareGetParams } from '@glave/client';
 import {
   GlzButtonComponent,
   GlzCopyButtonComponent,
@@ -40,7 +50,7 @@ type Choice = 'only_you' | 'anyone';
 })
 export class ShareDialogComponent {
   /** The file, as `share/get` names it. */
-  readonly of = input.required<ShareOf>();
+  readonly of = input.required<ShareGetParams>();
   /** Its name, as its card shows it. */
   readonly name = input.required<string>();
   /** Whether the dialog is open. */
@@ -127,7 +137,7 @@ export class ShareDialogComponent {
     this.open.set(false);
   }
 
-  private async read(of: ShareOf): Promise<void> {
+  private async read(of: ShareGetParams): Promise<void> {
     this.problem.set(null);
     try {
       const share = held(await this.session.call('share/get', of));

@@ -45,7 +45,7 @@ export class FilePreviewComponent {
   private readonly threads = inject(ThreadService);
   private readonly document = inject(DOCUMENT);
   private readonly server = inject(ServerService);
-  private readonly made = inject(MadeFilesService);
+  private readonly made = inject(MadeFilesService, { optional: true });
 
   protected readonly copy = {
     download: $localize`:@@filePreview.download:Download`,
@@ -144,7 +144,7 @@ export class FilePreviewComponent {
 
   /** Reads the files again once the share changed, so the card says who it is shared with. */
   protected linkChanged(): void {
-    void this.made.refresh();
+    void this.made?.refresh();
   }
 
   /**

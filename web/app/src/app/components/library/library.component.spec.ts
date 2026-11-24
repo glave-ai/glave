@@ -5,8 +5,9 @@ import { expectAccessible } from '@glave/glaze/testing';
 import { settle } from '@glave/glaze/testing/settle';
 
 import { ProjectsService } from '../../services/projects.service';
+import { ServerService } from '../../services/server.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { picture, record } from '../../testing/fixtures';
+import { SERVER, picture, record } from '../../testing/fixtures';
 import { objectUrls } from '../../testing/object-urls';
 import { LibraryComponent } from './library.component';
 
@@ -16,6 +17,7 @@ const CHATS = record('chats', 'Chats', 'personal');
 async function render(
   items: readonly LibraryItem[],
   projects: readonly Project[] = [CHATS],
+  server: object = SERVER,
 ): Promise<{
   readonly root: HTMLElement;
   readonly fake: FakeSession;
@@ -26,11 +28,14 @@ async function render(
     .answer('library/read', PIECE)
     .answer('library/remove', {})
     .answer('project/list', { projects })
-    .answer('thread/list', { threads: [] });
+    .answer('thread/list', { threads: [] })
+    .answer('server/discover', server)
+    .answer('share/get', {});
   TestBed.configureTestingModule({
     providers: [provideRouter([]), ...provideFakeSession(fake)],
   });
   await TestBed.inject(ProjectsService).refresh();
+  await TestBed.inject(ServerService).load();
   const fixture = TestBed.createComponent(LibraryComponent);
   await settle(fixture);
   return { root: fixture.nativeElement as HTMLElement, fake, fixture };
@@ -82,6 +87,25 @@ describe('LibraryComponent', () => {
     await settle(fixture);
     expect(names(root)).toEqual(['fox']);
     await expectAccessible(root);
+  });
+
+  it('offers Share on a picture opened, only where the server shares files', async () => {
+    objectUrls();
+    const open = async (server: object): ReturnType<typeof render> => {
+      const rendered = await render([picture('fox', 'chats', 't1')], [CHATS], server);
+      rendered.root.querySelector<HTMLElement>('[data-testid="library-open"]')?.click();
+      await settle(rendered.fixture);
+      return rendered;
+    };
+    const plain = await open(SERVER);
+    expect(plain.root.querySelector('[data-testid="library-share"]')).toBeNull();
+    TestBed.resetTestingModule();
+    const { root, fake, fixture } = await open({ ...SERVER, shares: ['anyone'] });
+    root.querySelector<HTMLElement>('[data-testid="library-share"]')?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('share/get')).toEqual([{ kind: 'item', project: 'chats', asset: 'fox' }]);
+    expect(document.body.textContent).toContain('Share “fox”');
+    await expectAccessible(document.body);
   });
 
   it('opens a picture large, and deletes it from the Library once asked', async () => {
