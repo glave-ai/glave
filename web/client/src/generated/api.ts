@@ -66,6 +66,14 @@ export type AttachedFile = {
   readonly sha256: string;
 };
 
+/** Who may open a share besides its owner. */
+export type Audience = {
+  readonly kind: "anyone";
+} | {
+  readonly kind: "people";
+  readonly people: readonly (string)[];
+};
+
 /**
  * Whether this server keeps its computer from sleeping on its own while a turn, task or
  * schedule runs (`specs/one-server.md`, owner decision 10).
@@ -725,6 +733,11 @@ export type LibraryItem = {
   readonly name: string;
   /** The project it was made in, the person's Chats among them. */
   readonly project: ProjectId;
+  /**
+   * Who it is shared with, in a sentence, where it is shared: "Shared with anyone who has
+   * the link".
+   */
+  readonly shared?: string | null;
 };
 
 /** Whether a line was kept, taken out or put in. */
@@ -791,6 +804,11 @@ export type MadeFile = {
    * was not kept.
    */
   readonly sha256?: string | null;
+  /**
+   * Who it is shared with, in a sentence, where it is shared: "Shared with 2 people", which
+   * a card shows in place of where it is kept.
+   */
+  readonly shared?: string | null;
   /** Why it can't be shown, only downloaded, when glave kept it but couldn't read it. */
   readonly unread?: string | null;
 };
@@ -1463,6 +1481,11 @@ export type ServerInfo = {
    */
   readonly schedules?: boolean;
   /**
+   * Who besides themselves the caller may share a file with here (`share/set`): none where
+   * the server has no share domain, so a client offers Share only where it names some.
+   */
+  readonly shares?: readonly (ShareChoice)[];
+  /**
    * How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a
    * public origin always, a setup link making the first; on this computer once one is made.
    */
@@ -1493,6 +1516,23 @@ export type Setting = "providers" | "credentials" | "connections" | "secrets" | 
 export type Shades = {
   readonly dark: Color;
   readonly light: Color;
+};
+
+/** Who besides the caller a server lets them share with, as `server/discover` says. */
+export type ShareChoice = "people" | "anyone";
+
+/** A file shared at a link of its own. */
+export type ShareInfo = {
+  /** Who besides its owner may open it. */
+  readonly audience: Audience;
+  /** Its link, the one address it is served at. */
+  readonly link: string;
+  /** Who may open it, in a sentence: "Shared with 2 people". */
+  readonly said: string;
+  /** The content of the version it holds, which a client compares with a newer card's. */
+  readonly sha256: string;
+  /** When it was last shared, changed or moved to a newer version. */
+  readonly shared_at: At;
 };
 
 /** Which threads `thread/list` shows. */
@@ -3083,6 +3123,38 @@ export type ServiceAnswerParams = {
 
 export type ServiceAnswerResult = Readonly<Record<string, never>>;
 
+/** A file the caller may share, named as `thread/files` or `library/list` gives it. */
+export type ShareGetParams = {
+  readonly kind: "file";
+  readonly sha256: string;
+  readonly thread: ThreadId;
+} | {
+  readonly asset: AssetId;
+  readonly kind: "item";
+  readonly project: ProjectId;
+};
+
+/** A file's share; none where it is not shared. */
+export type ShareGetResult = {
+  readonly share?: ShareInfo | null;
+};
+
+/** What `share/set` chooses for a file. */
+export type ShareSetParams = {
+  readonly kind: "file";
+  readonly sha256: string;
+  readonly thread: ThreadId;
+} | {
+  readonly asset: AssetId;
+  readonly kind: "item";
+  readonly project: ProjectId;
+};
+
+/** A file's share; none where it is not shared. */
+export type ShareSetResult = {
+  readonly share?: ShareInfo | null;
+};
+
 export type SigninEndParams = Readonly<Record<string, never>>;
 
 export type SigninEndResult = Readonly<Record<string, never>>;
@@ -3610,6 +3682,8 @@ export interface Methods {
   readonly "secret/replace": { readonly params: SecretReplaceParams; readonly result: SecretReplaceResult };
   readonly "server/discover": { readonly params: ServerDiscoverParams; readonly result: ServerDiscoverResult };
   readonly "service/answer": { readonly params: ServiceAnswerParams; readonly result: ServiceAnswerResult };
+  readonly "share/get": { readonly params: ShareGetParams; readonly result: ShareGetResult };
+  readonly "share/set": { readonly params: ShareSetParams; readonly result: ShareSetResult };
   readonly "signin/end": { readonly params: SigninEndParams; readonly result: SigninEndResult };
   readonly "signin/end_others": { readonly params: SigninEndOthersParams; readonly result: SigninEndOthersResult };
   readonly "signin/link": { readonly params: SigninLinkParams; readonly result: SigninLinkResult };

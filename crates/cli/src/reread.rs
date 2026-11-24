@@ -205,6 +205,8 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         || start.origin != now.origin
         || start.acme != now.acme
         || start.forwarded != now.forwarded
+        || start.shares != now.shares
+        || start.report != now.report
         || start.router_floor != now.router_floor;
     if waits {
         tracing::warn!(
@@ -225,6 +227,8 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         router_floor: start.router_floor.clone(),
         signup: start.signup.clone(),
         forwarded: start.forwarded.clone(),
+        shares: start.shares.clone(),
+        report: start.report.clone(),
         unsandboxed: start.unsandboxed.clone(),
         ..now
     }

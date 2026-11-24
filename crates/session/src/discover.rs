@@ -67,6 +67,7 @@ where
             push: self.inner.push.is_some(),
             schedules: self.schedules_run(),
             connects: self.connects(caller),
+            shares: self.share_choices(caller),
         }))
     }
 }

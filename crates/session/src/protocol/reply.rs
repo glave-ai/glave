@@ -16,8 +16,8 @@ use super::{
     FilePreview, GoneFolder, Grouping, InviteInfo, LibraryItem, Logo, ModelInfo, OrganizationInfo,
     OrganizationLook, PasskeySummary, Permissions, PersonInfo, PlanInfo, ProjectFolder,
     ProviderInfo, PushInfo, ReplySources, ScheduleInfo, SearchInfo, SecretInfo, Shades,
-    ShownInvite, SignInLink, SignInWay, SpaceCredits, TaskInfo, ThreadChanges, ThreadSteps, Told,
-    TrustAsk, TurnFiles, WatchEnd,
+    ShareChoice, ShareInfo, ShownInvite, SignInLink, SignInWay, SpaceCredits, TaskInfo,
+    ThreadChanges, ThreadSteps, Told, TrustAsk, TurnFiles, WatchEnd,
 };
 
 mod listening;
@@ -112,6 +112,10 @@ pub struct ServerInfo {
     /// connect none of it.
     #[serde(default, skip_serializing_if = "Connects::is_none")]
     pub connects: Connects,
+    /// Who besides themselves the caller may share a file with here (`share/set`): none where
+    /// the server has no share domain, so a client offers Share only where it names some.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shares: Vec<ShareChoice>,
 }
 
 /// What a caller may connect of their own on a server beside model accounts
@@ -589,6 +593,12 @@ pub enum Reply {
     /// A file a thread made, as a person previews it.
     #[schemars(title = "FilePreview")]
     FilePreview { preview: FilePreview },
+    /// A file's share; none where it is not shared.
+    #[schemars(title = "Share")]
+    Share {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        share: Option<ShareInfo>,
+    },
     /// A thread's turns in steps.
     #[schemars(title = "Steps")]
     Steps { steps: ThreadSteps },

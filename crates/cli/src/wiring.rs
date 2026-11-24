@@ -199,6 +199,13 @@ pub(crate) async fn wire(
         origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         signup: choices.signup.as_ref().is_some_and(|signup| signup.value),
         forwarded: choices.forwarded.as_ref().map(|forwarded| forwarded.value),
+        shares: choices
+            .shares
+            .as_ref()
+            .map(|shares| glave_session::ShareDomain {
+                origin: shares.value.clone(),
+                report: choices.report.as_ref().map(|report| report.value.clone()),
+            }),
         leases: Some(store.leases()),
         awake: crate::awake::for_server(args, choices, &processes),
         worktrees: Some(Arc::new(OnThisMachine(

@@ -37,6 +37,7 @@ pub(crate) mod remembering;
 pub(crate) mod search;
 pub(crate) mod secrets;
 pub(crate) mod service;
+pub(crate) mod share;
 pub(crate) mod signup;
 pub(crate) mod standing;
 pub(crate) mod task;
@@ -99,6 +100,7 @@ pub use service::{
     AddedFile, ServiceAdds, ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField,
     ServiceFieldKind, ServiceOption, ServiceOutcome, misfit,
 };
+pub use share::{Audience, SharePlaced, ShareSet, ShareStopped, ShareUnplaced, SharedFrom};
 pub use signup::{MailAsked, SignupFinished, SignupStarted};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
 pub use task::{

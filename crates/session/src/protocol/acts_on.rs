@@ -4,7 +4,7 @@
 use glave_event::ThreadId;
 use glave_ports::ProjectId;
 
-use super::Request;
+use super::{Request, ShareOf, ShareSetting};
 
 impl Request {
     /// The thread a request acts on, when it names one: whose project decides whether the
@@ -45,7 +45,17 @@ impl Request {
             | Self::TerminalWrite { thread, .. }
             | Self::TerminalRead { thread, .. }
             | Self::TerminalResize { thread, .. }
-            | Self::TerminalClose { thread, .. } => Some(*thread),
+            | Self::TerminalClose { thread, .. }
+            | Self::ShareGet {
+                of: ShareOf::File { thread, .. },
+            }
+            | Self::ShareSet {
+                set:
+                    ShareSetting {
+                        of: ShareOf::File { thread, .. },
+                        ..
+                    },
+            } => Some(*thread),
             _ => None,
         }
     }

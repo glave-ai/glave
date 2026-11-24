@@ -35,8 +35,10 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
             | Reply::Connector { .. }
             | Reply::Files { .. }
             | Reply::FilePreview { .. }
+            | Reply::Share { share: Some(_) }
             | Reply::Schedule { .. },
         ) => true,
+        Ok(Reply::Library { items }) => items.iter().any(|item| item.shared.is_some()),
         Ok(Reply::Search {
             search: SearchInfo::Chosen { detail, .. },
         }) => detail.translatable(),
@@ -128,6 +130,12 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Changes { changes }) => changes.note.translate(language),
+        Ok(Reply::Share { share: Some(share) }) => share.said.translate(language),
+        Ok(Reply::Library { items }) => {
+            for told in items.iter_mut().filter_map(|item| item.shared.as_mut()) {
+                told.translate(language);
+            }
+        }
         Ok(reply @ (Reply::Files { .. } | Reply::FilePreview { .. })) => made_in(reply, language),
         Ok(Reply::Commands { commands, .. }) => commands_in(commands, language),
         Ok(Reply::Passkeys {
@@ -170,7 +178,8 @@ fn made_in(reply: &mut Reply, language: Language) {
                 for file in &mut turn.files {
                     file.kept.translate(language);
                     file.sentence.translate(language);
-                    for told in [&mut file.parts, &mut file.unread].into_iter().flatten() {
+                    let told = [&mut file.parts, &mut file.unread, &mut file.shared];
+                    for told in told.into_iter().flatten() {
                         told.translate(language);
                     }
                 }

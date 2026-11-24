@@ -212,6 +212,8 @@ pub(crate) struct Setup {
     pub origin: Option<glave_ports::host::PublicOrigin>,
     /// Whether it takes sign-ups.
     pub signup: bool,
+    /// Where the files people share are served; with none, nothing is shared.
+    pub shares: Option<glave_session::ShareDomain>,
     /// How many addresses the proxies in front of it add to `X-Forwarded-For`, if it says.
     pub forwarded: Option<std::num::NonZeroU8>,
     /// What keeps its computer awake while work runs; with none, nothing does.
@@ -310,6 +312,7 @@ impl Setup {
             ready_to_push: true,
             origin: None,
             signup: false,
+            shares: None,
             forwarded: None,
             awake: None,
             release: None,
@@ -461,6 +464,7 @@ impl Setup {
             push: self.push,
             origin: self.origin,
             signup: self.signup,
+            shares: self.shares,
             forwarded: self.forwarded,
             leases: self.leases,
             tools: self.tools,

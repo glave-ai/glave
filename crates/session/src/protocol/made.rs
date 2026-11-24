@@ -38,6 +38,10 @@ pub struct MadeFile {
     pub unread: Option<Told>,
     /// What was made, in one line: "Made a spreadsheet: Trip budget (2 sheets)".
     pub sentence: Told,
+    /// Who it is shared with, in a sentence, where it is shared: "Shared with 2 people", which
+    /// a card shows in place of where it is kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared: Option<Told>,
 }
 
 /// The files one turn made, in path order, by the `seq` of its `turn.started`.

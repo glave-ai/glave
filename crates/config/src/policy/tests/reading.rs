@@ -684,3 +684,42 @@ fn the_proxies_in_front_are_the_servers_own_file_s_to_name_and_never_none() {
         "no proxies is no setting"
     );
 }
+
+#[test]
+fn the_share_domain_is_apart_from_glave_s_own_name() {
+    let dir = scratch("shares");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    assert_eq!(load_all(&locations, None).unwrap().choices.shares, None);
+    let file = |shares: &str| {
+        format!("[serve]\norigin = \"https://glave.example.com\"\nshares = \"{shares}\"\n")
+    };
+    std::fs::write(home.join("config.toml"), file("https://share.example.net")).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let shares = loaded.choices.shares.map(|chosen| chosen.value);
+    assert_eq!(
+        shares.as_ref().map(|shares| shares.as_str()),
+        Some("https://share.example.net")
+    );
+    for refused in [
+        "https://glave.example.com",
+        "https://share.glave.example.com",
+        "share.example.net",
+        "https://share.example.net/files",
+    ] {
+        std::fs::write(home.join("config.toml"), file(refused)).unwrap();
+        assert!(load_all(&locations, None).is_err(), "{refused}");
+    }
+    // Every name under `localhost` is a site of its own, so people sharing this computer try it.
+    let here = "[serve]\norigin = \"http://localhost\"\nshares = \"http://localhost\"\n";
+    std::fs::write(home.join("config.toml"), here).unwrap();
+    assert!(load_all(&locations, None).unwrap().choices.shares.is_some());
+    let report = "[serve]\norigin = \"https://glave.example.com\"\nreport = \"Abuse <a@b.c>\"\n";
+    std::fs::write(home.join("config.toml"), report).unwrap();
+    assert!(
+        load_all(&locations, None).is_err(),
+        "a report goes to an address alone"
+    );
+}

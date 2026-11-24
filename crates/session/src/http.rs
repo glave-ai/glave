@@ -18,6 +18,7 @@
 mod body;
 mod hosts;
 mod listen;
+mod shared;
 mod site;
 
 pub(crate) use self::body::KEEP_ALIVE;
@@ -147,7 +148,14 @@ where
                 let names = hosts.as_ref().as_ref();
                 let foreign = names.is_some_and(|hosts| !hosts.allow(request.headers()));
                 let door = door(names, request.headers(), peer);
+                let shared = shared_id(&server, request.headers());
                 async move {
+                    // A share's own name answers its share and nothing of glave's.
+                    if let Some(id) = shared {
+                        let (method, path) = (request.method(), request.uri().path());
+                        let headers = request.headers();
+                        return Ok(shared::answer(&server, &id, method, path, headers).await);
+                    }
                     if foreign {
                         return Ok::<_, Infallible>(plain(StatusCode::FORBIDDEN));
                     }
@@ -375,6 +383,13 @@ where
         // watch ends.
         None => accepted(),
     }
+}
+
+/// The id of the share whose own name a request with `headers` came to, where the server
+/// shares files at all.
+fn shared_id<P, L, B>(server: &Server<P, L, B>, headers: &HeaderMap) -> Option<String> {
+    let host = headers.get(header::HOST)?.to_str().ok()?;
+    server.inner.shares.as_ref()?.id_in(host).map(str::to_owned)
 }
 
 /// Whether `method` reads a page rather than calling the API.

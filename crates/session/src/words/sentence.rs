@@ -577,6 +577,20 @@ sentences! {
     MadeTooMany = "made-too-many"
         "This folder has too many files to look over, so what was made isn't shown",
 
+    // Sharing a file at a link of its own, and the page its link opens.
+    SharedPeople { people: u64 } = "shared-people"
+        "Shared with { $people ->\n    [1] 1 person\n   *[other] { $people } people\n }",
+    SharedAnyone = "shared-anyone" "Shared with anyone who has the link",
+    NoShares = "no-shares" "This server doesn't share files",
+    ShareNoPeople = "share-no-people" "This server can't share with specific people",
+    TooManyShares { most: u64 } = "too-many-shares"
+        "This server already shares { $most } files: stop sharing one to share another",
+    PageDownload = "page-download" "Download",
+    PageShared = "page-shared" "Shared with Glave",
+    PageReport = "page-report" "Report this page",
+    LinkGone = "link-gone"
+        "This link doesn't work: it may have been stopped. Ask whoever sent it for a new one.",
+
     // What a thread changed in files.
     ChangesLeftOut = "changes-left-out"
         "Changes made by commands or other tools are not listed.",

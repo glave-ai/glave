@@ -31,6 +31,7 @@ mod reply;
 mod request;
 mod secrets;
 mod settings;
+mod shares;
 mod sources;
 mod steps;
 mod tasks;

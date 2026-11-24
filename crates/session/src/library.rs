@@ -8,7 +8,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use glave_event::{
-    AssetId, At, Body, LibraryKept, LibraryRemoved, Payload as _, Principal, ThreadId, decode,
+    AssetId, At, Body, LibraryKept, LibraryRemoved, Payload as _, Principal, SharedFrom, ThreadId,
+    decode,
 };
 use glave_ports::stream::{Reserved, catch_up};
 use glave_ports::{
@@ -17,7 +18,7 @@ use glave_ports::{
 
 use crate::files::not_here;
 use crate::projects::MOST_PROJECTS;
-use crate::protocol::{ApiError, LibraryChat, LibraryItem, Reply};
+use crate::protocol::{ApiError, LibraryChat, LibraryItem, Reply, Told};
 use crate::server::Server;
 
 /// The most items `library/list` answers with, newest first.
@@ -68,7 +69,7 @@ where
 
     /// The item `asset` of the Library of `project`, when `caller` owns it, and its scope; a
     /// project they don't own is "no project", as one that does not exist.
-    async fn item(
+    pub(crate) async fn item(
         &self,
         caller: &Caller,
         project: ProjectId,
@@ -92,6 +93,7 @@ where
         found.sort_by_key(|(_, at, kept)| std::cmp::Reverse((*at, kept.asset)));
         found.truncate(MOST_ITEMS);
         let mut chats: HashMap<ThreadId, Option<LibraryChat>> = HashMap::new();
+        let mut shared: HashMap<Scope, HashMap<SharedFrom, Told>> = HashMap::new();
         let mut items = Vec::with_capacity(found.len());
         for (scope, made_at, kept) in found {
             let chat = if let Some(chat) = chats.get(&kept.thread) {
@@ -101,6 +103,11 @@ where
                 chats.insert(kept.thread, chat.clone());
                 chat
             };
+            if !shared.contains_key(&scope) {
+                shared.insert(scope, self.shared_sentences(&scope).await?);
+            }
+            let from = SharedFrom::Item { asset: kept.asset };
+            let said = shared.get(&scope).and_then(|said| said.get(&from)).cloned();
             items.push(LibraryItem {
                 asset: kept.asset,
                 kind: kept.kind,
@@ -111,6 +118,7 @@ where
                 project: scope.project(),
                 made_at,
                 chat,
+                shared: said,
             });
         }
         Ok(Reply::Library { items })

@@ -185,6 +185,46 @@
       ],
       "type": "object"
     },
+    "Audience": {
+      "description": "Who may open a share besides its owner.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Anyone with the link, without signing in.",
+          "properties": {
+            "kind": {
+              "const": "anyone",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Only these addresses, each proved with a code sent there.",
+          "properties": {
+            "kind": {
+              "const": "people",
+              "type": "string"
+            },
+            "people": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "people"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "AwakeInfo": {
       "description": "Whether this server keeps its computer from sleeping on its own while a turn, task or\nschedule runs (`specs/one-server.md`, owner decision 10).",
       "oneOf": [
@@ -2048,6 +2088,13 @@
         "project": {
           "$ref": "#/$defs/ProjectId",
           "description": "The project it was made in, the person's Chats among them."
+        },
+        "shared": {
+          "description": "Who it is shared with, in a sentence, where it is shared: \"Shared with anyone who has\nthe link\".",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -2211,6 +2258,13 @@
         },
         "sha256": {
           "description": "Its content's SHA-256, which `file/read` and `file/preview` read it by; absent when it\nwas not kept.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shared": {
+          "description": "Who it is shared with, in a sentence, where it is shared: \"Shared with 2 people\", which\na card shows in place of where it is kept.",
           "type": [
             "string",
             "null"
@@ -3933,6 +3987,13 @@
           "description": "Whether schedules run here (`schedule/*`), so a client offers them only where they do:\na server on its store fires them, and policy lets the caller keep one.",
           "type": "boolean"
         },
+        "shares": {
+          "description": "Who besides themselves the caller may share a file with here (`share/set`): none where\nthe server has no share domain, so a client offers Share only where it names some.",
+          "items": {
+            "$ref": "#/$defs/ShareChoice"
+          },
+          "type": "array"
+        },
         "signin": {
           "description": "How a browser signs in to it; none where no browser does, as over stdio. A passkey: at a\npublic origin always, a setup link making the first; on this computer once one is made.",
           "items": {
@@ -4081,6 +4142,54 @@
       "required": [
         "light",
         "dark"
+      ],
+      "type": "object"
+    },
+    "ShareChoice": {
+      "description": "Who besides the caller a server lets them share with, as `server/discover` says.",
+      "oneOf": [
+        {
+          "const": "people",
+          "description": "Specific people, by email, each proving it with a code sent there.",
+          "type": "string"
+        },
+        {
+          "const": "anyone",
+          "description": "Anyone with the link.",
+          "type": "string"
+        }
+      ]
+    },
+    "ShareInfo": {
+      "description": "A file shared at a link of its own.",
+      "properties": {
+        "audience": {
+          "$ref": "#/$defs/Audience",
+          "description": "Who besides its owner may open it."
+        },
+        "link": {
+          "description": "Its link, the one address it is served at.",
+          "type": "string"
+        },
+        "said": {
+          "description": "Who may open it, in a sentence: \"Shared with 2 people\".",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "The content of the version it holds, which a client compares with a newer card's.",
+          "type": "string"
+        },
+        "shared_at": {
+          "$ref": "#/$defs/At",
+          "description": "When it was last shared, changed or moved to a newer version."
+        }
+      },
+      "required": [
+        "audience",
+        "link",
+        "shared_at",
+        "sha256",
+        "said"
       ],
       "type": "object"
     },
@@ -8764,6 +8873,157 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "share/get": {
+      "params": {
+        "description": "A file the caller may share, named as `thread/files` or `library/list` gives it.",
+        "oneOf": [
+          {
+            "description": "A file one of `thread`'s turns made, by the content `thread/files` gives it: the version\na new share holds.",
+            "properties": {
+              "kind": {
+                "const": "file",
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "thread": {
+                "$ref": "#/$defs/ThreadId"
+              }
+            },
+            "required": [
+              "kind",
+              "thread",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "An item of the caller's Library.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/AssetId"
+              },
+              "kind": {
+                "const": "item",
+                "type": "string"
+              },
+              "project": {
+                "$ref": "#/$defs/ProjectId"
+              }
+            },
+            "required": [
+              "kind",
+              "project",
+              "asset"
+            ],
+            "type": "object"
+          }
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A file's share; none where it is not shared.",
+        "properties": {
+          "share": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ShareInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "streams": false
+    },
+    "share/set": {
+      "params": {
+        "description": "What `share/set` chooses for a file.",
+        "oneOf": [
+          {
+            "description": "A file one of `thread`'s turns made, by the content `thread/files` gives it: the version\na new share holds.",
+            "properties": {
+              "kind": {
+                "const": "file",
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "thread": {
+                "$ref": "#/$defs/ThreadId"
+              }
+            },
+            "required": [
+              "kind",
+              "thread",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "An item of the caller's Library.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/AssetId"
+              },
+              "kind": {
+                "const": "item",
+                "type": "string"
+              },
+              "project": {
+                "$ref": "#/$defs/ProjectId"
+              }
+            },
+            "required": [
+              "kind",
+              "project",
+              "asset"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "audience": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Audience"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who besides the caller may open it; none stops sharing it, and its link stops working."
+          },
+          "update": {
+            "description": "Whether a share of a made file moves to `of`'s version, keeping its link: else it holds\nthe version it was shared at.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "description": "A file's share; none where it is not shared.",
+        "properties": {
+          "share": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ShareInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "streams": false

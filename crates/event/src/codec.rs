@@ -21,14 +21,15 @@ use crate::payload::{
     ProviderConnected, ProviderRemoved, PushClaimed, PushKeyMade, PushSubscribed, PushUnsubscribed,
     RoleSet, ScheduleCreated, ScheduleDeleted, SchedulePaused, SchedulePlaced, ScheduleSkipped,
     ScheduleUnplaced, SearchSet, SecretAdded, SecretRemoved, ServiceAnswered, ServiceAsked,
-    SignupFinished, SignupStarted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
-    ThreadDeleted, ThreadForked, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
-    ToolCallRequested, ToolCallStarted, TrustDecided, TurnMade, TurnResult, TurnStarted,
-    WorkspaceBound, WorkspaceRemoved, ZoneSet, appearance, approval, awake, browser, catalog,
-    certificate, chosen, command, connection, connector, credential, credits, filters, fork,
-    grouping, hook, instructions, language, library, made, memory, message, model, passkey, people,
-    plan, project, provider, push, remembering, search, secrets, service, signup, standing, task,
-    thread, tool, trust, turn, workspace, zone,
+    SharePlaced, ShareSet, ShareStopped, ShareUnplaced, SignupFinished, SignupStarted, TaskEnded,
+    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadForked, ThreadRenamed,
+    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, ToolCallStarted,
+    TrustDecided, TurnMade, TurnResult, TurnStarted, WorkspaceBound, WorkspaceRemoved, ZoneSet,
+    appearance, approval, awake, browser, catalog, certificate, chosen, command, connection,
+    connector, credential, credits, filters, fork, grouping, hook, instructions, language, library,
+    made, memory, message, model, passkey, people, plan, project, provider, push, remembering,
+    search, secrets, service, share, signup, standing, task, thread, tool, trust, turn, workspace,
+    zone,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -153,6 +154,10 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (push::CLAIMED, 1),
     (library::KEPT, 1),
     (library::REMOVED, 1),
+    (share::SET, 1),
+    (share::STOPPED, 1),
+    (share::PLACED, 1),
+    (share::UNPLACED, 1),
     (made::TURN_MADE, 1),
     (made::TURN_MADE, 2),
 ];
@@ -247,6 +252,10 @@ pub enum Body {
     PushClaimed(PushClaimed),
     LibraryKept(LibraryKept),
     LibraryRemoved(LibraryRemoved),
+    ShareSet(ShareSet),
+    ShareStopped(ShareStopped),
+    SharePlaced(SharePlaced),
+    ShareUnplaced(ShareUnplaced),
     TurnMade(TurnMade),
     PersonJoined(PersonJoined),
     RoleSet(RoleSet),
@@ -476,6 +485,10 @@ impl Event {
             Body::PushClaimed(payload) => encode(header, payload),
             Body::LibraryKept(payload) => encode(header, payload),
             Body::LibraryRemoved(payload) => encode(header, payload),
+            Body::ShareSet(payload) => encode(header, payload),
+            Body::ShareStopped(payload) => encode(header, payload),
+            Body::SharePlaced(payload) => encode(header, payload),
+            Body::ShareUnplaced(payload) => encode(header, payload),
             Body::TurnMade(payload) => encode(header, payload),
             Body::PersonJoined(payload) => encode(header, payload),
             Body::RoleSet(payload) => encode(header, payload),
@@ -638,7 +651,7 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
 type Decoder = fn(&str, u32, &RawValue) -> Option<serde_json::Result<Body>>;
 
 /// The decoders of the ledgers whose events are not named one by one above.
-const LEDGERS: [Decoder; 8] = [
+const LEDGERS: [Decoder; 9] = [
     people::decode,
     signup::decode,
     credits::decode,
@@ -646,6 +659,7 @@ const LEDGERS: [Decoder; 8] = [
     secrets::decode,
     push::decode,
     library::decode,
+    share::decode,
     made::decode,
 ];
 

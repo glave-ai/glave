@@ -105,6 +105,10 @@ pub struct Choices {
     /// How many addresses the proxies in front of glave add to `X-Forwarded-For`
     /// (`[serve] forwarded`).
     pub forwarded: Option<Chosen<std::num::NonZeroU8>>,
+    /// The share domain, where the files people share are served (`[serve] shares`).
+    pub shares: Option<Chosen<PublicOrigin>>,
+    /// Where reports of a shared page go (`[serve] report`).
+    pub report: Option<Chosen<String>>,
     /// Whether organizations pay for their models from credits (`[credits]`), and with what
     /// monthly limit.
     pub credits: Option<Chosen<CreditsFile>>,
@@ -183,6 +187,10 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         email: nearest(layers, "email", |file| file.email.clone()),
         signup: nearest(layers, "serve", |file| file.serve.as_ref()?.signup),
         forwarded: nearest(layers, "serve", |file| file.serve.as_ref()?.forwarded),
+        shares: nearest(layers, "serve", |file| file.serve.as_ref()?.share_origin()),
+        report: nearest(layers, "serve", |file| {
+            file.serve.as_ref()?.report_address()
+        }),
         credits: nearest(layers, "credits", |file| file.credits.clone()),
         router_floor: nearest(layers, "router_floor", |file| file.router_floor.clone()),
         store: nearest(layers, "store", |file| {

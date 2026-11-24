@@ -13,7 +13,8 @@ use super::methods::methods;
 use super::params::{given, is_false};
 use super::{
     Accent, Answer, AttachedFile, Color, ConnectorCategoryId, ConnectorTagId, Filters, Grouping,
-    LinkKind, Meta, NewFolder, Permissions, ProviderKind, PushSubscription, Show, TrustChoice,
+    LinkKind, Meta, NewFolder, Permissions, ProviderKind, PushSubscription, ShareOf, ShareSetting,
+    Show, TrustChoice,
 };
 
 methods! {
@@ -41,8 +42,7 @@ methods! {
     /// tag (`en`, `en-GB`); with none, their client's (`Accept-Language`) again. Refused for a
     /// language glave does not write in.
     "language/set" => LanguageSet {
-        #[serde(default)]
-        language: Option<String>,
+        #[serde(default)] language: Option<String>,
     } -> [Language],
     /// Gives the caller's time zone, by its IANA name (`Europe/Lisbon`), as their browser says
     /// it: their schedules repeat on its clocks. Refused for a zone glave doesn't know.
@@ -462,6 +462,10 @@ methods! {
     /// Takes an item out of the caller's Library, letting go of its file first; the chat it was
     /// made in keeps its own copy.
     "library/remove" => LibraryRemove { project: ProjectId, asset: AssetId } -> [Done],
+    /// A file's share, where the caller shares it.
+    "share/get" => ShareGet { #[serde(flatten)] of: ShareOf } -> [Share],
+    /// Shares a file the caller made at a link of its own, changes who may open it, or stops it.
+    "share/set" => ShareSet { #[serde(flatten)] set: ShareSetting } -> [Share],
     "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
     "approval/decide" => ApprovalDecide {
         thread: ThreadId,
@@ -733,12 +737,9 @@ methods! {
     /// and tags they have. Given a company, a category or a tag, only those that have it, and
     /// only those that have all that are given.
     "connector/list" => ConnectorList {
-        #[serde(default)]
-        company: Option<String>,
-        #[serde(default)]
-        category: Option<ConnectorCategoryId>,
-        #[serde(default)]
-        tag: Option<ConnectorTagId>,
+        #[serde(default)] company: Option<String>,
+        #[serde(default)] category: Option<ConnectorCategoryId>,
+        #[serde(default)] tag: Option<ConnectorTagId>,
         /// Only those connected that the threads of this project use, the person's Chats
         /// among them.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -789,8 +790,7 @@ methods! {
     "search/get" => SearchGet {
         /// Also how much it searched this month, which reads the month's threads: for
         /// Settings, not for a client that only shows whether it is on.
-        #[serde(default)]
-        usage: bool,
+        #[serde(default)] usage: bool,
     } -> [Search],
     /// Turns web search on or off for the person: on, its server joins their own settings,
     /// `mcp.json` in glave's folder, and their threads may search from the next turn; off, it
