@@ -252,6 +252,7 @@ fn a_made_file_is_shared_as_it_was_until_moved_to_its_newer_version() {
             (moved.link.as_str(), &moved.sha256),
             (shared.link.as_str(), new)
         );
+        assert!(moved.shared_at >= shared.shared_at, "when it last changed");
     });
 }
 
