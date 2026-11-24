@@ -229,8 +229,8 @@ pub(super) fn apart(choices: &Choices) -> crate::Result<()> {
     let (Some(origin), Some(shares)) = (&choices.origin, &choices.shares) else {
         return Ok(());
     };
-    let (own, shared) = (site(origin.value.host()), site(shares.value.host()));
-    if own.is_some() && own == shared {
+    let (own, apart) = (site(origin.value.host()), site(shares.value.host()));
+    if own.is_some() && own == apart {
         crate::error::refuse!(
             "shares = {:?} is on glave's own site, {:?}, where a shared page could reach \
              glave's sign-in: name a domain apart, such as https://share.example.net",
