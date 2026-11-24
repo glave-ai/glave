@@ -15,7 +15,7 @@ mod web;
 pub use brings::Brings;
 pub use hooks::{HOOK_TIMEOUT_SECS, Hook, HookError, Hooks, point_name};
 pub use judge::Judge;
-pub use prices::{LongPrompt, PriceEntry, PriceError};
+pub use prices::{LongPrompt, PriceEntry, PriceError, check_prices};
 pub use protections::Protections;
 pub use unquoted::unquoted;
 pub use web::{HostRule, WebPolicy};

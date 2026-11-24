@@ -85,7 +85,7 @@ fn a_model_is_priced_once_at_a_service() {
     let twice = format!("{}\n{}", entry("s", "m", priced), entry("s", "m", priced));
     assert!(matches!(
         PriceList::read(&twice),
-        Err(PriceListError::Twice { .. })
+        Err(PriceListError::Unpriced(error)) if error.reason == "is written twice"
     ));
     let apart = format!("{}\n{}", entry("s", "m", priced), entry("t", "m", priced));
     assert_eq!(PriceList::read(&apart).unwrap().entries.len(), 2);
@@ -146,6 +146,67 @@ fn the_list_wins_over_a_catalog_and_leaves_what_it_does_not_name() {
     );
     let unknown = Target::new(handle, "anthropic", "claude-unknown-1");
     assert!(list.priced(unknown).price.is_none(), "no price is made up");
+}
+
+/// The payer's own prices, as their settings write them.
+fn payer(text: &str) -> Vec<PriceEntry> {
+    toml::from_str::<File>(text).unwrap().prices
+}
+
+#[test]
+fn the_payer_s_prices_win_over_the_list_and_add_what_it_lacks() {
+    let own = [
+        entry(
+            "anthropic",
+            "claude-haiku-5-5",
+            "input = \"0.01\"\noutput = \"0.02\"",
+        ),
+        entry(
+            "hope.example.com",
+            "hope",
+            "input = \"0.03\"\noutput = \"0.04\"",
+        ),
+    ]
+    .join("\n");
+    let list = PriceList::built_in().unwrap();
+    let under = list.clone().under(payer(&own)).unwrap();
+    let haiku = under.price("anthropic", "claude-haiku-5-5").unwrap();
+    assert_eq!(haiku.list, "the server's settings");
+    assert_eq!(haiku.input_per_mtok, Nanos::new(10_000_000));
+    let glave = list.price("anthropic", "claude-haiku-5-5").unwrap();
+    assert_eq!(glave.list, list.name, "the list alone, its own");
+    let hope = under.price("hope.example.com", "hope").unwrap();
+    assert_eq!(
+        hope.output_per_mtok,
+        Nanos::new(40_000_000),
+        "one no list names"
+    );
+    assert!(list.price("hope.example.com", "hope").is_none());
+    let opus = under.price("anthropic", "claude-opus-5-5");
+    assert!(opus.is_some());
+    assert_eq!(
+        opus,
+        list.price("anthropic", "claude-opus-5-5"),
+        "the rest, the list's"
+    );
+    assert_eq!(list.clone().under(Vec::new()).unwrap(), list);
+}
+
+#[test]
+fn the_payer_s_prices_are_checked_as_the_list_s_are() {
+    let list = PriceList::built_in().unwrap();
+    let twice = entry("s", "m", "input = \"1\"\noutput = \"2\"").repeat(2);
+    let unpriced = entry("s", "m", "input = \"1\"");
+    for (text, reason) in [
+        (twice, "is written twice"),
+        (unpriced, "has no price for input and for what it makes"),
+    ] {
+        let refused = list.clone().under(payer(&text));
+        assert!(
+            matches!(&refused, Err(PriceListError::Unpriced(error)) if error.reason == reason),
+            "{refused:?}"
+        );
+    }
 }
 
 #[test]

@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use glave_event::Nanos;
-use glave_ports::settings::{PriceEntry, PriceError};
+use glave_ports::settings::{PriceEntry, PriceError, check_prices};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -17,15 +17,17 @@ use crate::target::Target;
 /// The list, as glave was built with it.
 const BUILT_IN: &str = include_str!("../prices.toml");
 
-/// Why a price list could not be read: only one glave was built with, which its tests read.
+/// What a price the payer's own settings set is recorded as.
+const PAYER: &str = "the server's settings";
+
+/// Why a price list could not be read: one glave was built with, which its tests read, or the
+/// payer's own prices, which their settings checked as they were read.
 #[derive(Debug, Error)]
 pub enum PriceListError {
     #[error("glave's price list does not read: {0}")]
     Unreadable(String),
     #[error(transparent)]
     Unpriced(#[from] PriceError),
-    #[error("glave's price list names {model:?} at {service:?} twice")]
-    Twice { service: String, model: String },
 }
 
 #[derive(Deserialize)]
@@ -41,6 +43,8 @@ pub struct PriceList {
     name: String,
     /// Each entry, by its service and model.
     entries: BTreeMap<(String, String), PriceEntry>,
+    /// The payer's own prices, which come before this list's.
+    payer: Option<Box<PriceList>>,
 }
 
 impl PriceList {
@@ -49,37 +53,62 @@ impl PriceList {
         Self::read(BUILT_IN)
     }
 
+    /// This list under the payer's own `prices` (`[[prices]]` in their settings): each
+    /// replaces this list's for its service and model, or adds one, recorded as the server's
+    /// settings.
+    pub fn under(self, prices: Vec<PriceEntry>) -> Result<Self, PriceListError> {
+        if prices.is_empty() {
+            return Ok(self);
+        }
+        let payer = Self::of(PAYER.to_owned(), prices)?;
+        Ok(Self {
+            payer: Some(Box::new(payer)),
+            ..self
+        })
+    }
+
     /// The list `text` writes: each entry checked, none twice.
     fn read(text: &str) -> Result<Self, PriceListError> {
         let file: File =
             toml::from_str(text).map_err(|error| PriceListError::Unreadable(error.to_string()))?;
         let latest = file.prices.iter().map(|entry| entry.date).max();
-        let mut entries = BTreeMap::new();
-        for entry in file.prices {
-            entry.check()?;
-            let (service, model) = (entry.service.clone(), entry.model.clone());
-            if entries.contains_key(&(service.clone(), model.clone())) {
-                return Err(PriceListError::Twice { service, model });
-            }
-            entries.insert((service, model), entry);
-        }
+        let name = latest.map_or_else(|| "glave".to_owned(), |date| format!("glave {date}"));
+        Self::of(name, file.prices)
+    }
+
+    /// The list `name` of `prices`: each checked, none twice.
+    fn of(name: String, prices: Vec<PriceEntry>) -> Result<Self, PriceListError> {
+        check_prices(&prices)?;
+        let entries = prices
+            .into_iter()
+            .map(|entry| ((entry.service.clone(), entry.model.clone()), entry))
+            .collect();
         Ok(Self {
-            name: latest.map_or_else(|| "glave".to_owned(), |date| format!("glave {date}")),
+            name,
             entries,
+            payer: None,
         })
     }
 
-    /// The price of `model` at `service`, if the list names it: by its id, else by the id
-    /// without the snapshot date at its end (Anthropic's `claude-haiku-4-5-20251001`, OpenAI's
-    /// `gpt-5.2-2025-12-11`), which a maker gives a model that also goes by the id without it.
+    /// The price of `model` at `service`, if the payer's prices or the list name it: by its
+    /// id, else by the id without the snapshot date at its end (Anthropic's
+    /// `claude-haiku-4-5-20251001`, OpenAI's `gpt-5.2-2025-12-11`), which a maker gives a model
+    /// that also goes by the id without it.
     pub(crate) fn price(&self, service: &str, model: &str) -> Option<Price> {
+        if let Some(price) = self
+            .payer
+            .as_ref()
+            .and_then(|payer| payer.price(service, model))
+        {
+            return Some(price);
+        }
         let at = |model: &str| self.entries.get(&(service.to_owned(), model.to_owned()));
         let entry = at(model).or_else(|| at(undated(model)?))?;
         Some(self.priced_entry(entry))
     }
 
-    /// `target` at the list's price where the list names its model at its service, which wins
-    /// over its catalog's; else as it was.
+    /// `target` at the payer's price, else the list's, where either names its model at its
+    /// service, which wins over its catalog's; else as it was.
     #[must_use]
     pub fn priced(&self, target: Target) -> Target {
         match self.price(&target.provider, &target.model) {

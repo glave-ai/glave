@@ -105,6 +105,23 @@ impl PriceEntry {
     }
 }
 
+/// Whether each of `entries` prices something, and none prices a model at a service another
+/// already does: what a price list, glave's or a payer's own `[[prices]]`, must be.
+pub fn check_prices(entries: &[PriceEntry]) -> Result<(), PriceError> {
+    let mut seen = std::collections::BTreeSet::new();
+    for entry in entries {
+        entry.check()?;
+        if !seen.insert((entry.service.as_str(), entry.model.as_str())) {
+            return Err(PriceError {
+                service: entry.service.clone(),
+                model: entry.model.clone(),
+                reason: "is written twice",
+            });
+        }
+    }
+    Ok(())
+}
+
 /// US dollars as decimal text, such as `"0.125"`, read exactly: never below nothing.
 fn dollars<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Nanos>, D::Error> {
     required_dollars(deserializer).map(Some)

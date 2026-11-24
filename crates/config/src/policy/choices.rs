@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use glave_event::Permissions;
 use glave_ports::host::PublicOrigin;
 use glave_ports::memories::ProjectMemory;
-use glave_ports::settings::Judge;
+use glave_ports::settings::{Judge, PriceEntry};
 
 use crate::policy::files::{
     ConfigFile, CreditsFile, EmailFile, GithubFile, ModelEntry, RouterFloorFile,
@@ -110,6 +110,8 @@ pub struct Choices {
     pub credits: Option<Chosen<CreditsFile>>,
     /// What this server allows among a router's providers for everyone (`[router_floor]`).
     pub router_floor: Option<Chosen<RouterFloorFile>>,
+    /// The prices of whoever pays the provider (`[[prices]]`), before glave's own list.
+    pub prices: Option<Chosen<Vec<PriceEntry>>>,
 }
 
 /// One level choices come from.
@@ -185,6 +187,7 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         forwarded: nearest(layers, "serve", |file| file.serve.as_ref()?.forwarded),
         credits: nearest(layers, "credits", |file| file.credits.clone()),
         router_floor: nearest(layers, "router_floor", |file| file.router_floor.clone()),
+        prices: nearest(layers, "prices", |file| file.prices.clone()),
         store: nearest(layers, "store", |file| {
             let url = file.store.as_ref()?.url.as_ref()?;
             Some(url.trim().to_owned())

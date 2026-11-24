@@ -57,9 +57,12 @@ pub(crate) fn routing_if_router(target: Target, provider: &str, router: Router) 
     }
 }
 
-/// Which models a policy allows, and where the main and judge models were chosen.
+/// Which models a policy allows, where the main and judge models were chosen, and what they
+/// cost.
 pub(crate) struct Allowed<'a> {
     pub constraints: &'a Constraints,
+    /// The payer's own prices over glave's list, which win over a catalog's.
+    pub prices: &'a PriceList,
     /// Where the main model was chosen, when anyone chose it.
     pub main: Option<&'a Source>,
     pub judge: &'a Source,
@@ -83,8 +86,7 @@ pub(crate) fn gateway(
     let handle: Arc<dyn glave_gateway::Model> = Arc::new(provider);
     let name = &endpoint.provider.provider;
     let service = service_name(name);
-    // glave's own prices win over a catalog's, where it names the model at the service.
-    let prices = PriceList::built_in()?;
+    let prices = allowed.prices;
     // No catalog describes these: Claude among them reasons as Anthropic documents.
     let at = |model: &str| {
         let target = Target::new(Arc::clone(&handle), name.clone(), model).at_service(&service);
@@ -374,6 +376,7 @@ pub(crate) mod tests {
         let file = Source::File("/home/ada/.glave/config.toml".into());
         let allowed = Allowed {
             constraints,
+            prices: &PriceList::built_in()?,
             main: Some(&Source::Flag("--model")),
             judge: &Source::Env("GLAVE_JUDGE_MODEL"),
             models: &file,
@@ -418,6 +421,7 @@ pub(crate) mod tests {
         let constraints = Constraints::default();
         let allowed = Allowed {
             constraints: &constraints,
+            prices: &PriceList::built_in().unwrap(),
             main: None,
             judge: &Source::Default,
             models: &Source::Default,
@@ -454,6 +458,7 @@ pub(crate) mod tests {
         let constraints = Constraints::default();
         let allowed = Allowed {
             constraints: &constraints,
+            prices: &PriceList::built_in().unwrap(),
             main: None,
             judge: &Source::Default,
             models: &Source::Default,
@@ -464,6 +469,40 @@ pub(crate) mod tests {
         assert_eq!(price, Some(&free_here()), "its calls report $0.00");
         let elsewhere = built(None, &constraints).unwrap();
         assert_eq!(elsewhere.routes().targets(Purpose::Main)[0].price, None);
+    }
+
+    #[test]
+    fn the_payer_s_own_price_prices_a_model_nothing_else_does() {
+        let big = glave_ports::settings::PriceEntry {
+            service: "openrouter".into(),
+            model: "big".into(),
+            input: Some(Nanos::new(1_000_000_000)),
+            output: Some(Nanos::new(2_000_000_000)),
+            cache_read: None,
+            cache_write: None,
+            image_output: None,
+            per_request: None,
+            long: None,
+            date: jiff::civil::date(2026, 11, 24),
+            page: "https://example.com/pricing".into(),
+        };
+        let prices = PriceList::built_in().unwrap().under(vec![big]).unwrap();
+        let endpoint = endpoint();
+        let constraints = Constraints::default();
+        let allowed = Allowed {
+            constraints: &constraints,
+            prices: &prices,
+            main: None,
+            judge: &Source::Default,
+            models: &Source::Default,
+        };
+        let provider = Model::for_endpoint(&endpoint).unwrap();
+        let gateway = gateway(provider, &endpoint, None, &[], Vec::new(), &allowed).unwrap();
+        let price = gateway.routes().targets(Purpose::Main)[0].price.as_ref();
+        assert_eq!(
+            price.map(|p| p.list.as_str()),
+            Some("the server's settings")
+        );
     }
 
     #[test]
