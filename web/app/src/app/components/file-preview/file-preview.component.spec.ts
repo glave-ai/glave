@@ -58,6 +58,7 @@ describe('FilePreviewComponent', () => {
     Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => true });
     const fake = new FakeSession()
       .answer('server/discover', { ...SERVER, shares: ['anyone'] })
+      .answer('file/preview', { preview: { markdown: '| Item |' } })
       .answer('share/get', {});
     const fixture = await render(fake, BUDGET);
     const root = fixture.nativeElement as HTMLElement;
