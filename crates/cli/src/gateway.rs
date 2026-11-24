@@ -10,8 +10,10 @@
 
 use std::sync::{Arc, PoisonError, RwLock};
 
-use glave_event::{Currency, Filters, Nanos};
-use glave_gateway::{Credits, Filtering, Gateway, Price, Router, Routes, Target, WebSearch};
+use glave_event::{Filters, Nanos};
+use glave_gateway::{
+    Credits, Filtering, Gateway, Price, PriceList, Router, Routes, Target, WebSearch,
+};
 use glave_ports::{
     Completion, Delta, EndUsers, Failure, Made, MediaAsk, ModelProvider, ModelRequest,
     ProviderError, Purpose, SearchAsk, SearchResults,
@@ -32,13 +34,7 @@ use glave_session::protocol::ModelInfo;
 /// What a model on this computer costs: nothing, so its calls report $0.00 as any other's
 /// report their cost.
 fn free_here() -> Price {
-    Price {
-        list: "this computer".to_owned(),
-        currency: Currency::USD,
-        input_per_mtok: Nanos::ZERO,
-        cache_read_per_mtok: Nanos::ZERO,
-        output_per_mtok: Nanos::ZERO,
-    }
+    Price::per_mtok("this computer", Nanos::ZERO, Nanos::ZERO, Nanos::ZERO)
 }
 
 /// `target` at `endpoint`, priced at nothing when it runs on this computer and nothing else
@@ -87,9 +83,12 @@ pub(crate) fn gateway(
     let handle: Arc<dyn glave_gateway::Model> = Arc::new(provider);
     let name = &endpoint.provider.provider;
     let service = service_name(name);
+    // glave's own prices win over a catalog's, where it names the model at the service.
+    let prices = PriceList::built_in()?;
     // No catalog describes these: Claude among them reasons as Anthropic documents.
     let at = |model: &str| {
         let target = Target::new(Arc::clone(&handle), name.clone(), model).at_service(&service);
+        let target = prices.priced(target);
         // No catalog says who serves a configured model: the router finds out each time.
         let target = routing_if_router(target, name, Router::default());
         let target = free_if_here(target, endpoint);
@@ -123,6 +122,7 @@ pub(crate) fn gateway(
         if check_model(&target.name, &Source::Default, allowed.constraints).is_err() {
             continue;
         }
+        let target = prices.priced(target);
         if target.name == main.name {
             main = target;
         } else if target.same_model.as_ref() == Some(&same) || target.model == endpoint.model {
