@@ -32,7 +32,17 @@ pub(crate) fn domain() -> ShareDomain {
 
 /// A server sharing at [`domain`], whose model draws a fox, and the fox in its Library.
 async fn shared_fox(dir: &std::path::Path) -> (Tested, LibraryItem) {
+    fox_sending(dir, None).await
+}
+
+/// A server sharing at [`domain`] and sending email through `mail` where it is given, whose
+/// model draws a fox, and the fox in its Library.
+pub(crate) async fn fox_sending(
+    dir: &std::path::Path,
+    mail: Option<Arc<dyn glave_ports::Mailer>>,
+) -> (Tested, LibraryItem) {
     let mut setup = Setup::new(Vec::new());
+    setup.mail = mail;
     setup.model = Some(drawing(vec![
         answer(
             None,

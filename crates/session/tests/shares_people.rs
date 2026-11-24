@@ -13,7 +13,6 @@ use glave_ports::testing::Outbox;
 use glave_session::protocol::{
     ApiError, Reply, Request, ShareChoice, ShareInfo, ShareOf, ShareSetting, code,
 };
-use serde_json::json;
 
 use crate::support::issuer::fixed_clock;
 use crate::support::web::serve_with;
@@ -28,25 +27,11 @@ fn people(addresses: &[&str]) -> Audience {
 /// A server sharing at the tests' domain and sending email to `outbox`, and the fox its model
 /// drew, as sharing names it.
 async fn drawn_fox(dir: &std::path::Path, outbox: &Arc<Outbox>) -> (Tested, ShareOf) {
-    let mut setup = Setup::new(Vec::new());
-    setup.model = Some(drawing(vec![
-        answer(
-            None,
-            Some(("image_generate", json!({"prompt": "a fox at dawn"}))),
-        ),
-        answer(Some("Here it is."), None),
-    ]));
-    setup.shares = Some(crate::shares::domain());
-    setup.mail = Some(Arc::clone(outbox) as Arc<dyn Mailer>);
-    let (server, _) = setup.build(dir).await;
-    let thread = start(&server, false).await;
-    turn(&server, thread, "draw me a fox").await.unwrap();
-    let Ok(Reply::Library { items }) = server.request(Request::LibraryList {}).await else {
-        panic!("the Library");
-    };
+    let mail = Some(Arc::clone(outbox) as Arc<dyn Mailer>);
+    let (server, item) = crate::shares::fox_sending(dir, mail).await;
     let of = ShareOf::Item {
-        project: items[0].project,
-        asset: items[0].asset,
+        project: item.project,
+        asset: item.asset,
     };
     (server, of)
 }
