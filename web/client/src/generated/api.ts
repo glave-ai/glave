@@ -3139,7 +3139,7 @@ export type ShareGetResult = {
 } | Readonly<Record<string, never>>;
 
 /** What `share/set` chooses for a file. */
-export type ShareSetParams = {
+export type ShareSetParams = ({
   readonly kind: "file";
   readonly sha256: string;
   readonly thread: ThreadId;
@@ -3147,6 +3147,14 @@ export type ShareSetParams = {
   readonly asset: AssetId;
   readonly kind: "item";
   readonly project: ProjectId;
+}) & {
+  /** Who besides the caller may open it; none stops sharing it, and its link stops working. */
+  readonly audience?: Audience | null;
+  /**
+   * Whether a share of a made file moves to `of`'s version, keeping its link: else it holds
+   * the version it was shared at.
+   */
+  readonly update?: boolean;
 };
 
 export type ShareSetResult = {

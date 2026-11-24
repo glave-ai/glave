@@ -195,7 +195,13 @@ fn ty(schema: &Value, depth: usize) -> String {
     }
     for key in ["oneOf", "anyOf"] {
         if let Some(cases) = fields.get(key).and_then(Value::as_array) {
-            return union(cases.iter().map(|case| ty(case, depth)).collect());
+            let cases = union(cases.iter().map(|case| ty(case, depth)).collect());
+            // Fields beside the cases, as a flattened enum's struct has, hold in every case.
+            let beside = fields.get("properties").and_then(Value::as_object);
+            return match beside.filter(|beside| !beside.is_empty()) {
+                Some(_) => format!("({cases}) & {}", object_type(fields, depth)),
+                None => cases,
+            };
         }
     }
     if let Some([only]) = fields
@@ -327,6 +333,15 @@ mod tests {
             "{ readonly [key: string]: unknown }"
         );
         assert_eq!(ty(&json!(true), 0), "unknown");
+        // A flattened enum beside fields of its own: each case, and the fields in every one.
+        let flattened = json!({
+            "oneOf": [{"const": "a"}, {"const": "b"}],
+            "properties": {"update": {"type": "boolean"}}
+        });
+        assert_eq!(
+            ty(&flattened, 0),
+            "(\"a\" | \"b\") & {\n  readonly update?: boolean;\n}"
+        );
         assert_eq!(pascal("thread/start"), "ThreadStart");
         assert_eq!(pascal("turn/live"), "TurnLive");
     }
