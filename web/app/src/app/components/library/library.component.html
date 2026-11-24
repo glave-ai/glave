@@ -65,6 +65,9 @@
       <button glzButton variant="danger" data-testid="library-delete" (click)="askDelete()">
         {{ copy.delete }}
       </button>
+      @if (sharing()) {
+        <button glzButton data-testid="library-share" (click)="share()">{{ copy.share }}</button>
+      }
       @if (each.chat; as chat) {
         <a glzButton variant="primary" data-testid="library-go" [routerLink]="chat.link">{{
           copy.goToChat
@@ -82,3 +85,6 @@
   [(open)]="deleteOpen"
   (decided)="decided($event)"
 />
+@if (shareOf(); as of) {
+  <app-share-dialog [of]="of" [name]="shareName()" [(open)]="shareOpen" (changed)="shared()" />
+}

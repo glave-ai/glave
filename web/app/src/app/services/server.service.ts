@@ -72,6 +72,11 @@ export class ServerService {
   readonly modelAccounts = computed(() => this.info()?.model_accounts ?? false);
   /** Whether this glave sends email, as an invite's link: where it doesn't, no one is asked for an address. */
   readonly email = computed(() => this.info()?.email ?? false);
+  /**
+   * Whether the person may share a file here at a link of its own, as the server says: where
+   * it has no share domain, nothing offers Share.
+   */
+  readonly sharing = computed(() => (this.info()?.shares ?? []).length > 0);
   /** Whether schedules run here, as the server says: where they don't, nothing offers them. */
   readonly schedules = computed(() => this.info()?.schedules ?? false);
   /** Where people reach this glave from elsewhere, if they do, for links to it. */

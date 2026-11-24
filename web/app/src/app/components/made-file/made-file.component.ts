@@ -12,10 +12,13 @@ import type { AssetKind, MadeFile } from '@glave/client';
 import { GlzButtonComponent, GlzIconButtonComponent, GlzIconComponent } from '@glave/glaze';
 import { Download, File, FileSpreadsheet, FileText, FileType, Image, Presentation } from 'lucide';
 
-import { madeLine, whyNot } from '../../lib/made';
+import { madeLine, shareOf, whyNot } from '../../lib/made';
 import { FilesService } from '../../services/files.service';
+import { MadeFilesService } from '../../services/made-files.service';
+import { ServerService } from '../../services/server.service';
 import { ThreadPanelService } from '../../services/thread-panel.service';
 import { ThreadService } from '../../services/thread.service';
+import { ShareDialogComponent } from '../share-dialog/share-dialog.component';
 
 /** The mark of each kind of file. */
 const MARKS = {
@@ -41,7 +44,7 @@ const MARKS = {
  */
 @Component({
   selector: 'app-made-file',
-  imports: [GlzButtonComponent, GlzIconButtonComponent, GlzIconComponent],
+  imports: [GlzButtonComponent, GlzIconButtonComponent, GlzIconComponent, ShareDialogComponent],
   templateUrl: './made-file.component.html',
   styleUrl: './made-file.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -54,9 +57,12 @@ export class MadeFileComponent {
   private readonly panel = inject(ThreadPanelService);
   private readonly thread = inject(ThreadService);
   private readonly announcer = inject(LiveAnnouncer);
+  private readonly server = inject(ServerService);
+  private readonly made = inject(MadeFilesService);
 
   protected readonly copy = {
     open: $localize`:@@madeFile.open:Open`,
+    share: $localize`:@@madeFile.share:Share`,
   } as const;
   protected readonly icons = { download: Download } as const;
   protected readonly mark = computed(() => MARKS[this.file().kind]);
@@ -82,6 +88,17 @@ export class MadeFileComponent {
     () => this.failed() !== null || !this.kept() || this.file().unread != null,
   );
   protected readonly busy = computed(() => (this.saving() ? 'true' : null));
+  /** The file as sharing names it, where the server shares files and it was kept. */
+  protected readonly shareOf = computed(() =>
+    this.server.sharing() ? shareOf(this.thread.thread(), this.file()) : null,
+  );
+  protected readonly shareLabel = computed(
+    () => $localize`:@@madeFile.shareNamed:Share ${this.file().name}:NAME:`,
+  );
+  /** Whether its Share dialog is open. */
+  protected readonly sharing = signal(false);
+  /** What the open Share dialog shares: only while it is open, so a chat holds one at most. */
+  protected readonly sharedOf = computed(() => (this.sharing() ? this.shareOf() : null));
   protected readonly downloadLabel = computed(
     () => $localize`:@@madeFile.download:Download ${this.file().name}:NAME:`,
   );
@@ -101,6 +118,15 @@ export class MadeFileComponent {
       return;
     }
     this.panel.openFile(file);
+  }
+
+  protected share(): void {
+    this.sharing.set(true);
+  }
+
+  /** Reads the files again once the share changed, so the card says who it is shared with. */
+  protected shared(): void {
+    void this.made.refresh();
   }
 
   protected async download(): Promise<void> {

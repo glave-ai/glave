@@ -1,0 +1,16 @@
+// The link's field takes what room the row leaves, Copy link beside it at its foot.
+.link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--glz-space-2);
+}
+
+.note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.error {
+  color: var(--glz-color-danger);
+}
