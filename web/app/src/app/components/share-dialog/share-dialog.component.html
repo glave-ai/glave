@@ -8,8 +8,23 @@
       (valueChange)="chose($event)"
     >
       <glz-radio value="only_you" [hint]="onlyYouHint()">{{ copy.onlyYou }}</glz-radio>
+      @if (offersPeople()) {
+        <glz-radio value="people" [hint]="copy.peopleHint">{{ copy.people }}</glz-radio>
+      }
       <glz-radio value="anyone" [hint]="copy.anyoneHint">{{ copy.anyone }}</glz-radio>
     </glz-radio-group>
+    @if (choosingPeople()) {
+      <glz-form-field [label]="copy.emails">
+        <textarea
+          glzInput
+          rows="2"
+          autocomplete="off"
+          data-testid="share-emails"
+          [value]="emails()"
+          (input)="typed($event)"
+        ></textarea>
+      </glz-form-field>
+    }
     @if (link(); as link) {
       <div class="link">
         <glz-form-field [label]="copy.link">

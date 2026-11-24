@@ -585,6 +585,22 @@ sentences! {
     ShareNoPeople = "share-no-people" "This server can't share with specific people",
     TooManyShares { most: u64 } = "too-many-shares"
         "This server already shares { $most } files: stop sharing one to share another",
+    SharePeopleCount { most: u64 } = "share-people-count"
+        "Add between 1 and { $most } email addresses",
+    ShareCodeSubject = "share-code-subject" "Your code to open what was shared with you",
+    ShareCodeText { code: String } = "share-code-text"
+        "Your code: { $code }\n\nIt works once, for 10 minutes. If you didn't ask for it, ignore this email.",
+    PageSomeone = "page-someone" "Someone shared a file with you",
+    PageAskEmail = "page-ask-email"
+        "Enter your email. If this was shared with you, we'll send you a code to open it.",
+    PageEmail = "page-email" "Email",
+    PageSendCode = "page-send-code" "Send code",
+    PageCodeSent = "page-code-sent"
+        "If this was shared with that address, a code is on its way. It works for 10 minutes.",
+    PageCode = "page-code" "Code",
+    PageOpen = "page-open" "Open",
+    PageCodeWrong = "page-code-wrong" "That code doesn't work. Check it, or ask for a new one.",
+    PageAgain = "page-again" "Send a new code",
     PageDownload = "page-download" "Download",
     PageShared = "page-shared" "Shared with Glave",
     PageReport = "page-report" "Report this page",

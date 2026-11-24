@@ -1,5 +1,5 @@
 import { Service, computed, inject, signal } from '@angular/core';
-import type { Connects, Exists, Permissions, ServerInfo } from '@glave/client';
+import type { Connects, Exists, Permissions, ServerInfo, ShareChoice } from '@glave/client';
 
 import { SessionService } from './session.service';
 
@@ -76,7 +76,9 @@ export class ServerService {
    * Whether the person may share a file here at a link of its own, as the server says: where
    * it has no share domain, nothing offers Share.
    */
-  readonly sharing = computed(() => (this.info()?.shares ?? []).length > 0);
+  readonly sharing = computed(() => this.shareChoices().length > 0);
+  /** Whom besides themselves the person may share a file with here, as the server says. */
+  readonly shareChoices = computed<readonly ShareChoice[]>(() => this.info()?.shares ?? []);
   /** Whether schedules run here, as the server says: where they don't, nothing offers them. */
   readonly schedules = computed(() => this.info()?.schedules ?? false);
   /** Where people reach this glave from elsewhere, if they do, for links to it. */

@@ -82,3 +82,31 @@ footer {
 footer a {
   color: var(--mute);
 }
+form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+  color: var(--ink);
+}
+input {
+  min-height: 44px;
+  min-width: min(20rem, 100%);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--page);
+  color: var(--text);
+  font: inherit;
+}
+button.button {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}

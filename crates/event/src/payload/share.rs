@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::blob::BlobRef;
 use crate::codec::{Body, Payload, parse};
+use crate::envelope::At;
 use crate::id::{AssetId, ShareId, ThreadId};
 use crate::payload::{AssetKind, MadePreview};
 
@@ -18,6 +19,8 @@ pub(crate) const SET: &str = "share.set";
 pub(crate) const STOPPED: &str = "share.stopped";
 pub(crate) const PLACED: &str = "share.placed";
 pub(crate) const UNPLACED: &str = "share.unplaced";
+pub(crate) const CODE_SENT: &str = "share.code.sent";
+pub(crate) const OPENED: &str = "share.opened";
 
 /// What a share is of: a file one of a chat's turns made, by the chat and its path there, or an
 /// item of the Library.
@@ -68,6 +71,31 @@ pub struct ShareStopped {
     pub share: ShareId,
 }
 
+/// glave emailed a code to an address a share lists: each kept as its SHA-256 alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShareCodeSent {
+    pub share: ShareId,
+    /// The SHA-256 of the address, as glave reads addresses, in hex.
+    pub to: String,
+    /// The SHA-256 of the code, in hex.
+    pub code: String,
+}
+
+/// Someone proved an address a share lists, and their browser holds the proof: each kept as
+/// its SHA-256 alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShareOpened {
+    pub share: ShareId,
+    /// The SHA-256 of the address, in hex.
+    pub to: String,
+    /// The SHA-256 of the proof its browser holds, in hex.
+    pub proof: String,
+    /// When the proof stops working.
+    pub until: At,
+}
+
 /// A link was made, which the shares' list now holds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -96,6 +124,16 @@ impl Payload for ShareStopped {
     const VERSION: u32 = 1;
 }
 
+impl Payload for ShareCodeSent {
+    const TYPE: &'static str = CODE_SENT;
+    const VERSION: u32 = 1;
+}
+
+impl Payload for ShareOpened {
+    const TYPE: &'static str = OPENED;
+    const VERSION: u32 = 1;
+}
+
 impl Payload for SharePlaced {
     const TYPE: &'static str = PLACED;
     const VERSION: u32 = 1;
@@ -121,6 +159,8 @@ pub(crate) fn decode(
         STOPPED => parse(data).map(Body::ShareStopped),
         PLACED => parse(data).map(Body::SharePlaced),
         UNPLACED => parse(data).map(Body::ShareUnplaced),
+        CODE_SENT => parse(data).map(Body::ShareCodeSent),
+        OPENED => parse(data).map(Body::ShareOpened),
         _ => return None,
     })
 }

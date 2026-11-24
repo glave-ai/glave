@@ -7,8 +7,10 @@
 //! origin nor under its name (`http/shared.rs`).
 
 mod links;
+mod people;
 
 pub(crate) use self::links::Links;
+pub(crate) use self::people::PROOF_FOR;
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -134,12 +136,20 @@ where
             .ok_or_else(|| ApiError::new(code::NOT_AVAILABLE, Sentence::NoShares))
     }
 
+    /// Whether the share domain is served over HTTPS, so a proof's cookie goes only there.
+    pub(crate) fn shares_securely(&self) -> bool {
+        (self.inner.shares.as_ref())
+            .is_some_and(|domain| domain.origin.as_str().starts_with("https://"))
+    }
+
     /// Who besides themselves `caller` may share with here, as `server/discover` says.
     pub(crate) fn share_choices(&self, caller: &Caller) -> Vec<ShareChoice> {
         if caller.is_no_one() || self.inner.shares.is_none() {
             return Vec::new();
         }
-        vec![ShareChoice::Anyone]
+        // Specific people prove themselves with a code glave emails them.
+        let people = self.inner.mail.is_some().then_some(ShareChoice::People);
+        people.into_iter().chain([ShareChoice::Anyone]).collect()
     }
 
     /// The live shares of `scope`'s shares ledger, each with when it was last set.
@@ -202,8 +212,12 @@ where
         setting: ShareSetting,
     ) -> Result<Reply, ApiError> {
         self.share_domain()?;
-        if matches!(setting.audience, Some(Audience::People { .. })) {
-            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::ShareNoPeople));
+        let mut setting = setting;
+        if let Some(Audience::People { people }) = &mut setting.audience {
+            if self.inner.mail.is_none() {
+                return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::ShareNoPeople));
+            }
+            *people = people::listed(people)?;
         }
         let shareable = self.shareable(caller, &setting.of).await?;
         let scope = shareable.scope;
@@ -391,4 +405,9 @@ where
 }
 
 /// Every kind the shares ledger holds, which each writer numbers its event after.
-const SHARES: [&str; 2] = [ShareSet::TYPE, ShareStopped::TYPE];
+const SHARES: [&str; 4] = [
+    ShareSet::TYPE,
+    ShareStopped::TYPE,
+    glave_event::ShareCodeSent::TYPE,
+    glave_event::ShareOpened::TYPE,
+];

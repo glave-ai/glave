@@ -34,21 +34,34 @@ const SITE_ROUTES: [&str; 3] = [
 const FILES: &str = "GET or HEAD of any other path: the web app's own files";
 
 /// The way in at a share's own name: its share alone, to anyone with its link.
-const SHARED: &str = "GET or HEAD at a share's own name: its page, file and download";
+const SHARED: &str =
+    "GET or HEAD at a share's own name: its page, file and download; for people, POST of its forms";
 
 /// Each place a request is routed, by file and as written, and the way in it is.
-const DOORS: [(&str, &str, &str); 30] = [
+const DOORS: [(&str, &str, &str); 32] = [
     // A shared file at its link's own name under the share domain: its page, its file and its
     // download, to anyone with the link, nothing of glave's there and no sign-in read. Attacked
     // by `shares.rs` (`a_link_serves_its_share_alone_at_a_name_of_its_own_and_stops_at_once`).
     (
-        "http.rs",
-        "let (method, path) = (request.method(), request.uri().path());",
+        "http/shared.rs",
+        "let (method, path) = (request.method().clone(), request.uri().path().to_owned());",
         SHARED,
     ),
     (
         "http/shared.rs",
-        "if *method != Method::GET && *method != Method::HEAD {",
+        "let posted = method == Method::POST;",
+        SHARED,
+    ),
+    (
+        "http/shared.rs",
+        "if !posted && method != Method::GET && method != Method::HEAD {",
+        SHARED,
+    ),
+    // A share for specific people: a form posted to its own name, an address for a code or a
+    // code for a proof. Attacked by `shares_people.rs`.
+    (
+        "http/shared/asking.rs",
+        "let path = request.uri().path().to_owned();",
         SHARED,
     ),
     // The page a browser comes back to from a connection's sign-in. It carries no sign-in of

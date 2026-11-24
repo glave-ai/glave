@@ -23,7 +23,7 @@ use crate::support::web::serve_with;
 use crate::support::*;
 
 /// The share domain the tests share at.
-fn domain() -> ShareDomain {
+pub(crate) fn domain() -> ShareDomain {
     ShareDomain {
         origin: PublicOrigin::parse("https://share.example.net").unwrap(),
         report: Some("abuse@example.net".to_owned()),

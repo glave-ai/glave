@@ -10,10 +10,14 @@ use glave_event::{AssetKind, ShareSet};
 use glave_harness::MAX_FILE;
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, read_all};
 use hyper::body::Bytes;
-use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
-use hyper::{Method, Response, StatusCode};
+use hyper::body::Incoming;
+use hyper::header::{self, HeaderName, HeaderValue};
+use hyper::{Method, Request as HttpRequest, Response, StatusCode};
+use std::net::IpAddr;
 
 use super::body::Answer;
+
+mod asking;
 use crate::server::Server;
 use crate::words::{Language, Sentence, say};
 
@@ -35,25 +39,28 @@ const PDF_POLICY: &str = "frame-ancestors 'self'";
 /// The page's style: plain, light or dark as the reader's system is.
 const STYLE: &str = include_str!("shared.css");
 
-/// Answers a request to the share whose link's id is `id`, its words in the first language
-/// of `headers`'s `Accept-Language` the server writes.
+/// Answers `request` to the share whose link's id is `id`, from the address `from`, its words
+/// in the first language of its `Accept-Language` the server writes.
 pub(super) async fn answer<P, L, B>(
     server: &Server<P, L, B>,
     id: &str,
-    method: &Method,
-    path: &str,
-    headers: &HeaderMap,
+    request: HttpRequest<Incoming>,
+    from: IpAddr,
 ) -> Response<Answer>
 where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
+    let headers = request.headers();
     let language = (headers.get(header::ACCEPT_LANGUAGE))
         .and_then(|value| value.to_str().ok())
         .and_then(Language::accepted)
         .unwrap_or(Language::English);
-    if *method != Method::GET && *method != Method::HEAD {
+    let (method, path) = (request.method().clone(), request.uri().path().to_owned());
+    let path = path.as_str();
+    let posted = method == Method::POST;
+    if !posted && method != Method::GET && method != Method::HEAD {
         let mut refused = answered(StatusCode::METHOD_NOT_ALLOWED, Answer::empty());
         refused
             .headers_mut()
@@ -76,8 +83,22 @@ where
         }
     };
     let (scope, share) = found;
-    if !matches!(share.audience, glave_event::Audience::Anyone) {
-        return gone(language);
+    if let glave_event::Audience::People { .. } = share.audience {
+        if posted {
+            return asking::posted(server, (&scope, &share), request, from, language).await;
+        }
+        let proof = asking::proof(request.headers()).unwrap_or_default();
+        match server.proven(&scope, &share, &proof).await {
+            Ok(true) => {}
+            Ok(false) if path == "/" => return asking::ask(language),
+            Ok(false) => return answered(StatusCode::NOT_FOUND, Answer::empty()),
+            Err(error) => {
+                tracing::warn!(error = %error.message, "could not read a share's proofs");
+                return answered(StatusCode::SERVICE_UNAVAILABLE, Answer::empty());
+            }
+        }
+    } else if posted {
+        return answered(StatusCode::METHOD_NOT_ALLOWED, Answer::empty());
     }
     match path {
         "/" => page(server, &scope, &share, language).await,
