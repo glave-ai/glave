@@ -186,8 +186,11 @@ where
         let found = shares
             .into_values()
             .find(|(_, set)| set.of == shareable.from);
-        Ok(Reply::Share {
-            share: found.map(|(at, set)| self.share_info(at, &set)),
+        Ok(match found {
+            Some((at, set)) => Reply::Share {
+                share: self.share_info(at, &set),
+            },
+            None => Reply::Done {},
         })
     }
 
@@ -212,7 +215,7 @@ where
             if let Some((_, set)) = current {
                 self.stop_share(&scope, &set).await?;
             }
-            return Ok(Reply::Share { share: None });
+            return Ok(Reply::Done {});
         };
         let set = match current {
             None => self.new_share(shareable, audience).await?,
@@ -232,7 +235,7 @@ where
         };
         let now = At::from(self.inner.harness.clock().now());
         Ok(Reply::Share {
-            share: Some(self.share_info(now, &set)),
+            share: self.share_info(now, &set),
         })
     }
 

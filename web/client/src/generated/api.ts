@@ -3134,10 +3134,9 @@ export type ShareGetParams = {
   readonly project: ProjectId;
 };
 
-/** A file's share; none where it is not shared. */
 export type ShareGetResult = {
-  readonly share?: ShareInfo | null;
-};
+  readonly share: ShareInfo;
+} | Readonly<Record<string, never>>;
 
 /** What `share/set` chooses for a file. */
 export type ShareSetParams = {
@@ -3150,10 +3149,9 @@ export type ShareSetParams = {
   readonly project: ProjectId;
 };
 
-/** A file's share; none where it is not shared. */
 export type ShareSetResult = {
-  readonly share?: ShareInfo | null;
-};
+  readonly share: ShareInfo;
+} | Readonly<Record<string, never>>;
 
 export type SigninEndParams = Readonly<Record<string, never>>;
 

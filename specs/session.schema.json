@@ -8927,20 +8927,23 @@
         "type": "object"
       },
       "result": {
-        "description": "A file's share; none where it is not shared.",
-        "properties": {
-          "share": {
-            "anyOf": [
-              {
+        "anyOf": [
+          {
+            "description": "A file's share, where it is shared; else `Done`.",
+            "properties": {
+              "share": {
                 "$ref": "#/$defs/ShareInfo"
-              },
-              {
-                "type": "null"
               }
-            ]
+            },
+            "required": [
+              "share"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "object"
           }
-        },
-        "type": "object"
+        ]
       },
       "streams": false
     },
@@ -9011,20 +9014,23 @@
         "type": "object"
       },
       "result": {
-        "description": "A file's share; none where it is not shared.",
-        "properties": {
-          "share": {
-            "anyOf": [
-              {
+        "anyOf": [
+          {
+            "description": "A file's share, where it is shared; else `Done`.",
+            "properties": {
+              "share": {
                 "$ref": "#/$defs/ShareInfo"
-              },
-              {
-                "type": "null"
               }
-            ]
+            },
+            "required": [
+              "share"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "object"
           }
-        },
-        "type": "object"
+        ]
       },
       "streams": false
     },

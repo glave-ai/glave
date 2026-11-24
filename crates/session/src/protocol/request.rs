@@ -463,9 +463,9 @@ methods! {
     /// made in keeps its own copy.
     "library/remove" => LibraryRemove { project: ProjectId, asset: AssetId } -> [Done],
     /// A file's share, where the caller shares it.
-    "share/get" => ShareGet { #[serde(flatten)] of: ShareOf } -> [Share],
+    "share/get" => ShareGet { #[serde(flatten)] of: ShareOf } -> [Share, Done],
     /// Shares a file the caller made at a link of its own, changes who may open it, or stops it.
-    "share/set" => ShareSet { #[serde(flatten)] set: ShareSetting } -> [Share],
+    "share/set" => ShareSet { #[serde(flatten)] set: ShareSetting } -> [Share, Done],
     "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
     "approval/decide" => ApprovalDecide {
         thread: ThreadId,

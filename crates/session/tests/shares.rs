@@ -70,14 +70,16 @@ async fn set(
         update,
     };
     match server.request(Request::ShareSet { set: setting }).await? {
-        Reply::Share { share } => Ok(share),
+        Reply::Share { share } => Ok(Some(share)),
+        Reply::Done {} => Ok(None),
         other => panic!("a share, not {other:?}"),
     }
 }
 
 async fn get(server: &Tested, of: ShareOf) -> Option<ShareInfo> {
     match server.request(Request::ShareGet { of }).await.unwrap() {
-        Reply::Share { share } => share,
+        Reply::Share { share } => Some(share),
+        Reply::Done {} => None,
         other => panic!("a share, not {other:?}"),
     }
 }

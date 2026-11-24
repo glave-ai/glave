@@ -35,7 +35,7 @@ pub(crate) fn says(answered: &Result<Reply, ApiError>) -> bool {
             | Reply::Connector { .. }
             | Reply::Files { .. }
             | Reply::FilePreview { .. }
-            | Reply::Share { share: Some(_) }
+            | Reply::Share { .. }
             | Reply::Schedule { .. },
         ) => true,
         Ok(Reply::Library { items }) => items.iter().any(|item| item.shared.is_some()),
@@ -184,7 +184,7 @@ fn made_in(reply: &mut Reply, language: Language) {
                 cut.translate(language);
             }
         }
-        Reply::Share { share: Some(share) } => share.said.translate(language),
+        Reply::Share { share } => share.said.translate(language),
         Reply::Library { items } => {
             for told in items.iter_mut().filter_map(|item| item.shared.as_mut()) {
                 told.translate(language);

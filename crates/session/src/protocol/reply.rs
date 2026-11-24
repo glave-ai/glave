@@ -593,12 +593,9 @@ pub enum Reply {
     /// A file a thread made, as a person previews it.
     #[schemars(title = "FilePreview")]
     FilePreview { preview: FilePreview },
-    /// A file's share; none where it is not shared.
+    /// A file's share, where it is shared; else `Done`.
     #[schemars(title = "Share")]
-    Share {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        share: Option<ShareInfo>,
-    },
+    Share { share: ShareInfo },
     /// A thread's turns in steps.
     #[schemars(title = "Steps")]
     Steps { steps: ThreadSteps },
