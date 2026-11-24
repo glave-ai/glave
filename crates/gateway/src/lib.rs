@@ -36,7 +36,7 @@ pub use credits::{Account, Credits, CreditsError};
 pub use filtering::{Facts, Filtering, Router, floor_hides, hidden_by};
 pub use gateway::Gateway;
 pub use media::Tier;
-pub use price::{ImagePrice, LongPrice, Price};
+pub use price::Price;
 pub use price_list::{PriceList, PriceListError};
 pub use routes::{RouteError, Routes};
 pub use search::WebSearch;

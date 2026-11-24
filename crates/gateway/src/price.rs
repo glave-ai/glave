@@ -14,38 +14,27 @@ pub struct Price {
     /// Input tokens read from the provider's cache.
     pub cache_read_per_mtok: Nanos,
     /// Input tokens written to the provider's cache.
-    pub cache_write_per_mtok: Nanos,
+    pub(crate) cache_write_per_mtok: Nanos,
     /// Output tokens, reasoning included.
     pub output_per_mtok: Nanos,
     /// Dearer prices for every token of a call whose prompt is longer than its maker names.
-    pub long: Option<LongPrice>,
-    /// What an image model's images cost, where they are priced apart from text.
-    pub images: Option<ImagePrice>,
+    pub(crate) long: Option<LongPrice>,
+    /// Image tokens made, per million, for an image model billed by the image token: what its
+    /// answer is priced at where that is dearer than text, since its answer is its images and no
+    /// provider glave reaches reports image tokens apart yet.
+    pub(crate) image_output_per_mtok: Option<Nanos>,
     /// What each call costs besides its tokens.
-    pub per_request: Nanos,
+    pub(crate) per_request: Nanos,
 }
 
 /// The prices of a call whose prompt is over `above` tokens, per million tokens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LongPrice {
-    pub above: u64,
-    pub input_per_mtok: Nanos,
-    pub cache_read_per_mtok: Nanos,
-    pub cache_write_per_mtok: Nanos,
-    pub output_per_mtok: Nanos,
-}
-
-/// What an image model's images cost.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ImagePrice {
-    /// Image tokens read, per million.
-    pub input_per_mtok: Option<Nanos>,
-    /// Image tokens made, per million: what an image model's answer is priced at where it is
-    /// dearer than text, since its answer is its images and no provider glave reaches reports
-    /// image tokens apart yet.
-    pub output_per_mtok: Option<Nanos>,
-    /// One image made, at the size its tier asks for.
-    pub per_image: Option<Nanos>,
+pub(crate) struct LongPrice {
+    pub(crate) above: u64,
+    pub(crate) input_per_mtok: Nanos,
+    pub(crate) cache_read_per_mtok: Nanos,
+    pub(crate) cache_write_per_mtok: Nanos,
+    pub(crate) output_per_mtok: Nanos,
 }
 
 impl Price {
@@ -65,7 +54,7 @@ impl Price {
             cache_write_per_mtok: input,
             output_per_mtok: output,
             long: None,
-            images: None,
+            image_output_per_mtok: None,
             per_request: Nanos::ZERO,
         }
     }
@@ -84,7 +73,7 @@ impl Price {
         let mut rates = (self.long)
             .filter(|long| counts.input > long.above)
             .unwrap_or(own);
-        if let Some(images) = self.images.and_then(|images| images.output_per_mtok) {
+        if let Some(images) = self.image_output_per_mtok {
             rates.output_per_mtok = rates.output_per_mtok.max(images);
         }
         rates
@@ -234,11 +223,7 @@ mod tests {
     #[test]
     fn an_image_model_s_answer_is_priced_as_images_and_a_request_has_its_own_price() {
         let gpt_image = Price {
-            images: Some(ImagePrice {
-                input_per_mtok: Some(Nanos::new(8_000_000_000)),
-                output_per_mtok: Some(Nanos::new(30_000_000_000)),
-                per_image: None,
-            }),
+            image_output_per_mtok: Some(Nanos::new(30_000_000_000)),
             ..Price::per_mtok("test", Nanos::new(5_000_000_000), Nanos::ZERO, Nanos::ZERO)
         };
         let counts = TokenCounts {

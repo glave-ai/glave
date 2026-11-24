@@ -28,15 +28,9 @@ pub struct PriceEntry {
     /// Input written to the service's cache, where it bills that apart.
     #[serde(default, deserialize_with = "dollars")]
     pub cache_write: Option<Nanos>,
-    /// Image tokens in, where billed apart from text.
-    #[serde(default, deserialize_with = "dollars")]
-    pub image_input: Option<Nanos>,
     /// Image tokens out, for a model the maker bills by the image token.
     #[serde(default, deserialize_with = "dollars")]
     pub image_output: Option<Nanos>,
-    /// One image made, at the size its tier asks for.
-    #[serde(default, deserialize_with = "dollars")]
-    pub per_image: Option<Nanos>,
     /// One request, where there is a price for one.
     #[serde(default, deserialize_with = "dollars")]
     pub per_request: Option<Nanos>,
@@ -76,8 +70,7 @@ pub struct PriceError {
 
 impl PriceEntry {
     /// Whether the entry prices something, as the spec says one must: a price per request
-    /// alone, or input with output, image tokens out or a price per image; and names its maker's
-    /// page.
+    /// alone, or input with output or image tokens out; and names its maker's page.
     pub fn check(&self) -> Result<(), PriceError> {
         let refused = |reason| {
             Err(PriceError {
@@ -98,12 +91,10 @@ impl PriceEntry {
             self.output,
             self.cache_read,
             self.cache_write,
-            self.image_input,
             self.image_output,
-            self.per_image,
         ];
         let by_tokens = tokens.iter().any(Option::is_some) || self.long.is_some();
-        let out = self.output.or(self.image_output).or(self.per_image);
+        let out = self.output.or(self.image_output);
         if (by_tokens || self.per_request.is_none()) && (self.input.is_none() || out.is_none()) {
             return refused("has no price for input and for what it makes");
         }

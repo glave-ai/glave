@@ -21,7 +21,7 @@ fn dollars(nanos: i64) -> String {
 
 /// Every price as one line: what the list says, in the order it keeps.
 fn lines(list: &PriceList) -> String {
-    let mut out = format!("{}\n", list.name());
+    let mut out = format!("{}\n", list.name);
     for ((service, model), entry) in &list.entries {
         let price = list.price(service, model).unwrap();
         let _ = writeln!(
@@ -41,14 +41,9 @@ fn lines(list: &PriceList) -> String {
                 ];
                 (long.above, at.map(|each| each.decimal().to_string()))
             }),
-            price.images.map(|images| {
-                [
-                    images.input_per_mtok,
-                    images.output_per_mtok,
-                    images.per_image,
-                ]
-                .map(|each| each.map(|each| each.decimal().to_string()))
-            }),
+            price
+                .image_output_per_mtok
+                .map(|each| each.decimal().to_string()),
             price.per_request.decimal(),
             entry.date,
             entry.page,
@@ -102,11 +97,22 @@ fn a_model_is_found_by_its_id_or_its_undated_id_and_only_at_its_service() {
     let dated = list
         .price("anthropic", "claude-haiku-4-5-20251001")
         .unwrap();
-    assert_eq!(dated.list, list.name());
+    assert_eq!(dated.list, list.name);
     assert_eq!(Some(dated), list.price("anthropic", "claude-haiku-4-5"));
     assert!(list.price("openrouter", "claude-haiku-4-5").is_none());
     assert!(list.price("anthropic", "claude-unknown-1").is_none());
     assert!(list.price("anthropic", "claude-unknown-20251001").is_none());
+    let snapshot = list.price("openai", "gpt-5.2-2025-12-11");
+    assert!(snapshot.is_some(), "OpenAI's dated snapshot");
+    assert_eq!(snapshot, list.price("openai", "gpt-5.2"));
+    for not_a_date in [
+        "gpt-5.2-25-12-11",
+        "gpt-5.2-2025-1-11",
+        "gpt-5.2-2025-12-1x",
+        "2025-12-11",
+    ] {
+        assert!(list.price("openai", not_a_date).is_none(), "{not_a_date}");
+    }
 }
 
 #[test]
@@ -130,7 +136,7 @@ fn the_list_wins_over_a_catalog_and_leaves_what_it_does_not_name() {
     let direct = list.priced(at("anthropic", "claude-haiku-5-5"));
     assert_eq!(
         direct.price.as_ref().map(|p| p.list.as_str()),
-        Some(list.name())
+        Some(list.name.as_str())
     );
     let routed = list.priced(at("openrouter", "anthropic/claude-haiku-5.5"));
     assert_eq!(
@@ -164,7 +170,7 @@ fn a_long_prompt_and_a_price_per_request_are_charged_as_the_list_says() {
     assert_eq!(haiku.nanos(&counts(200_000)), Nanos::new(100_000_000));
     let search = list.price("api.search.brave.com", "search").unwrap();
     assert_eq!(search.nanos(&TokenCounts::default()), Nanos::new(5_000_000));
-    assert_eq!(list.name(), "glave 2026-11-20");
+    assert_eq!(list.name, "glave 2026-11-20");
 }
 
 proptest::proptest! {

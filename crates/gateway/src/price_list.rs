@@ -11,7 +11,7 @@ use glave_ports::settings::{PriceEntry, PriceError};
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::price::{ImagePrice, LongPrice, Price};
+use crate::price::{LongPrice, Price};
 use crate::target::Target;
 
 /// The list, as glave was built with it.
@@ -69,15 +69,10 @@ impl PriceList {
         })
     }
 
-    /// Its name, as each cost computed from it records it.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
     /// The price of `model` at `service`, if the list names it: by its id, else by the id
-    /// without the date at its end (`claude-haiku-4-5-20251001`), which a maker's own list
-    /// gives a model that also goes by the id without it.
-    pub fn price(&self, service: &str, model: &str) -> Option<Price> {
+    /// without the snapshot date at its end (Anthropic's `claude-haiku-4-5-20251001`, OpenAI's
+    /// `gpt-5.2-2025-12-11`), which a maker gives a model that also goes by the id without it.
+    pub(crate) fn price(&self, service: &str, model: &str) -> Option<Price> {
         let at = |model: &str| self.entries.get(&(service.to_owned(), model.to_owned()));
         let entry = at(model).or_else(|| at(undated(model)?))?;
         Some(self.priced_entry(entry))
@@ -104,15 +99,10 @@ impl PriceList {
             cache_write_per_mtok: long.cache_write.unwrap_or(long.input),
             output_per_mtok: long.output,
         });
-        let images = ImagePrice {
-            input_per_mtok: entry.image_input,
-            output_per_mtok: entry.image_output,
-            per_image: entry.per_image,
-        };
         Price {
             cache_write_per_mtok: entry.cache_write.unwrap_or(input),
             long,
-            images: (images != ImagePrice::default()).then_some(images),
+            image_output_per_mtok: entry.image_output,
             per_request: entry.per_request.unwrap_or(Nanos::ZERO),
             ..Price::per_mtok(
                 self.name.clone(),
@@ -124,10 +114,18 @@ impl PriceList {
     }
 }
 
-/// `model` without an eight-digit date at its end, if it has one.
+/// `model` without a snapshot date at its end, if it has one: `-YYYYMMDD` or `-YYYY-MM-DD`.
 fn undated(model: &str) -> Option<&str> {
-    let (base, date) = model.rsplit_once('-')?;
-    (date.len() == 8 && date.bytes().all(|byte| byte.is_ascii_digit())).then_some(base)
+    let digits = |text: &str, count: usize| {
+        text.len() == count && text.bytes().all(|byte| byte.is_ascii_digit())
+    };
+    let (base, last) = model.rsplit_once('-')?;
+    if digits(last, 8) {
+        return Some(base);
+    }
+    let (base, month) = base.rsplit_once('-')?;
+    let (base, year) = base.rsplit_once('-')?;
+    (digits(year, 4) && digits(month, 2) && digits(last, 2)).then_some(base)
 }
 
 #[cfg(test)]

@@ -24,7 +24,7 @@ static WHOLE: Price = Price {
     cache_write_per_mtok: Nanos::ZERO,
     output_per_mtok: Nanos::ZERO,
     long: None,
-    images: None,
+    image_output_per_mtok: None,
     per_request: Nanos::ZERO,
 };
 
