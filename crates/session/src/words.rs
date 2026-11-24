@@ -130,13 +130,6 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
             }
         }
         Ok(Reply::Changes { changes }) => changes.note.translate(language),
-        Ok(Reply::Share { share: Some(share) }) => share.said.translate(language),
-        Ok(Reply::Library { items }) => {
-            for told in items.iter_mut().filter_map(|item| item.shared.as_mut()) {
-                told.translate(language);
-            }
-        }
-        Ok(reply @ (Reply::Files { .. } | Reply::FilePreview { .. })) => made_in(reply, language),
         Ok(Reply::Commands { commands, .. }) => commands_in(commands, language),
         Ok(Reply::Passkeys {
             notice: Some(notice),
@@ -162,7 +155,8 @@ pub(crate) fn translate(answered: &mut Result<Reply, ApiError>, language: Langua
                 summary_in(thread, language);
             }
         }
-        Ok(_) => {}
+        // The files threads made, a preview, a share and the Library, each in its own words.
+        Ok(reply) => made_in(reply, language),
     }
 }
 
@@ -188,6 +182,12 @@ fn made_in(reply: &mut Reply, language: Language) {
         Reply::FilePreview { preview } => {
             if let Some(cut) = &mut preview.cut {
                 cut.translate(language);
+            }
+        }
+        Reply::Share { share: Some(share) } => share.said.translate(language),
+        Reply::Library { items } => {
+            for told in items.iter_mut().filter_map(|item| item.shared.as_mut()) {
+                told.translate(language);
             }
         }
         _ => {}

@@ -5,6 +5,7 @@
 //! `library/read` and `library/remove` name the item's project, which the caller must own. An
 //! item another person has, or none has, is answered alike: "no longer here".
 
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 
 use glave_event::{
@@ -103,8 +104,8 @@ where
                 chats.insert(kept.thread, chat.clone());
                 chat
             };
-            if !shared.contains_key(&scope) {
-                shared.insert(scope, self.shared_sentences(&scope).await?);
+            if let Entry::Vacant(vacant) = shared.entry(scope) {
+                vacant.insert(self.shared_sentences(&scope).await?);
             }
             let from = SharedFrom::Item { asset: kept.asset };
             let said = shared.get(&scope).and_then(|said| said.get(&from)).cloned();

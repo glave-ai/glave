@@ -158,7 +158,7 @@ fn without_a_share_domain_nothing_is_offered_or_shared() {
         let Ok(Reply::Server(info)) = server.request(Request::Discover {}).await else {
             panic!("the server");
         };
-        assert!(info.shares.is_empty());
+        assert_eq!(info.shares, []);
         let Ok(Reply::Library { items }) = server.request(Request::LibraryList {}).await else {
             panic!("the Library");
         };
@@ -280,10 +280,10 @@ fn a_link_serves_its_share_alone_at_a_name_of_its_own_and_stops_at_once() {
         let id = id_of(&link);
         let local = LocalToken::new([7; 32]);
         let signin = SignIn::local(local, Box::new(fixed_clock()));
-        let served = serve_with(server.clone(), signin, None).await;
+        let listening = serve_with(server.clone(), signin, None).await;
         let host = format!("{id}.share.example.net");
 
-        let page = fetch(served.address, &host, "/").await;
+        let page = fetch(listening.address, &host, "/").await;
         assert_eq!(page.status(), 200);
         let headers = page.headers().clone();
         let header = |name: &str| headers.get(name).unwrap().to_str().unwrap().to_owned();
@@ -297,11 +297,11 @@ fn a_link_serves_its_share_alone_at_a_name_of_its_own_and_stops_at_once() {
         assert!(text.contains("noindex") && text.contains("Shared with Glave"));
         assert!(text.contains("mailto:abuse@example.net") && !text.contains("<script"));
 
-        let file = fetch(served.address, &host, "/file").await;
+        let file = fetch(listening.address, &host, "/file").await;
         assert_eq!(header_of(&file, "content-type"), "image/png");
         let pixel = STANDARD.decode(PIXEL).unwrap();
         assert_eq!(file.bytes().await.unwrap().as_ref(), pixel.as_slice());
-        let download = fetch(served.address, &host, "/download").await;
+        let download = fetch(listening.address, &host, "/download").await;
         let saved = header_of(&download, "content-disposition");
         assert!(
             saved.starts_with("attachment; filename=\"a-fox-at-dawn.png\""),
@@ -311,21 +311,23 @@ fn a_link_serves_its_share_alone_at_a_name_of_its_own_and_stops_at_once() {
 
         // A share's name answers nothing of glave's: no API.
         let client = reqwest::Client::builder()
-            .resolve(&host, served.address)
+            .resolve(&host, listening.address)
             .no_proxy()
             .build()
             .unwrap();
-        let api = format!("http://{host}:{}/", served.address.port());
+        let api = format!("http://{host}:{}/", listening.address.port());
         let discover = json!({"jsonrpc": "2.0", "id": 1, "method": "server/discover"});
         let posted = client.post(api).json(&discover).send().await.unwrap();
         assert_eq!(posted.status(), 405);
         // Nor does glave's own address answer a share.
-        let own = reqwest::get(format!("{}file", served.url)).await.unwrap();
+        let own = reqwest::get(format!("{}file", listening.url))
+            .await
+            .unwrap();
         assert_eq!(own.status(), 404);
 
         // A link never made and one stopped are answered alike.
         let never = fetch(
-            served.address,
+            listening.address,
             "abcdefghijklmnopqrstuvwxyz.share.example.net",
             "/",
         )
@@ -333,11 +335,11 @@ fn a_link_serves_its_share_alone_at_a_name_of_its_own_and_stops_at_once() {
         assert_eq!(never.status(), 404);
         let never = never.text().await.unwrap();
         set(&server, item_of(&item), None, false).await.unwrap();
-        let stopped = fetch(served.address, &host, "/").await;
+        let stopped = fetch(listening.address, &host, "/").await;
         assert_eq!(stopped.status(), 404);
         assert_eq!(stopped.text().await.unwrap(), never);
-        assert_eq!(fetch(served.address, &host, "/file").await.status(), 404);
-        served.close().await;
+        assert_eq!(fetch(listening.address, &host, "/file").await.status(), 404);
+        listening.close().await;
     });
 }
 

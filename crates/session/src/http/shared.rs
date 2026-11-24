@@ -112,23 +112,7 @@ where
             format!("<iframe class=\"file\" src=\"/file\" title=\"{name}\"></iframe>")
         }
         _ => match &share.preview {
-            Some(preview) => {
-                let markdown = read(server, scope, &preview.blob.sha256, MOST_PREVIEW).await;
-                let cut = (preview.cut)
-                    .then(|| {
-                        format!(
-                            "<p class=\"note\">{}</p>",
-                            escaped(&say(language, &Sentence::PreviewCut))
-                        )
-                    })
-                    .unwrap_or_default();
-                match markdown.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()) {
-                    Some(markdown) => {
-                        format!("<pre class=\"preview\">{}</pre>{cut}", escaped(&markdown))
-                    }
-                    None => String::new(),
-                }
-            }
+            Some(preview) => previewed(server, scope, preview, language).await,
             None => String::new(),
         },
     };
@@ -150,6 +134,31 @@ where
         shared = escaped(&say(language, &Sentence::PageShared)),
     );
     html(StatusCode::OK, &name, &body, language)
+}
+
+/// The share's preview, as it was kept, and what it leaves out; nothing when it can't be read.
+async fn previewed<P, L, B>(
+    server: &Server<P, L, B>,
+    scope: &Scope,
+    preview: &glave_event::MadePreview,
+    language: Language,
+) -> String
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    let Some(bytes) = read(server, scope, &preview.blob.sha256, MOST_PREVIEW).await else {
+        return String::new();
+    };
+    let markdown = escaped(&String::from_utf8_lossy(&bytes));
+    let cut = if preview.cut {
+        let said = escaped(&say(language, &Sentence::PreviewCut));
+        format!("<p class=\"note\">{said}</p>")
+    } else {
+        String::new()
+    };
+    format!("<pre class=\"preview\">{markdown}</pre>{cut}")
 }
 
 /// The page a link that opens nothing answers with.
