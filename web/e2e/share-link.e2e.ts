@@ -29,7 +29,7 @@ test('a file the chat made is shared at a link of its own, then stopped', async 
   await byTestId(page, 'share-who').getByLabel('Only you').check();
   await byTestId(page, 'share-apply').click();
   await expect(byTestId(page, 'share-link')).toHaveCount(0);
-  await byTestId(page, 'share-close').click();
+  await byTestId(page, 'share-done').click();
   await expect(dialog).toBeHidden();
   expect(problems()).toEqual([]);
 });

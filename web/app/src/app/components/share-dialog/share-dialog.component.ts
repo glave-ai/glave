@@ -75,7 +75,7 @@ export class ShareDialogComponent {
     changedSince: $localize`:@@shareDialog.changedSince:This file changed since you shared it.`,
     update: $localize`:@@shareDialog.update:Update to this version`,
     updateHint: $localize`:@@shareDialog.updateHint:Same link; people who open it see the new version.`,
-    close: $localize`:@@shareDialog.close:Close`,
+    done: $localize`:@@shareDialog.done:Done`,
   } as const;
   protected readonly heading = computed(
     () => $localize`:@@shareDialog.heading:Share “${this.name()}:NAME:”`,
