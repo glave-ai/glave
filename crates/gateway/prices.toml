@@ -1,0 +1,643 @@
+# glave's own price list (specs/gateway.md, "Prices"): what each model costs at each maker Glave
+# Cloud pays directly, as the maker's own page says. Built into glave, never fetched.
+#
+# An entry is a service, as receipts name it, and a model, by its own id at that service. Prices
+# are US dollars per million tokens, written as decimal text so they are read exactly:
+#   input, output                 every entry that isn't priced per request alone
+#   cache_read, cache_write       where billed apart; a cache write at the price of the
+#                                 maker's shortest cache (Anthropic's five minutes, OpenAI's 30)
+#   image_input, image_output     image tokens, where billed apart from text
+#   per_image                     one image made, at 1K (1024x1024)
+#   per_request                   one request
+#   long                          the prices of every token of a call whose prompt is over
+#                                 `above` tokens
+# `date` is the day the price last changed, as a person checked it against `page` then. The
+# entries seeded on 2026-11-24 carry the day they were checked, since the pages don't say when
+# a price last changed. Batch, flex, priority and regional prices are not glave's: it sends none.
+
+# Anthropic: Claude. Mythos models are left out, offered only to verified organizations.
+
+[[prices]]
+service = "anthropic"
+model = "claude-fable-5-2"
+input = "8"
+output = "40"
+cache_read = "0.20"
+cache_write = "10"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-fable-5-1"
+input = "10"
+output = "50"
+cache_read = "0.25"
+cache_write = "12.50"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-fable-5"
+input = "10"
+output = "50"
+cache_read = "1"
+cache_write = "12.50"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-opus-5-5"
+input = "4"
+output = "20"
+cache_read = "0.20"
+cache_write = "5"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-opus-5"
+input = "5"
+output = "25"
+cache_read = "0.50"
+cache_write = "6.25"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-opus-4-8"
+input = "5"
+output = "25"
+cache_read = "0.50"
+cache_write = "6.25"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-opus-4-7"
+input = "5"
+output = "25"
+cache_read = "0.50"
+cache_write = "6.25"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-opus-4-6"
+input = "5"
+output = "25"
+cache_read = "0.50"
+cache_write = "6.25"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-opus-4-5"
+input = "5"
+output = "25"
+cache_read = "0.50"
+cache_write = "6.25"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-sonnet-5-5"
+input = "2"
+output = "10"
+cache_read = "0.10"
+cache_write = "2.50"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+# Its launch price, made its standard price: the rise once planned for 2026-09-01 never came.
+[[prices]]
+service = "anthropic"
+model = "claude-sonnet-5"
+input = "2"
+output = "10"
+cache_read = "0.20"
+cache_write = "2.50"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-sonnet-4-6"
+input = "3"
+output = "15"
+cache_read = "0.30"
+cache_write = "3.75"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-haiku-5-5"
+input = "0.10"
+output = "0.50"
+cache_read = "0.01"
+cache_write = "0.125"
+long = { above = 100000, input = "0.50", output = "2.50", cache_read = "0.05", cache_write = "0.625" }
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+[[prices]]
+service = "anthropic"
+model = "claude-haiku-4-5"
+input = "1"
+output = "5"
+cache_read = "0.10"
+cache_write = "1.25"
+date = "2026-11-24"
+page = "https://platform.claude.com/docs/en/about-claude/pricing"
+
+# OpenAI: Standard prices. Long context is over 272K input tokens. Left out: GPT-5.6 Sol, whose
+# promotional price ends 2026-11-30 with no price after it on the page, and models the page
+# marks deprecated.
+
+[[prices]]
+service = "openai"
+model = "gpt-6.2-astra"
+input = "8"
+output = "40"
+cache_read = "0.40"
+cache_write = "10"
+long = { above = 272000, input = "16", output = "60", cache_read = "0.80", cache_write = "20" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-6.2-sol"
+input = "2"
+output = "10"
+cache_read = "0.10"
+cache_write = "2.50"
+long = { above = 272000, input = "4", output = "15", cache_read = "0.20", cache_write = "5" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-6-astra"
+input = "10"
+output = "50"
+cache_read = "1"
+cache_write = "12.50"
+long = { above = 272000, input = "20", output = "75", cache_read = "2", cache_write = "25" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-6.1-sol"
+input = "2"
+output = "10"
+cache_read = "0.10"
+cache_write = "2.50"
+long = { above = 272000, input = "4", output = "15", cache_read = "0.20", cache_write = "5" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-6.1-terra"
+input = "1"
+output = "5"
+cache_read = "0.05"
+cache_write = "1.25"
+long = { above = 272000, input = "2", output = "7.50", cache_read = "0.10", cache_write = "2.50" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-6-luna"
+input = "0.10"
+output = "0.50"
+cache_read = "0.01"
+cache_write = "0.125"
+long = { above = 272000, input = "0.20", output = "0.75", cache_read = "0.02", cache_write = "0.25" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-6-sol"
+input = "2"
+output = "10"
+cache_read = "0.20"
+cache_write = "2.50"
+long = { above = 272000, input = "4", output = "15", cache_read = "0.40", cache_write = "5" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-5.6-terra"
+input = "2"
+output = "12"
+cache_read = "0.20"
+cache_write = "2.50"
+long = { above = 272000, input = "4", output = "18", cache_read = "0.40", cache_write = "5" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-5.6-luna"
+input = "0.20"
+output = "1.20"
+cache_read = "0.02"
+cache_write = "0.25"
+long = { above = 272000, input = "0.40", output = "1.80", cache_read = "0.04", cache_write = "0.50" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-5.5"
+input = "5"
+output = "30"
+cache_read = "0.50"
+long = { above = 272000, input = "10", output = "45", cache_read = "1" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-5.5-pro"
+input = "30"
+output = "180"
+long = { above = 272000, input = "60", output = "270" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-5.4"
+input = "2.50"
+output = "15"
+cache_read = "0.25"
+long = { above = 272000, input = "5", output = "22.50", cache_read = "0.50" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-5.4-pro"
+input = "30"
+output = "180"
+long = { above = 272000, input = "60", output = "270" }
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-5.4-mini"
+input = "0.75"
+output = "4.50"
+cache_read = "0.075"
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-5.2"
+input = "1.75"
+output = "14"
+cache_read = "0.175"
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-5.2-pro"
+input = "21"
+output = "168"
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+# GPT Image, by the image token: text in at `input`, images in and out apart. The page says the
+# cached input of GPT Image 2 and 2.5 applies only through the Responses API, which glave
+# doesn't use, so only the 2.6 models have a cache price here.
+
+[[prices]]
+service = "openai"
+model = "gpt-image-2.6-sunburst"
+input = "5"
+cache_read = "1.25"
+image_input = "8"
+image_output = "30"
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-image-2.6-flare"
+input = "5"
+cache_read = "1.25"
+image_input = "8"
+image_output = "30"
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-image-2.5-sunburst"
+input = "5"
+image_input = "8"
+image_output = "30"
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-image-2.5-flare"
+input = "5"
+image_input = "8"
+image_output = "30"
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+[[prices]]
+service = "openai"
+model = "gpt-image-2"
+input = "5"
+image_input = "8"
+image_output = "30"
+date = "2026-11-24"
+page = "https://developers.openai.com/api/docs/pricing"
+
+# Google's Gemini API, paid tier, Standard. Text, image and video in at one price; audio in costs
+# more, which glave doesn't send. Left out: Gemini 4 Carbon and 4 Argon, whose prices double on
+# 2026-12-01, and Gemini 3.8 Flash and 3.6 Flash, whose prices double on 2027-01-01.
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-4-neon"
+input = "3"
+output = "15"
+cache_read = "0.15"
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-4-hydrogen"
+input = "1.50"
+output = "7.50"
+cache_read = "0.075"
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-3.5-flash-lite"
+input = "0.30"
+output = "2.50"
+cache_read = "0.03"
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-3.1-flash-lite"
+input = "0.25"
+output = "1.50"
+cache_read = "0.025"
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-3.1-pro-preview"
+input = "2"
+output = "12"
+cache_read = "0.20"
+long = { above = 200000, input = "4", output = "18", cache_read = "0.40" }
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-2.5-pro"
+input = "1.25"
+output = "10"
+cache_read = "0.125"
+long = { above = 200000, input = "2.50", output = "15", cache_read = "0.25" }
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-2.5-flash"
+input = "0.30"
+output = "2.50"
+cache_read = "0.03"
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-2.5-flash-lite"
+input = "0.10"
+output = "0.40"
+cache_read = "0.01"
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+# Gemini's image models: text and thinking out at `output`, images out by the image token, and
+# what one 1K image comes to. Gemini 2.5 Flash Image is left out, deprecated.
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-nano-banana-2.1"
+input = "1.50"
+output = "7.50"
+image_output = "30"
+per_image = "0.0336"
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-3.1-flash-image"
+input = "0.50"
+output = "3"
+image_output = "60"
+per_image = "0.067"
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-3.1-flash-lite-image"
+input = "0.25"
+output = "1.50"
+image_output = "30"
+per_image = "0.0336"
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+[[prices]]
+service = "generativelanguage.googleapis.com"
+model = "gemini-3-pro-image"
+input = "2"
+output = "12"
+image_output = "120"
+per_image = "0.134"
+date = "2026-11-24"
+page = "https://ai.google.dev/gemini-api/docs/pricing"
+
+# DeepInfra: list prices, as its own list (api.deepinfra.com/models/list) and pricing page say.
+# Where a limited-time promotion is billed below the list price, the list price is kept: the
+# promotion has no end date and can stop any day.
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+input = "0.20"
+output = "0.60"
+cache_read = "0.006"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "deepseek-ai/DeepSeek-V4.1-Flash"
+input = "0.20"
+output = "0.60"
+cache_read = "0.006"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "deepseek-ai/DeepSeek-V4-Pro-0813"
+input = "1.30"
+output = "2.60"
+cache_read = "0.10"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "deepseek-ai/DeepSeek-V4-Flash-0731"
+input = "0.06"
+output = "0.18"
+cache_read = "0.015"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "moonshotai/Kimi-K3.1-Pro"
+input = "2"
+output = "10"
+cache_read = "0.20"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "moonshotai/Kimi-K3"
+input = "2.85"
+output = "14.25"
+cache_read = "0.285"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "zai-org/GLM-5.3"
+input = "0.90"
+output = "4"
+cache_read = "0.20"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "zai-org/GLM-5.3-Flash"
+input = "0.15"
+output = "0.50"
+cache_read = "0.03"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "Qwen/Qwen3.8-27B"
+input = "0.20"
+output = "2.50"
+cache_read = "0.05"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "Qwen/Qwen3.8-Flash"
+input = "0.113"
+output = "0.382"
+cache_read = "0.0141"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "Qwen/Qwen3.8-Max"
+input = "1.65"
+output = "4.951"
+cache_read = "0.206"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "google/gemma-4-31B-it"
+input = "0.20"
+output = "0.40"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "google/gemma-4-26B-A4B-it"
+input = "0.07"
+output = "0.34"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B"
+input = "0.075"
+output = "0.40"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B"
+input = "0.50"
+output = "2.20"
+cache_read = "0.10"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
+
+[[prices]]
+service = "api.deepinfra.com"
+model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+input = "0.10"
+output = "0.32"
+date = "2026-11-24"
+page = "https://deepinfra.com/pricing"
