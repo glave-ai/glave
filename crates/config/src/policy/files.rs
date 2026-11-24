@@ -324,8 +324,8 @@ impl ServeFile {
                     .to_owned(),
             );
         };
-        let (own, shared) = (origin.host(), domain.host());
-        let under = shared == own || shared.ends_with(&format!(".{own}"));
+        let (own, apart) = (origin.host(), domain.host());
+        let under = apart == own || apart.ends_with(&format!(".{own}"));
         (under && own != "localhost").then(|| {
             format!(
                 "shares = {shares:?} is glave's own name or under it, where a shared page could \

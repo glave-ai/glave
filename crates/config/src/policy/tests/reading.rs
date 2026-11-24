@@ -700,7 +700,7 @@ fn the_share_domain_is_apart_from_glave_s_own_name() {
     let loaded = load_all(&locations, None).unwrap();
     let shares = loaded.choices.shares.map(|chosen| chosen.value);
     assert_eq!(
-        shares.as_ref().map(|shares| shares.as_str()),
+        shares.as_ref().map(glave_ports::host::PublicOrigin::as_str),
         Some("https://share.example.net")
     );
     for refused in [
