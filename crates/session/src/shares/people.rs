@@ -163,11 +163,15 @@ where
         let mail = Mail {
             to: address,
             subject: say(language, &Sentence::ShareCodeSubject),
-            text: say(
-                language,
-                &Sentence::ShareCodeText {
-                    code: format!("{half}-{rest}"),
-                },
+            text: format!(
+                "{}\n\n{}\n",
+                say(
+                    language,
+                    &Sentence::ShareCodeText {
+                        code: format!("{half}-{rest}"),
+                    },
+                ),
+                say(language, &Sentence::ShareCodeNote),
             ),
         };
         self.send_later(std::sync::Arc::clone(mailer), Some(mail));
