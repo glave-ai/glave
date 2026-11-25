@@ -18,6 +18,7 @@
 mod body;
 mod hosts;
 mod listen;
+mod shared;
 mod site;
 
 pub(crate) use self::body::KEEP_ALIVE;
@@ -145,25 +146,17 @@ where
                 let (server, signin, site) =
                     (server.clone(), Arc::clone(&signin), Arc::clone(&site));
                 let names = hosts.as_ref().as_ref();
-                let foreign = names.is_some_and(|hosts| !hosts.allow(request.headers()));
-                let door = door(names, request.headers(), peer);
+                let came = Came {
+                    foreign: names.is_some_and(|hosts| !hosts.allow(request.headers())),
+                    door: door(names, request.headers(), peer),
+                    shared: shared_id(&server, request.headers()),
+                    peer,
+                    secure,
+                };
                 async move {
-                    if foreign {
-                        return Ok::<_, Infallible>(plain(StatusCode::FORBIDDEN));
-                    }
-                    // Only a browser's GET: a prefetch's HEAD must not spend the sign-in's state.
-                    if request.method() == Method::GET && request.uri().path() == CALLBACK {
-                        let query = request.uri().query().unwrap_or_default();
-                        return Ok(said(server.finish_connection(query).await));
-                    }
-                    let answered = match site.as_ref() {
-                        Some(site) if is_read(request.method()) => {
-                            let accepted = request.headers().get(header::ACCEPT_ENCODING);
-                            site.answer(request.uri().path(), accepted).await
-                        }
-                        _ => answer(&server, &signin, (door, peer, secure), request).await,
-                    };
-                    Ok::<_, Infallible>(answered)
+                    Ok::<_, Infallible>(
+                        route(&server, &signin, site.as_ref().as_ref(), came, request).await,
+                    )
                 }
             });
             let Some(stream) = connected(tls, stream).await else {
@@ -181,6 +174,53 @@ where
     connections.abort_all();
     while connections.join_next().await.is_some() {}
     Ok(())
+}
+
+/// How a request came in: to a name of the listener's own or not, through which door, from
+/// where, over HTTPS of the server's own or not, and to which share's own name, if one.
+struct Came {
+    foreign: bool,
+    door: Door,
+    shared: Option<String>,
+    peer: IpAddr,
+    secure: bool,
+}
+
+/// Answers one request that `came` in: at a share's own name, its share alone; else a page of
+/// the web app, the connection's sign-in coming back, or the API.
+async fn route<P, L, B>(
+    server: &Server<P, L, B>,
+    signin: &SignIn,
+    site: Option<&Site>,
+    came: Came,
+    request: HttpRequest<Incoming>,
+) -> Response<Answer>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    // A share's own name answers its share and nothing of glave's.
+    if let Some(id) = came.shared {
+        let (method, path) = (request.method(), request.uri().path());
+        let headers = request.headers();
+        return shared::answer(server, &id, method, path, headers).await;
+    }
+    if came.foreign {
+        return plain(StatusCode::FORBIDDEN);
+    }
+    // Only a browser's GET: a prefetch's HEAD must not spend the sign-in's state.
+    if request.method() == Method::GET && request.uri().path() == CALLBACK {
+        let query = request.uri().query().unwrap_or_default();
+        return said(server.finish_connection(query).await);
+    }
+    match site {
+        Some(site) if is_read(request.method()) => {
+            let accepted = request.headers().get(header::ACCEPT_ENCODING);
+            site.answer(request.uri().path(), accepted).await
+        }
+        _ => answer(server, signin, (came.door, came.peer, came.secure), request).await,
+    }
 }
 
 /// Where a browser on this computer reaches a server listening on `all`: `http://` and its
@@ -375,6 +415,19 @@ where
         // watch ends.
         None => accepted(),
     }
+}
+
+/// What a request with `headers` came to of the server's share domain, where it shares files at
+/// all: `None` where it came to no name of it, else the share's id at its own name, or an empty
+/// id, which opens nothing, at any other name there.
+fn shared_id<P, L, B>(server: &Server<P, L, B>, headers: &HeaderMap) -> Option<String> {
+    let host = headers.get(header::HOST)?.to_str().ok()?;
+    server
+        .inner
+        .shares
+        .as_ref()?
+        .claims(host)
+        .map(str::to_owned)
 }
 
 /// Whether `method` reads a page rather than calling the API.

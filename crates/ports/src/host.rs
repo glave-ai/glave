@@ -114,6 +114,14 @@ impl PublicOrigin {
             .map_or(self.origin.as_str(), |(_, authority)| authority)
     }
 
+    /// Its host alone, without a port: `glave.example.com`, `localhost`.
+    pub fn host(&self) -> &str {
+        let authority = self.authority();
+        authority
+            .rsplit_once(':')
+            .map_or(authority, |(name, _)| name)
+    }
+
     /// The port of `http://localhost:<port>`, when it is this computer's: where the server must
     /// serve, on loopback alone, for it to be its origin.
     pub fn here(&self) -> Option<u16> {

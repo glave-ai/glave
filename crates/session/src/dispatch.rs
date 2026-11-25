@@ -282,9 +282,7 @@ where
             Request::ThreadUnarchive { thread } => {
                 boxed(|| self.change(caller, thread, Change::Unarchive)).await
             }
-            Request::ThreadDelete { thread } => {
-                boxed(|| self.change(caller, thread, Change::Delete)).await
-            }
+            Request::ThreadDelete { thread } => boxed(|| self.delete_thread(caller, thread)).await,
             Request::ThreadEvents {
                 thread,
                 after,
@@ -439,6 +437,8 @@ where
             Request::LibraryRemove { project, asset } => {
                 boxed(|| self.remove_from_library(caller, project, asset)).await
             }
+            Request::ShareGet { of } => boxed(|| self.get_share(caller, &of)).await,
+            Request::ShareSet { set } => boxed(|| self.set_share(caller, set)).await,
             Request::TasksStop { thread } => boxed(|| self.stop_task(caller, thread)).await,
             Request::TerminalOpen { thread, size } => {
                 boxed(|| self.open_terminal(caller, thread, size)).await

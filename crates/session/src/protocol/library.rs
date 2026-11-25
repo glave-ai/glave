@@ -26,6 +26,10 @@ pub struct LibraryItem {
     /// The chat it was made in, while that chat is there: absent once it was deleted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat: Option<LibraryChat>,
+    /// Who it is shared with, in a sentence, where it is shared: "Shared with anyone who has
+    /// the link".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared: Option<super::Told>,
 }
 
 /// The chat a Library item was made in.

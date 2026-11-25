@@ -85,11 +85,19 @@ pub enum Reserved {
     /// ([`Scope::of_organization`]), of each project with schedules now, by its organization
     /// and project, ids alone (`schedule.placed`, then `schedule.unplaced` as its last goes).
     Scheduled,
+    /// `…0011`: what a person shares from a project (`share.set`, `share.stopped`), in that
+    /// project (`specs/session.md`, "Sharing").
+    Shares,
+    /// `…0012`: where each link's share is on the store, which a server serving a link reads to
+    /// find it: one stream, in the server's own organization's scope ([`Scope::of_organization`]),
+    /// of each link by the SHA-256 of its id, with its organization and project, ids alone
+    /// (`share.placed`, `share.unplaced`).
+    Links,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 19] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
@@ -107,6 +115,8 @@ impl Reserved {
         Self::Push,
         Self::Library,
         Self::Scheduled,
+        Self::Shares,
+        Self::Links,
     ];
 
     /// The ledger's id, the same in every project.
@@ -129,6 +139,8 @@ impl Reserved {
             Self::Push => 14,
             Self::Library => 15,
             Self::Scheduled => 16,
+            Self::Shares => 17,
+            Self::Links => 18,
         };
         ThreadId::reserved(number)
     }

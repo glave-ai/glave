@@ -453,6 +453,21 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             "library/remove",
             vec![json!({"project": "@project", "asset": "@asset"})],
         ),
+        (
+            "share/get",
+            vec![
+                json!({"kind": "item", "project": "@project", "asset": "@asset"}),
+                json!({"kind": "file", "thread": "@thread", "sha256": "@made"}),
+            ],
+        ),
+        (
+            "share/set",
+            vec![
+                json!({"kind": "item", "project": "@project", "asset": "@asset", "audience": {"kind": "anyone"}}),
+                json!({"kind": "file", "thread": "@thread", "sha256": "@made", "audience": {"kind": "anyone"}, "update": true}),
+                json!({"kind": "item", "project": "@project", "asset": "@asset"}),
+            ],
+        ),
         ("thread/compact", on_thread()),
         (
             "approval/decide",

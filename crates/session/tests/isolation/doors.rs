@@ -33,8 +33,29 @@ const SITE_ROUTES: [&str; 3] = [
 /// (`nothing_outside_the_app_or_but_the_index_page_is_served`, `no_answer_sets_a_cookie`).
 const FILES: &str = "GET or HEAD of any other path: the web app's own files";
 
+/// The way in at a share's own name: its share alone, to anyone with its link.
+const SHARED: &str = "GET or HEAD at a share's own name: its page, file and download";
+
 /// Each place a request is routed, by file and as written, and the way in it is.
-const DOORS: [(&str, &str, &str); 28] = [
+const DOORS: [(&str, &str, &str); 31] = [
+    // A shared file at its link's own name under the share domain: its page, its file and its
+    // download, to anyone with the link, nothing of glave's there and no sign-in read. Attacked
+    // by `shares.rs` (`a_link_serves_its_share_alone_at_a_name_of_its_own_and_stops_at_once`).
+    (
+        "http.rs",
+        "let (method, path) = (request.method(), request.uri().path());",
+        SHARED,
+    ),
+    (
+        "http/shared.rs",
+        "let head = *method == Method::HEAD;",
+        SHARED,
+    ),
+    (
+        "http/shared.rs",
+        "if *method != Method::GET && !head {",
+        SHARED,
+    ),
     // The page a browser comes back to from a connection's sign-in. It carries no sign-in of
     // glave's: its `state`, a random value only the browser that began the sign-in was given,
     // names what it finishes, once, and only the person on the server's computer begins one.

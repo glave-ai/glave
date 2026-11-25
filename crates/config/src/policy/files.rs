@@ -277,6 +277,13 @@ pub struct ServeFile {
     /// request that comes straight to it names what it likes. Unset, glave believes only the
     /// last address a proxy on this computer or a private network names.
     pub forwarded: Option<std::num::NonZeroU8>,
+    /// The share domain, such as `https://share.example.com`: each file a person shares is
+    /// served at a name of its own under it (`specs/session.md`, "Sharing"), never at glave's
+    /// own origin nor under its name. Without one, nothing is shared.
+    pub shares: Option<String>,
+    /// Where reports of a shared page go: an email address, which each page's Report this page
+    /// writes to. Without one, a page offers no report.
+    pub report: Option<String>,
 }
 
 impl ServeFile {
@@ -290,6 +297,32 @@ impl ServeFile {
             (None, Some(domain)) => Self::named(domain),
             _ => None,
         }
+    }
+
+    /// The share domain's origin, when it is one: an https origin of a name, or
+    /// `http://localhost` with or without a port.
+    pub(crate) fn share_origin(&self) -> Option<PublicOrigin> {
+        PublicOrigin::parse(self.shares.as_deref()?)
+    }
+
+    /// Where reports of a shared page go, when it is an email address.
+    pub(crate) fn report_address(&self) -> Option<String> {
+        let report = self.report.as_deref()?.trim();
+        let (local, domain) = report.split_once('@')?;
+        let plain = !report.contains(|c: char| c.is_whitespace() || "<>\"(),;:?&".contains(c));
+        (plain && !local.is_empty() && domain.contains('.')).then(|| report.to_owned())
+    }
+
+    /// What is wrong with the share domain, if anything: it must be one. Whether it is a site
+    /// apart from glave's is checked on the choices as resolved ([`super::choices::apart`]).
+    fn shares_problem(&self) -> Option<String> {
+        let shares = self.shares.as_deref()?;
+        PublicOrigin::parse(shares).is_none().then(|| {
+            "shares is not a domain to share at: https:// and its name, such as \
+             https://share.example.net, and nothing after it; or, to try sharing on this \
+             computer, http://localhost"
+                .to_owned()
+        })
     }
 
     /// The ACME directory glave gets its certificate from, when it serves HTTPS itself.
@@ -335,6 +368,12 @@ impl ServeFile {
                  for which glave serves HTTPS itself: one of them"
                     .to_owned(),
             );
+        }
+        if let Some(problem) = self.shares_problem() {
+            return Some(problem);
+        }
+        if self.report.is_some() && self.report_address().is_none() {
+            return Some("report is not an email address, such as abuse@example.com".to_owned());
         }
         match (&self.acme, &self.domain) {
             (Some(_), None) => Some("acme is for domain: where its certificate comes from".into()),

@@ -262,6 +262,7 @@ pub async fn load(
         }
         None => assemble(&own, policies, None),
     };
+    choices::apart(&loaded.choices)?;
     loaded.layers = own;
     loaded.person_hooks = person_hooks;
     Ok(loaded)

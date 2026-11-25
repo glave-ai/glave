@@ -22,7 +22,7 @@ pub use envelope::{At, Header, PayloadVersion, RawEvent, Seq, TypeName};
 pub use error::{DecodeError, EncodeError, InvalidValue};
 pub use id::{
     AssetId, CallId, CredentialId, DeviceId, EventId, InviteId, MemoryId, PrincipalId, ProviderId,
-    ScheduleId, ThreadId,
+    ScheduleId, ShareId, ThreadId,
 };
 pub use money::{Currency, Decimal, Money, Nanos};
 pub use payload::repository_address;
@@ -51,6 +51,7 @@ pub use payload::{
     Usage, Verdict, WebPage,
 };
 pub use payload::{AssetKind, LibraryKept, LibraryRemoved};
+pub use payload::{Audience, SharePlaced, ShareSet, ShareStopped, ShareUnplaced, SharedFrom};
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{
     Catalog, CatalogEndpoint, CatalogModel, CatalogProvider, CatalogRefreshed, Precision,

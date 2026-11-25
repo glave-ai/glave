@@ -140,6 +140,8 @@ pub struct Wiring<P, L, B> {
     /// Whether anyone may sign up with their email (`[serve] signup`): it does only where it
     /// also keeps `accounts`, sends `mail` and has an `origin`.
     pub signup: bool,
+    /// Where the files people share are served (`[serve] shares`); none, and nothing is shared.
+    pub shares: Option<crate::ShareDomain>,
     /// How many addresses the proxies in front of it add to `X-Forwarded-For`, when its
     /// configuration says (`[serve] forwarded`); `specs/session.md`, "Who is calling".
     pub forwarded: Option<NonZeroU8>,
@@ -219,6 +221,7 @@ impl<P, L, B> Wiring<P, L, B> {
             push: None,
             origin: None,
             signup: false,
+            shares: None,
             forwarded: None,
             leases: None,
             awake: None,
@@ -384,6 +387,10 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) strangers: Mutex<crate::strangers::Strangers>,
     /// Where people reach the server from elsewhere, if they do.
     pub(crate) origin: Option<PublicOrigin>,
+    /// Where the files people share are served, where it shares any.
+    pub(crate) shares: Option<crate::ShareDomain>,
+    /// The shares' list, as far as this server has read it (`shares/links.rs`).
+    pub(crate) links: Mutex<crate::shares::Links>,
     /// What the threads opened or started here did with their projects' asks.
     pub(crate) asks: Mutex<Asks>,
     /// Set once the server stops: it starts no new work (`stopping.rs`).
@@ -490,6 +497,8 @@ where
                 signups: Mutex::new(crate::signups::Signups::default()),
                 strangers: Mutex::new(crate::strangers::Strangers::default()),
                 origin: wiring.origin,
+                shares: wiring.shares,
+                links: Mutex::new(crate::shares::Links::default()),
                 stopping: AtomicBool::new(false),
                 leases,
                 holder: OnceLock::new(),

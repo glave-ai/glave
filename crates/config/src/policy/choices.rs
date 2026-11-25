@@ -105,6 +105,10 @@ pub struct Choices {
     /// How many addresses the proxies in front of glave add to `X-Forwarded-For`
     /// (`[serve] forwarded`).
     pub forwarded: Option<Chosen<std::num::NonZeroU8>>,
+    /// The share domain, where the files people share are served (`[serve] shares`).
+    pub shares: Option<Chosen<PublicOrigin>>,
+    /// Where reports of a shared page go (`[serve] report`).
+    pub report: Option<Chosen<String>>,
     /// Whether organizations pay for their models from credits (`[credits]`), and with what
     /// monthly limit.
     pub credits: Option<Chosen<CreditsFile>>,
@@ -185,6 +189,10 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         email: nearest(layers, "email", |file| file.email.clone()),
         signup: nearest(layers, "serve", |file| file.serve.as_ref()?.signup),
         forwarded: nearest(layers, "serve", |file| file.serve.as_ref()?.forwarded),
+        shares: nearest(layers, "serve", |file| file.serve.as_ref()?.share_origin()),
+        report: nearest(layers, "serve", |file| {
+            file.serve.as_ref()?.report_address()
+        }),
         credits: nearest(layers, "credits", |file| file.credits.clone()),
         router_floor: nearest(layers, "router_floor", |file| file.router_floor.clone()),
         prices: nearest(layers, "prices", |file| file.prices.clone()),
@@ -212,6 +220,38 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
             ProjectMemory::Shared,
         ),
     }
+}
+
+/// Refuses a share domain on glave's own site, as `choices` resolved them from every layer: the
+/// share domain's registrable domain (one label past its public suffix, by the Public Suffix
+/// List) must differ from that of glave's public origin, so a shared page can neither use
+/// glave's passkeys nor set cookies on its site. Either one unset, there is nothing to check.
+/// `localhost` is exempt, to try sharing on one computer: it is not on the list, but browsers
+/// apply the list's default rule to it, so each name under it is a site of its own.
+pub(super) fn apart(choices: &Choices) -> crate::Result<()> {
+    let (Some(origin), Some(shares)) = (&choices.origin, &choices.shares) else {
+        return Ok(());
+    };
+    let (own, apart) = (site(origin.value.host()), site(shares.value.host()));
+    if own.is_some() && own == apart {
+        crate::error::refuse!(
+            "shares = {:?} is on glave's own site, {:?}, where a shared page could reach \
+             glave's sign-in: name a domain apart, such as https://share.example.net",
+            shares.value.as_str(),
+            origin.value.as_str()
+        );
+    }
+    Ok(())
+}
+
+/// The registrable domain of `host`, by the Public Suffix List; none for `localhost` and the
+/// names under it, each a site of its own.
+fn site(host: &str) -> Option<String> {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if host == "localhost" || host.ends_with(".localhost") {
+        return None;
+    }
+    Some(psl::domain_str(&host).unwrap_or(&host).to_owned())
 }
 
 /// `chosen`, or glave's default `value`.

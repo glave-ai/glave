@@ -219,6 +219,12 @@ v7_id!(
 );
 
 v7_id!(
+    /// Identifies one share of a file at a link of its own (`share.set`).
+    ShareId,
+    "share id"
+);
+
+v7_id!(
     /// Identifies one item of a person's Library (`library.kept`), in every client and in a
     /// media tool's result (`asset`).
     AssetId,

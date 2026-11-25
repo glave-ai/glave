@@ -49,12 +49,15 @@ mod seed;
 
 /// glave's settings: people who share this computer reach it at its `localhost`, at whichever
 /// port it serves, and someone new comes in only by an invite, as on Glave Cloud at first:
-/// `signup = false`, which is also what a server with no `signup` does.
-const SETTINGS: &str = "[serve]\norigin = \"http://localhost\"\nsignup = false\n";
+/// `signup = false`, which is also what a server with no `signup` does. Files they share open at
+/// a name of their own under `localhost`, `<id>.localhost:<port>`, a site apart from glave's.
+const SETTINGS: &str =
+    "[serve]\norigin = \"http://localhost\"\nsignup = false\nshares = \"http://localhost\"\n";
 
 /// With `--signup`, glave's settings: as [`SETTINGS`], and anyone may sign up, sent a link
 /// through the stand-in mail server (`mailbox.rs`) from [`FROM`].
-const SIGNUP: &str = "[serve]\norigin = \"http://localhost\"\nsignup = true\n";
+const SIGNUP: &str =
+    "[serve]\norigin = \"http://localhost\"\nsignup = true\nshares = \"http://localhost\"\n";
 
 /// Who glave's email comes from, with `--signup`.
 const FROM: &str = "glave <glave@try-org.localhost>";

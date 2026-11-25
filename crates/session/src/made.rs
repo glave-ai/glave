@@ -6,8 +6,8 @@
 //! file's preview as its turn kept it. Nothing here reads a file the agent made.
 
 use glave_event::{
-    AssetKind, Body, FileMade, Kept, MadeLeft, MadePreview, Parts, RawEvent, Seq, Sha256, ThreadId,
-    decode,
+    AssetKind, Body, FileMade, Kept, MadeLeft, MadePreview, Parts, RawEvent, Seq, Sha256,
+    SharedFrom, ThreadId, decode,
 };
 use glave_harness::MAX_FILE;
 use glave_ports::{BlobStore, EventLog, ModelProvider, read_all};
@@ -36,6 +36,14 @@ where
 {
     /// The files `thread`'s turns made, as its log names them.
     pub(crate) async fn made_files(&self, thread: ThreadId) -> Result<Reply, ApiError> {
+        let shared = self.shared_sentences(&self.scope_of(thread)?).await?;
+        let shared_as = |file: &FileMade| {
+            let from = SharedFrom::File {
+                thread,
+                path: file.path.clone(),
+            };
+            shared.get(&from).cloned()
+        };
         let made = self
             .made_by_turns(thread)
             .await?
@@ -43,7 +51,12 @@ where
             .filter(|turn| !turn.files.is_empty() || turn.left.is_some())
             .map(|turn| TurnFiles {
                 turn: turn.started,
-                files: turn.files.iter().map(made_file).collect(),
+                files: (turn.files.iter())
+                    .map(|file| MadeFile {
+                        shared: shared_as(file),
+                        ..made_file(file)
+                    })
+                    .collect(),
                 note: turn.left.map(|left| Told::from(left_out(left))),
             })
             .collect();
@@ -82,6 +95,22 @@ where
                 cut: cut.then(|| Sentence::PreviewCut.into()),
             },
         })
+    }
+
+    /// The file `sha256` one of `thread`'s turns made and kept, as its log names it and as a
+    /// client is told of it: the latest a turn named it so. Any other is "no longer here".
+    pub(crate) async fn made_kept(
+        &self,
+        thread: ThreadId,
+        sha256: &Sha256,
+    ) -> Result<(FileMade, MadeFile), ApiError> {
+        let made = self.made_by_turns(thread).await?;
+        let found = (made.into_iter().rev())
+            .flat_map(|turn| turn.files)
+            .find(|file| matches!(&file.kept, Kept::Blob(blob) if blob.sha256 == *sha256));
+        let made = found.ok_or_else(not_here)?;
+        let file = made_file(&made);
+        Ok((made, file))
     }
 
     /// What each of `thread`'s turns made, as its log names it, in order.
@@ -191,6 +220,7 @@ fn made_file(file: &FileMade) -> MadeFile {
         kept: kept.into(),
         unread: unread.then(|| Sentence::MadeUnread.into()),
         sentence: sentence.into(),
+        shared: None,
     }
 }
 
