@@ -584,7 +584,7 @@ mod judging {
         );
         let long = format!("{long} ';'");
         for script in [nested, clauses, long] {
-            assert_eq!(kind(&script), Some(Kind::Unreadable), "{:.80}", script);
+            assert_eq!(kind(&script), Some(Kind::Unreadable), "{script:.80}");
         }
         // With nothing to end it, find runs no command at all.
         assert_eq!(verdict(&unended), Verdict::Unknown);
