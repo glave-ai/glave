@@ -17,7 +17,7 @@ fn bash(command: &str) -> Vec<(&'static str, serde_json::Value)> {
 }
 
 /// A `git push` the person asked for, and the judge's ruling that it runs.
-fn cleared_push() -> Vec<Completion> {
+pub(crate) fn cleared_push() -> Vec<Completion> {
     vec![
         answer(None, bash("git push origin main"), StopReason::ToolUse),
         answer(

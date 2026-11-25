@@ -416,16 +416,8 @@ fn a_project_s_model_never_judges_its_own_actions() {
     };
     let project_dir = folder("projects-own-judge-project");
     block_on!(async {
-        let push = vec![("bash", json!({"command": "git push origin main"}))];
-        let answers = vec![
-            answer(None, push, StopReason::ToolUse),
-            answer(
-                Some(r#"{"decision":"run","reason":"the person asked to push"}"#),
-                vec![],
-                StopReason::EndTurn,
-            ),
-            answer(Some("Pushed."), vec![], StopReason::EndTurn),
-        ];
+        let mut answers = crate::judge::cleared_push();
+        answers.push(answer(Some("Pushed."), vec![], StopReason::EndTurn));
         let workspace = crate::outside_sandbox::walled(&base, false).await;
         let settings = crate::outside_sandbox::judged();
         let (harness, seen) = harness_with(
