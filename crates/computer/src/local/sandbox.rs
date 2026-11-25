@@ -38,7 +38,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::computer::{ComputerError, RunsFor, Sandbox, git_settings};
 
 use run_temp::RunTemp;
-pub(crate) use secrets::moved_stores;
+pub(crate) use secrets::{moved_stores, x_cookie};
 
 /// The first argument that makes glave the Linux sandbox's helper (see [`sandbox_helper`]).
 pub(crate) const SANDBOX_HELPER_ARG: &str = "__glave-sandbox";

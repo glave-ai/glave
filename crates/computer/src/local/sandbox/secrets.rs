@@ -225,18 +225,10 @@ const X_COOKIE: &str = "XAUTHORITY";
 
 /// Where `environment` moves the stores of `home_secrets`: one kept under `~/.config`,
 /// `~/.local/share` or `~/.cache` is under `XDG_CONFIG_HOME`, `XDG_DATA_HOME` or
-/// `XDG_CACHE_HOME` instead where that is set, and so is hidden there too; and the X server's
-/// cookie where `XAUTHORITY` names it. The last value of each, as a command takes it; one that
-/// is not a full path is no place to the tools either.
+/// `XDG_CACHE_HOME` instead where that is set, and so is hidden there too. The last value of
+/// each, as a command takes it; one that is not a full path is no folder to the tools either.
 pub(crate) fn moved_stores(environment: &[(OsString, OsString)]) -> Vec<PathBuf> {
-    let set = |variable: &str| {
-        environment
-            .iter()
-            .rev()
-            .find(|(name, _)| name == variable)
-            .map(|(_, folder)| PathBuf::from(folder))
-            .filter(|folder| folder.is_absolute())
-    };
+    let set = |variable: &str| set(environment, variable);
     MOVED
         .iter()
         .filter_map(|&(default, variable)| set(variable).map(|folder| (default, folder)))
@@ -245,12 +237,31 @@ pub(crate) fn moved_stores(environment: &[(OsString, OsString)]) -> Vec<PathBuf>
                 .filter_map(move |store| store.strip_prefix(default))
                 .map(move |store| folder.join(store))
         })
-        .chain(set(X_COOKIE))
         .collect()
+}
+
+/// The full path the last `variable` in `environment` holds, as a command takes it.
+fn set(environment: &[(OsString, OsString)], variable: &str) -> Option<PathBuf> {
+    environment
+        .iter()
+        .rev()
+        .find(|(name, _)| name == variable)
+        .map(|(_, place)| PathBuf::from(place))
+        .filter(|place| place.is_absolute())
+}
+
+/// The X server's cookie where `XAUTHORITY` in `environment` names a file: a folder named there
+/// is no cookie, and hiding it could hide what commands need.
+pub(crate) async fn x_cookie(environment: &[(OsString, OsString)]) -> Option<PathBuf> {
+    let cookie = set(environment, X_COOKIE)?;
+    let meta = tokio::fs::metadata(&cookie).await.ok()?;
+    meta.is_file().then_some(cookie)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     fn environment(set: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
@@ -281,11 +292,17 @@ mod tests {
     }
 
     #[test]
-    fn the_x_server_s_cookie_is_hidden_where_the_environment_names_it() {
-        let moved = moved_stores(&environment(&[("XAUTHORITY", "/tmp/xauth_abc")]));
-        assert_eq!(moved, [PathBuf::from("/tmp/xauth_abc")]);
-        let relative = moved_stores(&environment(&[("XAUTHORITY", "xauth")]));
-        assert!(relative.is_empty(), "{relative:?}");
+    fn the_x_server_s_cookie_is_hidden_where_the_environment_names_a_file() {
+        let dir = glave_ports::testing::TempDir::new("x-cookie").unwrap();
+        let cookie = dir.join("xauth_abc");
+        std::fs::write(&cookie, "").unwrap();
+        let named = |place: &Path| environment(&[("XAUTHORITY", place.to_str().unwrap())]);
+        glave_ports::block_on!(async {
+            assert_eq!(x_cookie(&named(&cookie)).await, Some(cookie.clone()));
+            assert_eq!(x_cookie(&named(dir.path())).await, None, "a folder");
+            assert_eq!(x_cookie(&named(&dir.join("gone"))).await, None);
+            assert_eq!(x_cookie(&named(Path::new("xauth_abc"))).await, None);
+        });
     }
 
     #[test]

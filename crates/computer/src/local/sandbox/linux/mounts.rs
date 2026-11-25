@@ -298,7 +298,7 @@ impl Protect<'_> {
             State::File => self.mounts.push(Mount::ReadOnly(git)),
             State::StandIn => self.stand_in(git),
         }
-        for path in PROTECTED.iter().filter(|path| !path.starts_with(".git/")) {
+        for path in PROTECTED {
             self.protect(layout.root.join(path))?;
         }
         for folder in folders_leading_to(&layout.root, kept).filter(|folder| folder.is_dir()) {
@@ -361,14 +361,26 @@ impl Protect<'_> {
 }
 
 /// Writes `commondir` at `path`, naming its own git folder ([`SAME_FOLDER`]), unless one is
-/// there already: the repository's own, or one another sandbox wrote. Never removed
+/// there already: the repository's own, or one another sandbox wrote. Whole at once: written
+/// beside it first, then linked into place, so no git ever reads it empty. Never removed
 /// ([`COMMONDIR`]). Blocking.
 fn stand_in_commondir(path: &Path) -> Result<(), String> {
+    if std::fs::symlink_metadata(path).is_ok() {
+        return Ok(());
+    }
+    let thread = format!("{:?}", std::thread::current().id());
+    let digits: String = thread.chars().filter(char::is_ascii_digit).collect();
+    let beside = path.with_file_name(format!(
+        ".{COMMONDIR}.glave-{}-{digits}",
+        std::process::id()
+    ));
     let written = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(path)
-        .and_then(|mut file| file.write_all(SAME_FOLDER.as_bytes()));
+        .open(&beside)
+        .and_then(|mut file| file.write_all(SAME_FOLDER.as_bytes()))
+        .and_then(|()| std::fs::hard_link(&beside, path));
+    let _ = std::fs::remove_file(&beside);
     match written {
         Err(error) if error.kind() != std::io::ErrorKind::AlreadyExists => Err(format!(
             "the sandbox cannot protect {}: {error}",
