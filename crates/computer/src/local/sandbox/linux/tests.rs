@@ -16,7 +16,7 @@ use glave_ports::computer::{
 
 use super::landlocked;
 use crate::local::sandbox::tests::terminals::AnotherTerminal;
-use crate::local::sandbox::tests::token;
+use crate::local::sandbox::tests::{shut, token};
 use crate::local::sandbox_available;
 use crate::{CancelSwitch, LocalComputers};
 
@@ -554,6 +554,17 @@ fn landlock_keeps_what_glave_writes_later_hidden() {
     block_on!(super::super::tests::written_later_stays_hidden(
         &computers, here, &root, &sandbox
     ));
+}
+
+/// Under Landlock too, someone else's commands read nothing of the person's home folder or
+/// projects' folder but their own workspace, the toolchains there and git's settings.
+#[test]
+fn landlock_hides_the_person_s_folders_from_someone_else_s_commands() {
+    let Some(helper) = landlock() else {
+        return;
+    };
+    let dir = scratch("landlock-shut");
+    shut::read_by_each(&dir, SandboxLevel::ReadOnly, Some(&helper));
 }
 
 /// Under Landlock too, a computer's token in glave's folder is neither read nor replaced, nor

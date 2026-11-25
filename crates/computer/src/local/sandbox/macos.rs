@@ -85,6 +85,7 @@ impl Enforcer {
             git_own,
             shared_tmp: sandbox.runs_for == RunsFor::Owner,
             person_temp: Some(system_temp.clone()),
+            shut: reached.shut.clone(),
         };
         let profile = profile(&places, sandbox.level, sandbox.network);
         let mut args: Vec<OsString> = vec!["-p".into(), profile.text.into()];

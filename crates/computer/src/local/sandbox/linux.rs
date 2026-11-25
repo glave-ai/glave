@@ -101,6 +101,7 @@ impl Enforcer {
                 path_in("TMPDIR").as_deref(),
             ),
             git_common,
+            shut: reached.shut.clone(),
         };
         let temps = Temps {
             parent: folder.run().to_owned(),
@@ -279,6 +280,7 @@ fn other_terminals(dev: &Path) -> Vec<PathBuf> {
 fn landlock_plan(layout: &Layout, temp: &Path) -> landlocked::Plan {
     let mut unreadable: Vec<PathBuf> = mounts::hidden_places(layout);
     unreadable.extend(layout.glave_home.iter().cloned());
+    unreadable.extend(layout.shut.folders.iter().cloned());
     unreadable.extend(other_terminals(Path::new("/dev")));
     // Landlock can't give someone else's commands a `/tmp` of their own: none, then, but
     // their own temp folder and the project, wherever those are.
@@ -296,6 +298,7 @@ fn landlock_plan(layout: &Layout, temp: &Path) -> landlocked::Plan {
         .map(|_| layout.root.clone())
         .chain(layout.cache.iter().cloned())
         .chain(layout.glave_on_path.iter().cloned())
+        .chain(layout.shut.open.iter().cloned())
         .chain(own)
         .collect();
     unreadable.sort();

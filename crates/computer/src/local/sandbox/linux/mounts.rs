@@ -26,6 +26,7 @@ use glave_ports::computer::{PROTECTED, SandboxLevel};
 
 use super::super::in_tmp::listeners;
 use super::super::secrets::home_secrets;
+use super::super::shut::Shut;
 use crate::local::sandbox::{folders_leading_to, kept_read_only, own_git_folder};
 
 /// Under the user's runtime folder (`$XDG_RUNTIME_DIR`): Podman's sign-ins.
@@ -106,6 +107,8 @@ pub(super) struct Layout {
     pub(super) moved_sessions: Vec<PathBuf>,
     /// For a worktree: the repository's shared git folder, where its commits go.
     pub(super) git_common: Option<PathBuf>,
+    /// The person's folders someone else's commands never read, and what stays readable there.
+    pub(super) shut: Shut,
 }
 
 /// One mount, in the order bubblewrap applies them: later ones lie over earlier ones.
@@ -206,6 +209,18 @@ pub(super) fn plan(
         .into_iter()
         .collect();
     mounts.push(Mount::ReadOnly(layout.base.clone()));
+    // The person's folders, emptied for someone else's commands, but for what stays readable
+    // there: before the workspace's own mounts, so the workspace's win where they meet.
+    mounts.extend(layout.shut.folders.iter().cloned().map(Mount::Emptied));
+    // What is there, not a link: bubblewrap binds what a link leads to where it leads.
+    let there = |path: &&PathBuf| {
+        std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.file_type().is_symlink())
+    };
+    mounts.extend(
+        (layout.shut.open.iter().filter(there))
+            .cloned()
+            .map(Mount::ReadOnly),
+    );
     mounts.push(Mount::Writable(temp.to_owned()));
     if matches!(layout.tmp, Tmp::Own) {
         mounts.push(Mount::Tmp(temp.to_owned()));
@@ -470,7 +485,8 @@ fn outermost(places: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
 }
 
 /// The real paths of the home folder's credential folders and files, and of whatever else the
-/// computer hides, that exist, except one that holds the workspace. Blocking.
+/// computer hides, that exist, except one that holds the workspace or that a folder hidden whole
+/// from someone else's commands hides already. Blocking.
 pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
     let in_home = layout
         .home
@@ -488,7 +504,7 @@ pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
         .chain(layout.also_hidden.iter().cloned())
         .chain(var_tmp)
         .filter_map(|secret| std::fs::canonicalize(secret).ok())
-        .filter(|real| !layout.root.starts_with(real))
+        .filter(|real| !layout.root.starts_with(real) && !layout.shut.hides(real))
         .collect()
 }
 
@@ -548,6 +564,7 @@ mod tests {
             daemons,
             moved_sessions: moved,
             git_common: None,
+            shut: Shut::default(),
         };
         let (mounts, _held) = plan(&layout, &dir.join("temp"), &StandIns::default()).unwrap();
         mounts
