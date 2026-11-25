@@ -15,7 +15,7 @@ use glave_session::protocol::{
 };
 
 use crate::support::issuer::fixed_clock;
-use crate::support::web::serve_with;
+use crate::support::web::{Served, serve_with};
 use crate::support::*;
 
 fn people(addresses: &[&str]) -> Audience {
@@ -138,25 +138,31 @@ impl Browser {
     }
 }
 
+/// `of` shared with ada alone on `server`, served over HTTP, and a browser at its own name.
+async fn for_ada(server: &Tested, of: &ShareOf) -> (Served, Browser) {
+    let share = shared(server, of, people(&["ada@example.com"]))
+        .await
+        .unwrap();
+    let local = LocalToken::new([7; 32]);
+    let signin = SignIn::local(local, Box::new(fixed_clock()));
+    let listening = serve_with(server.clone(), signin, None).await;
+    let id = share
+        .link
+        .trim_start_matches("https://")
+        .split('.')
+        .next()
+        .unwrap();
+    let browser = Browser::new(&format!("{id}.share.example.net"), listening.address);
+    (listening, browser)
+}
+
 #[test]
 fn only_a_listed_address_gets_a_link_and_its_proof_ends_with_any_change_to_who_may_open() {
     let dir = folder("shares-people");
     block_on!(async {
         let outbox = Arc::new(Outbox::default());
         let (server, of, _) = drawn_fox(&dir, &outbox).await;
-        let share = shared(&server, &of, people(&["ada@example.com"]))
-            .await
-            .unwrap();
-        let local = LocalToken::new([7; 32]);
-        let signin = SignIn::local(local, Box::new(fixed_clock()));
-        let listening = serve_with(server.clone(), signin, None).await;
-        let id = share
-            .link
-            .trim_start_matches("https://")
-            .split('.')
-            .next()
-            .unwrap();
-        let browser = Browser::new(&format!("{id}.share.example.net"), listening.address);
+        let (listening, browser) = for_ada(&server, &of).await;
 
         // Without a proof, the page asks for an email, naming nothing it shares.
         let asked = browser.get("/", "").await.text().await.unwrap();
@@ -209,19 +215,7 @@ fn asking_for_another_link_leaves_the_first_working() {
     block_on!(async {
         let outbox = Arc::new(Outbox::default());
         let (server, of, clock) = drawn_fox(&dir, &outbox).await;
-        let share = shared(&server, &of, people(&["ada@example.com"]))
-            .await
-            .unwrap();
-        let local = LocalToken::new([7; 32]);
-        let signin = SignIn::local(local, Box::new(fixed_clock()));
-        let listening = serve_with(server.clone(), signin, None).await;
-        let id = share
-            .link
-            .trim_start_matches("https://")
-            .split('.')
-            .next()
-            .unwrap();
-        let browser = Browser::new(&format!("{id}.share.example.net"), listening.address);
+        let (listening, browser) = for_ada(&server, &of).await;
         browser.post("/link", "email=ada%40example.com").await;
         let first = outbox.sent_by(1).await[0].text.clone();
         clock.advance_millis(61_000);
