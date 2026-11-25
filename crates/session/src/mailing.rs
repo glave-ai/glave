@@ -36,7 +36,7 @@ const PER_BLOCK: usize = 100;
 /// The networks `from` is in, as glave counts what it asks for: an IPv4 address alone; for an
 /// IPv6 one, the /64 it is in, which one household or machine is given whole, and the /48
 /// that /64 is in.
-fn networks(from: IpAddr) -> (String, Option<String>) {
+pub(crate) fn networks(from: IpAddr) -> (String, Option<String>) {
     match from.to_canonical() {
         IpAddr::V4(v4) => (v4.to_string(), None),
         IpAddr::V6(v6) => {

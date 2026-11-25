@@ -18,8 +18,8 @@ mod state;
 
 pub(crate) use self::index::passkey_key;
 pub use self::passkeys::Discovered;
-pub(crate) use self::passkeys::Discoverer;
 pub use self::passkeys::{AcceptedPasskeys, Ceremony, Checked, PasskeyInfo, Proof, UnknownPasskey};
+pub(crate) use self::passkeys::{Discoverer, Sealer};
 
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
@@ -32,7 +32,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use self::ledger::{Ledger, Made, Stream};
-use self::passkeys::{Ceremonies, Relying};
+use self::passkeys::Relying;
 use self::state::{Change, Kept, State};
 use super::local::{digest, hex, same};
 
@@ -72,8 +72,6 @@ pub enum BrowserError {
          runs on, ask glave for a new one"
     )]
     Setup,
-    #[error("too many sign-in links that do not work were tried: wait a minute, then try again")]
-    TooMany,
     #[error("this browser's sign-in has ended: open glave again to sign in")]
     Ended,
     #[error("this browser was signed in on the computer glave runs on, and signs in only there")]
@@ -132,8 +130,9 @@ pub struct Browsers {
     /// Passkeys' relying party: the public origin, where the server is reached from
     /// elsewhere; else this computer's `localhost`, once the server listens there.
     relying: OnceLock<Relying>,
-    /// The passkey requests begun and not yet answered.
-    ceremonies: Mutex<Ceremonies>,
+    /// What its passkey requests are sealed under, and the sign-ins spent: its own, or, for a
+    /// glave account, every account's on this server.
+    sealer: Arc<Sealer>,
 }
 
 impl Browsers {
@@ -168,7 +167,7 @@ impl Browsers {
                 ..State::default()
             }),
             relying,
-            ceremonies: Mutex::new(Ceremonies::default()),
+            sealer: Arc::new(Sealer::new()?),
         };
         browsers.catch_up().await?;
         Ok(browsers)
@@ -176,12 +175,13 @@ impl Browsers {
 
     /// The sessions and passkeys of `person`'s glave account, kept in the account's own
     /// ledger, for the server `server`, its passkeys made at `origin` and keeping the person's
-    /// id as their handle, each indexed in `index` by its credential id.
+    /// id as their handle, each indexed in `index` by its credential id, its passkey requests
+    /// sealed under `sealer`.
     pub(crate) async fn open_account<L: EventLog + 'static>(
         log: L,
         person: PrincipalId,
         server: String,
-        origin: &PublicOrigin,
+        (origin, sealer): (&PublicOrigin, Arc<Sealer>),
         clock: Box<dyn Clock>,
         index: Arc<dyn Directory>,
     ) -> Result<Self, BrowserError> {
@@ -189,6 +189,7 @@ impl Browsers {
         let handle = person.as_uuid();
         let mut browsers = Self::open(log, scope, server, handle, Some(origin), clock).await?;
         browsers.account = Some(person);
+        browsers.sealer = sealer;
         // Those it had before they were indexed, or since an account in no organization let
         // them go.
         browsers.index_passkeys(&index).await?;

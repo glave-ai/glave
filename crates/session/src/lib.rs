@@ -77,6 +77,7 @@ mod standing;
 mod steer;
 mod steps;
 mod stopping;
+mod strangers;
 mod streamed;
 mod tasks;
 mod terminals;

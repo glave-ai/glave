@@ -108,6 +108,9 @@ where
         reason = "one arm per method: the API's one dispatch"
     )]
     async fn answer(&self, caller: &Caller, request: Request) -> Answered {
+        if let Err(refused) = self.count_stranger(caller, &request) {
+            return Answered::Reply(Err(refused));
+        }
         if let Err(refused) = self.seen(caller, &request).await {
             return Answered::Reply(Err(refused));
         }
