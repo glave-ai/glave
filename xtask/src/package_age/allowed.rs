@@ -58,6 +58,31 @@ pub(super) const ALLOWED: &[Entry] = &[
         why: "url 2.5.9, the fix for RUSTSEC-2026-0592, requires form_urlencoded ^1.2.3, \
               published with it: the advisory's fix can't come in without it",
     },
+    Entry {
+        registry: Registry::Crates,
+        name: "kube-client",
+        version: "4.2.1",
+        published: "2026-11-24T21:55:53.527117Z",
+        why: "RUSTSEC-2026-0600 (the `openssl-tls` connector trusted OpenSSL's default CA \
+              store besides the cluster's CA), fixed first in 4.2.1: a security fix that \
+              can't wait, and cargo deny fails on every branch until it comes in",
+    },
+    Entry {
+        registry: Registry::Crates,
+        name: "kube",
+        version: "4.2.1",
+        published: "2026-11-24T21:57:13.609156Z",
+        why: "kube 4.2.1 is what brings kube-client 4.2.1, the fix for RUSTSEC-2026-0600, \
+              published with it: the advisory's fix can't come in without it",
+    },
+    Entry {
+        registry: Registry::Crates,
+        name: "kube-core",
+        version: "4.2.1",
+        published: "2026-11-24T21:55:25.144854Z",
+        why: "kube-client 4.2.1, the fix for RUSTSEC-2026-0600, requires kube-core 4.2.1, \
+              published with it: the advisory's fix can't come in without it",
+    },
 ];
 
 #[cfg(test)]
