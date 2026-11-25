@@ -95,13 +95,11 @@ async fn judging(
     // Read again from its log, as a server that restarted would.
     let mut thread = harness.resume_thread(scope(), thread.id).await.unwrap();
     turn(&harness, &mut thread, "thanks").await;
+    let recorded = typed(&events(harness.log(), thread.id).await);
     let seen = seen.lock().unwrap();
     let sent = format!("{:?}", seen.first().map(|request| &request.messages));
     assert!(sent.contains(SHIP), "the model reads what it sent: {sent}");
-    Some((
-        judges(&seen),
-        typed(&events(harness.log(), thread.id).await),
-    ))
+    Some((judges(&seen), recorded))
 }
 
 /// What each of the person's messages in `events` records they typed.
@@ -215,16 +213,15 @@ fn a_command_sent_while_a_turn_runs_is_what_the_person_typed_to_the_judge() {
             )
             .await
             .unwrap();
-        let seen = seen.lock().unwrap();
-        let judges = judges(&seen);
-        assert_eq!(judges.len(), 1, "{judges:?}");
-        let judged = &judges[0];
+        let recorded = typed(&events(harness.log(), thread.id).await);
+        assert_eq!(recorded, [None, Some("/ship docs".to_owned())]);
+        let shown = judges(&seen.lock().unwrap());
+        assert_eq!(shown.len(), 1, "one ruling: {shown:?}");
+        let only = shown.first().unwrap();
         assert!(
-            judged.contains("1. tidy up") && judged.contains("2. /ship docs"),
-            "{judged}"
+            only.contains("1. tidy up") && only.contains("2. /ship docs"),
+            "{only}"
         );
-        assert!(!judged.contains(SHIP), "{judged}");
-        let typed = typed(&events(harness.log(), thread.id).await);
-        assert_eq!(typed, [None, Some("/ship docs".to_owned())]);
+        assert!(!only.contains(SHIP), "{only}");
     });
 }
