@@ -154,7 +154,7 @@ keyring = { version = "4.2", default-features = false, features = ["v1"] }
 lettre = { version = "0.11.24", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "aws-lc-rs", "rustls-platform-verifier"] }
 # The Kubernetes client for the worker backend on Kubernetes: kubeconfig and in-cluster auth,
 # rustls on aws-lc-rs as the rest of glave, and WebSockets for exec.
-kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "aws-lc-rs", "ws"] }
+kube = { version = "4.2.1", default-features = false, features = ["client", "rustls-tls", "aws-lc-rs", "ws"] }
 # The memory allocator of glave's static Linux builds (crates/cli/src/allocator.rs): musl's own
 # is slow at the many small allocations glave makes. Microsoft's, MIT, one C file built with cc.
 # `no_thp`: it asks for no transparent huge pages; zeroing one cost every start about half a
