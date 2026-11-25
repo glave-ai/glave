@@ -12,7 +12,7 @@ use glave_process::{Child, Processes, Program};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 
 use super::{bubblewrap, scratch};
-use crate::local::sandbox::{Launch, Prepared};
+use crate::local::sandbox::{Around, Launch, Prepared};
 
 /// A folder in `/tmp` of the test's own, removed with what is in it when dropped.
 struct InTmp(PathBuf);
@@ -84,7 +84,12 @@ fn a_folder_bubblewrap_made_again_is_made_private_and_stays_hidden() {
     );
     let said = block_on!(async {
         let hidden = [place.clone()];
-        let prepared = Prepared::new(&sandbox, &project, None, None, &hidden, None);
+        let around = Around {
+            hidden: &hidden,
+            glave_on_path: None,
+            projects: None,
+        };
+        let prepared = Prepared::new(&sandbox, &project, None, None, around);
         let prepared = prepared.await.unwrap();
         let first = prepared.launch().await.unwrap();
         let second = prepared.launch().await.unwrap();

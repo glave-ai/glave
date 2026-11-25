@@ -25,6 +25,8 @@ mod own_settings;
 
 mod own_tmp;
 
+pub(super) mod shut;
+
 mod startup;
 
 mod stores;
