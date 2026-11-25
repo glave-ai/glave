@@ -476,15 +476,17 @@ where
         self.ask(thread, request, cancel, live).await
     }
 
-    /// The model that judges `thread`'s flagged actions, or none when no judge does: its
-    /// project's choice, else the harness's. The main model is the person's or the server's,
-    /// never the project's `model`, which a repository sets without being trusted: a project
-    /// picks its judge only with `judge_model`, which needs the person's trust.
+    /// The model that judges `thread`'s flagged actions, or none when no judge does, so the
+    /// person is asked: the trusted project's `judge_model`, else the harness's (the person's
+    /// or the server's `judge_model`). The main model, as judge, is the default model the
+    /// person's or the server's settings give, never the model the thread's turns go to: that
+    /// can be the project's `model`, which a repository sets without being trusted, and so
+    /// can the model a turn read again from its log kept. With no default model, none judges.
     fn judge_for(&self, thread: &Thread) -> Option<String> {
         let settled = &thread.brought.settled;
         match settled.judge.as_ref().unwrap_or(&thread.defaults.judge) {
             Judge::Off => None,
-            Judge::Main => Some(self.default_model()),
+            Judge::Main => Some(self.default_model()).filter(|model| !model.is_empty()),
             Judge::Model(model) => Some(model.clone()),
         }
     }

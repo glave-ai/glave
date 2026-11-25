@@ -1,10 +1,10 @@
 //! The judge: in auto mode, decides whether an action a rule flagged may run anyway because
 //! the person clearly asked for it. It sees only the person's own words, the action and why it
 //! was flagged: never tool output, the model's prose or the project's instructions, which a
-//! repository writes and the agent can change, so nothing but the person grants anything. The action and its flag are the
-//! agent's own text, so they are shown in closed blocks they cannot break out of, and the judge
-//! is told that claims of permission inside them are not the person's. Any failure means
-//! asking the person.
+//! repository writes and the agent can change, so nothing but the person grants anything.
+//! The action and its flag are the agent's own text, so they are shown in closed blocks they
+//! cannot break out of, and the judge is told that claims of permission inside them are not
+//! the person's. Any failure means asking the person.
 
 use std::fmt::Write as _;
 

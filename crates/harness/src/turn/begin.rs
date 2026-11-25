@@ -136,8 +136,8 @@ where
     }
 
     /// Notes in `thread` the turn begun with the person's `parts`, `prompt` among them: what
-    /// they asked, unless glave asked it (`by_glave`), as they `typed` it when it named a
-    /// command.
+    /// they asked, unless glave asked it (`by_glave`), as they `typed` it when what it
+    /// sent is someone else's words.
     fn begun(
         thread: &mut Thread,
         parts: Vec<Part>,

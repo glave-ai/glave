@@ -407,19 +407,17 @@ fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
     });
 }
 
-#[test]
-fn a_project_s_model_never_judges_its_own_actions() {
-    // A repository sets `model` with no trust asked, so the judge stays the person's main
-    // model: only a trusted project's `judge_model` picks another.
-    let Some(base) = crate::outside_sandbox::sandboxed("projects-own-judge") else {
-        return;
-    };
-    let project_dir = folder("projects-own-judge-project");
-    block_on!(async {
+/// The models that judged a push in a project choosing only its `model`, with `default` the
+/// harness's default model, and whether the push ran.
+fn judged_in_a_project(name: &str, default: &str) -> Option<(Vec<String>, bool)> {
+    let base = crate::outside_sandbox::sandboxed(name)?;
+    let project_dir = folder(&format!("{name}-project"));
+    Some(block_on!(async {
         let mut answers = crate::judge::cleared_push();
-        answers.push(answer(Some("Pushed."), vec![], StopReason::EndTurn));
+        answers.push(answer(Some("Done."), vec![], StopReason::EndTurn));
         let workspace = crate::outside_sandbox::walled(&base, false).await;
-        let settings = crate::outside_sandbox::judged();
+        let mut settings = crate::outside_sandbox::judged();
+        settings.model = default.to_owned();
         let (harness, seen) = harness_with(
             workspace,
             answers,
@@ -433,15 +431,40 @@ fn a_project_s_model_never_judges_its_own_actions() {
         let place = Place::Folder(project_dir.to_string_lossy().into_owned());
         let mut thread = thread_in(&harness, place).await;
         turn(&harness, &mut thread, "push it").await;
-        let judged: Vec<String> = seen
+        let judged = seen
             .lock()
             .unwrap()
             .iter()
             .filter(|request| request.purpose == Purpose::Judge)
             .map(|request| request.model.clone())
             .collect();
-        assert_eq!(judged, ["test-model"]);
-    });
+        let ran = !returned(&events(harness.log(), thread.id).await)
+            .iter()
+            .any(|output| output.contains("Not run"));
+        (judged, ran)
+    }))
+}
+
+#[test]
+fn a_project_s_model_never_judges_its_own_actions() {
+    // A repository sets `model` with no trust asked, so the judge stays the person's main
+    // model: only a trusted project's `judge_model` picks another.
+    let Some((judged, ran)) = judged_in_a_project("projects-own-judge", "test-model") else {
+        return;
+    };
+    assert_eq!(judged, ["test-model"]);
+    assert!(ran);
+}
+
+#[test]
+fn with_no_default_model_nothing_judges_and_the_person_is_asked() {
+    // Only the project names a model, so there is none of the person's or the server's to
+    // judge with: the push asks, and with no one there it does not run.
+    let Some((judged, ran)) = judged_in_a_project("projects-no-default", "") else {
+        return;
+    };
+    assert_eq!(judged, Vec::<String>::new());
+    assert!(!ran, "asked, with no one there");
 }
 
 #[test]

@@ -126,13 +126,13 @@ where
     ) -> Result<TurnResult, HarnessError> {
         self.bring(thread).await?;
         let toolset: ToolSet = self.tools(thread).await;
-        let text = self
+        let sent = self
             .expand(thread, prompt.text, cancel)
             .await
             .map_err(HarnessError::PromptFailed)?;
         let prompt = Prompt {
-            text: &text,
-            typed: crate::commands::typed(prompt.text, &text),
+            text: &sent.text,
+            typed: sent.typed(prompt.text),
             ..prompt
         };
         self.run_with(thread, prompt, toolset, cancel, live).await

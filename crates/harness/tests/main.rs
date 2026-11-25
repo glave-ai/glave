@@ -25,6 +25,7 @@ mod hooks;
 mod install;
 mod instructions;
 mod judge;
+mod judge_typed;
 mod log_failures;
 mod made;
 mod media;

@@ -10,6 +10,7 @@ fn command(body: &str) -> Command {
         argument_hint: None,
         body: body.into(),
         file: PathBuf::from("review.md"),
+        own: false,
     }
 }
 
@@ -62,14 +63,17 @@ fn commands_are_found_the_persons_first_then_nearest_with_frontmatter_optional()
     std::fs::write(personal.join("plain.md"), "The person's own.").unwrap();
     std::fs::write(personal.join("has space.md"), "Bad name.").unwrap();
     std::fs::write(personal.join("broken.md"), "---\ndescription: x\n").unwrap();
-    let found = block_on!(find_commands(&command_folders(&dir, &[personal])));
+    let personal = [personal];
+    let found = block_on!(find_commands(&command_folders(&dir, &personal), &personal));
     let names: Vec<&str> = found.commands.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["plain", "review"]);
     let review = found.commands.iter().find(|c| c.name == "review").unwrap();
     assert_eq!(review.description.as_deref(), Some("Review a PR"));
     assert_eq!(review.argument_hint.as_deref(), Some("<number>"));
     assert_eq!(review.body, "Review $1.");
+    assert!(!review.own, "the repository's");
     assert_eq!(found.commands[0].body, "The person's own.");
+    assert!(found.commands[0].own);
     assert_eq!(found.warnings.len(), 4, "{:?}", found.warnings);
 }
 

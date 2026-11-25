@@ -1,8 +1,9 @@
 //! Custom commands: a Markdown file whose name is the command, as Claude Code, Codex and
 //! OpenCode write them. Typing `/name some words` sends the file's body as the prompt, with
 //! `$ARGUMENTS` replaced by the words and `$1` to `$9` by each of them. A command is only text
-//! the person sends, so it runs nothing and needs no trust. Its text is not the person's own
-//! words, though: what they asked, for the judge, is what they typed. Optional frontmatter may
+//! the person sends, so it runs nothing and needs no trust. A project's command is the
+//! repository's words, though, and a server's prompt the server's: what the person asked, for
+//! the judge, is then what they typed. Their own command's text is their words. Optional frontmatter may
 //! give a `description` and an `argument-hint`, for listings; other fields are ignored.
 //!
 //! A tool server's prompts are commands too, named as Claude Code names them:
@@ -36,6 +37,9 @@ pub struct Command {
     /// The text sent, before its arguments are put in.
     pub body: String,
     pub file: PathBuf,
+    /// Whether it is the person's own, from their folders: its text is their words. A
+    /// project's is the repository's.
+    pub own: bool,
 }
 
 /// The commands found, by name, and each file skipped with why.
@@ -114,29 +118,44 @@ where
         thread: &Thread,
         prompt: &str,
         cancel: &Cancel,
-    ) -> Result<String, String> {
+    ) -> Result<Sent, String> {
         // The commands are the person's the harness works for: what anyone else types is sent
         // as they wrote it.
         if self.trusting(thread.for_)
             && let Some((command, arguments)) = invoked(&self.settings.commands, prompt)
         {
-            return Ok(command.expand(arguments));
+            return Ok(Sent {
+                text: command.expand(arguments),
+                others: !command.own,
+            });
         }
         if let Some((name, words)) = served(prompt) {
             for source in self.sources_for(thread) {
                 if let Some(text) = source.prompt(name, words, cancel).await {
-                    return text;
+                    return text.map(|text| Sent { text, others: true });
                 }
             }
         }
-        Ok(prompt.to_owned())
+        Ok(Sent {
+            text: prompt.to_owned(),
+            others: false,
+        })
     }
 }
 
-/// What the person typed, `prompt`, when it named a command and `sent` is what that sent
-/// instead: a command's text is the project's or a server's words, never the person's.
-pub(crate) fn typed<'a>(prompt: &'a str, sent: &str) -> Option<&'a str> {
-    (prompt != sent).then_some(prompt)
+/// What a prompt the person typed sends.
+pub(crate) struct Sent {
+    pub(crate) text: String,
+    /// Whether the text is someone else's words, a project's command or a server's prompt,
+    /// so what the person asked, for the judge, is what they typed.
+    pub(crate) others: bool,
+}
+
+impl Sent {
+    /// What the person typed, `prompt`, when the text sent is someone else's words.
+    pub(crate) fn typed<'a>(&self, prompt: &'a str) -> Option<&'a str> {
+        self.others.then_some(prompt)
+    }
 }
 
 /// The tool server's prompt `prompt` invokes, with what follows its name, as Claude Code names
@@ -151,7 +170,7 @@ pub(crate) fn served(prompt: &str) -> Option<(&str, &str)> {
 /// The folders commands are looked for in, first found first: `personal`, the person's own;
 /// then, in each folder from `root` up to its repository's root, the project folders. A name
 /// is kept by the first folder that has it, so a repository's command never stands in for one
-/// of the person's: what `/name` sends is theirs.
+/// of the person's.
 pub fn command_folders(root: &Path, personal: &[PathBuf]) -> Vec<PathBuf> {
     let project = crate::instructions::project_dirs(root)
         .iter()
@@ -161,15 +180,19 @@ pub fn command_folders(root: &Path, personal: &[PathBuf]) -> Vec<PathBuf> {
     personal.iter().cloned().chain(project).collect()
 }
 
-/// Every command in `folders` (each `*.md` file directly in one), sorted by name. A file
-/// that cannot be read, or whose name or frontmatter does not fit, is skipped with a warning.
-pub async fn find_commands(folders: &[PathBuf]) -> FoundCommands {
+/// Every command in `folders` (each `*.md` file directly in one), sorted by name, those in
+/// `personal` the person's own. A file that cannot be read, or whose name or frontmatter does
+/// not fit, is skipped with a warning.
+pub async fn find_commands(folders: &[PathBuf], personal: &[PathBuf]) -> FoundCommands {
     let mut found = FoundCommands::default();
     let mut names: HashMap<String, PathBuf> = HashMap::new();
     for folder in folders {
         for file in markdown_files(folder, &mut found.warnings).await {
             let command = match read(&file).await {
-                Ok(command) => command,
+                Ok(command) => Command {
+                    own: personal.contains(folder),
+                    ..command
+                },
                 Err(why) => {
                     found
                         .warnings
@@ -274,6 +297,7 @@ async fn read(file: &Path) -> Result<Command, String> {
         argument_hint,
         body: body.trim().to_owned(),
         file: file.to_path_buf(),
+        own: false,
     })
 }
 
