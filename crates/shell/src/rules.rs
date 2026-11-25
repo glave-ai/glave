@@ -7,6 +7,7 @@ use std::path::Path;
 use glave_event::Risk;
 
 use crate::credentials::prints_credential;
+use crate::find;
 use crate::forge::forge;
 use crate::judge::{Caution, Context, Kind};
 use crate::parse::{Command, Word};
@@ -17,30 +18,145 @@ use crate::remote::remote;
 /// `command`, `builtin`, `exec`, `stdbuf -oL` and `xargs` are looked through.
 pub(crate) fn unwrapped(words: &[Word]) -> &[Word] {
     let mut rest = words;
-    loop {
-        let Some(name) = rest.first().and_then(Word::literal).map(basename) else {
-            return rest;
-        };
-        let skip = match name {
-            "sudo" | "doas" => flags(rest, &["-u", "-g", "-C", "-D"]),
-            "env" => {
-                let mut at = flags(rest, &["-u", "-C", "-S"]);
-                while rest
-                    .get(at)
-                    .and_then(Word::literal)
-                    .is_some_and(|word| word.contains('=') && !word.starts_with('-'))
-                {
-                    at = at.saturating_add(1);
-                }
-                at
+    while let Some(inner) = wrapped(rest) {
+        rest = inner;
+    }
+    rest
+}
+
+/// The words a wrapper runs, when `words` starts with one.
+fn wrapped(words: &[Word]) -> Option<&[Word]> {
+    let name = words.first().and_then(Word::literal).map(basename)?;
+    let skip = match name {
+        "sudo" | "doas" => flags(words, &["-u", "-g", "-C", "-D"]),
+        "env" => {
+            let mut at = flags(
+                words,
+                &[
+                    "-u",
+                    "-C",
+                    "-P",
+                    "-S",
+                    "--split-string",
+                    "--unset",
+                    "--chdir",
+                ],
+            );
+            while words
+                .get(at)
+                .and_then(Word::literal)
+                .is_some_and(|word| word.contains('=') && !word.starts_with('-'))
+            {
+                at = at.saturating_add(1);
             }
-            "timeout" => flags(rest, &["-s", "-k", "--signal", "--kill-after"]).saturating_add(1),
-            "nice" | "ionice" => flags(rest, &["-n", "-c"]),
-            "stdbuf" | "xargs" => flags(rest, &["-I", "-n", "-P", "-L", "-d", "-E", "-s"]),
-            "nohup" | "time" | "command" | "builtin" | "exec" => 1,
-            _ => return rest,
+            at
+        }
+        "timeout" => flags(words, &["-s", "-k", "--signal", "--kill-after"]).saturating_add(1),
+        "nice" | "ionice" => flags(words, &["-n", "-c"]),
+        "stdbuf" => flags(words, &["-i", "-o", "-e"]),
+        // GNU's and BSD's options that take a value (`-a` a file to read, BSD's `-J` and `-R`).
+        "xargs" => flags(
+            words,
+            &[
+                "-a",
+                "-d",
+                "-E",
+                "-I",
+                "-J",
+                "-L",
+                "-n",
+                "-P",
+                "-R",
+                "-s",
+                "-S",
+                "--arg-file",
+                "--delimiter",
+                "--max-args",
+                "--max-chars",
+                "--max-procs",
+                "--process-slot-var",
+            ],
+        ),
+        "nohup" | "time" | "command" | "builtin" | "exec" => 1,
+        _ => return None,
+    };
+    Some(words.get(skip..).unwrap_or_default())
+}
+
+/// Whether `xargs` wraps the command, which then also takes every word xargs reads.
+fn fed_by_xargs(words: &[Word]) -> bool {
+    let mut rest = words;
+    while let Some(inner) = wrapped(rest) {
+        if rest.first().and_then(Word::literal).map(basename) == Some("xargs") {
+            return true;
+        }
+        rest = inner;
+    }
+    false
+}
+
+/// What `env -S` (`--split-string`) runs, under any wrapper, as a script: the string env splits
+/// into words, then the words after it.
+pub(crate) fn split_string(words: &[Word]) -> Option<String> {
+    let mut rest = words;
+    loop {
+        if rest.first().and_then(Word::literal).map(basename) == Some("env")
+            && let Some((mut script, after)) = split_at(rest)
+        {
+            for word in rest.get(after..).unwrap_or_default() {
+                script.push(' ');
+                script.push_str(&word.quoted());
+            }
+            return Some(script);
+        }
+        rest = wrapped(rest)?;
+    }
+}
+
+/// The string `env`'s options give `-S`, and where the words after it start.
+fn split_at(words: &[Word]) -> Option<(String, usize)> {
+    let mut at = 1;
+    loop {
+        let text = words.get(at)?.literal()?;
+        let next = at.saturating_add(1);
+        // The string is the rest of this word, or the next word whole.
+        let given = |inline: &str| match inline {
+            "" => words
+                .get(next)
+                .map(|word| (word.unquoted().to_owned(), next.saturating_add(1))),
+            inline => Some((inline.to_owned(), next)),
         };
-        rest = rest.get(skip..).unwrap_or_default();
+        if text == "--split-string" {
+            return given("");
+        }
+        if let Some(inline) = text.strip_prefix("--split-string=") {
+            return given(inline);
+        }
+        if !text.starts_with('-') || matches!(text, "-" | "--") {
+            return None;
+        }
+        at = next;
+        if text.starts_with("--") {
+            if matches!(text, "--unset" | "--chdir") {
+                at = at.saturating_add(1);
+            }
+            continue;
+        }
+        // Short options, one or several to a word: `-S` takes the rest as its string, `-u`,
+        // `-C` and BSD's `-P` a value.
+        for (index, option) in text.char_indices().skip(1) {
+            let rest = text.get(index.saturating_add(1)..).unwrap_or_default();
+            match option {
+                'S' => return given(rest),
+                'u' | 'C' | 'P' => {
+                    if rest.is_empty() {
+                        at = at.saturating_add(1);
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -80,7 +196,8 @@ pub(crate) fn caution(command: &Command, context: &Context<'_>) -> Option<Cautio
         return Some(found);
     }
     let found = match name {
-        Some("rm") => removes(words, cwd, context),
+        Some("rm") => removes(words, cwd, context, fed_by_xargs(&command.words)),
+        Some("find") => find::deletes(words, cwd, context),
         Some("git") => git(words),
         Some(name) => system(name, words, cwd, context)
             .or(forge)
@@ -92,7 +209,7 @@ pub(crate) fn caution(command: &Command, context: &Context<'_>) -> Option<Cautio
         .or_else(|| secrets(command, words, cwd, context))
 }
 
-fn found(kind: Kind, reason: Risk) -> Caution {
+pub(crate) fn found(kind: Kind, reason: Risk) -> Caution {
     Caution { kind, reason }
 }
 
@@ -107,7 +224,11 @@ fn admin(words: &[Word]) -> Option<Caution> {
 }
 
 /// Where a path argument points, when it can be known.
-fn target(word: &Word, cwd: Option<&Path>, context: &Context<'_>) -> Option<std::path::PathBuf> {
+pub(crate) fn target(
+    word: &Word,
+    cwd: Option<&Path>,
+    context: &Context<'_>,
+) -> Option<std::path::PathBuf> {
     let text = word.literal().or_else(|| {
         let text = word.text();
         (text.starts_with("$HOME") || text.starts_with("${HOME}")).then_some(text)
@@ -115,8 +236,14 @@ fn target(word: &Word, cwd: Option<&Path>, context: &Context<'_>) -> Option<std:
     Some(resolve(cwd?, text, context.home))
 }
 
-/// `rm` of something critical, of anything outside the project, or of a folder it cannot name.
-fn removes(words: &[Word], cwd: Option<&Path>, context: &Context<'_>) -> Option<Caution> {
+/// `rm` of something critical, of anything outside the project, or of a folder it cannot name:
+/// a recursive `rm` under `xargs` (`fed`) also removes whatever xargs reads.
+fn removes(
+    words: &[Word],
+    cwd: Option<&Path>,
+    context: &Context<'_>,
+    fed: bool,
+) -> Option<Caution> {
     let mut recursive = false;
     let mut targets = Vec::new();
     let mut options = true;
@@ -157,7 +284,10 @@ fn removes(words: &[Word], cwd: Option<&Path>, context: &Context<'_>) -> Option<
             return Some(found(Kind::Deletes, Risk::DeletesOutside { path }));
         }
     }
-    None
+    (fed && recursive).then(|| {
+        let what = "what xargs reads".to_owned();
+        found(Kind::Deletes, Risk::DeletesUnknown { what })
+    })
 }
 
 /// The folder a glob such as `build/*` or `*` matches in, when the glob has no variables.

@@ -7,10 +7,25 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::{Node, Parser};
 
+use crate::find;
 use crate::paths::{basename, resolve};
+use crate::rules::{split_string, unwrapped};
 
 /// How deep `bash -c` scripts may nest before the script counts as unreadable.
 const MOST_NESTING: usize = 8;
+
+/// How many scripts, the command itself and each one a command in it runs (`bash -c`, `env -S`,
+/// `find -exec`), glave reads of one command before it counts as unreadable: a line that runs
+/// scripts that run scripts could otherwise make glave read millions.
+const MOST_SCRIPTS: usize = 64;
+
+/// How many commands glave reads of one command line before it counts as unreadable.
+const MOST_COMMANDS: usize = 10_000;
+
+/// How long a script glave makes itself, from `env -S`'s string or `find -exec`'s words, may
+/// be, all of a command's together, in bytes: a `{}` that stands for a long folder, many times
+/// over, would otherwise grow without bound.
+const MOST_MADE: usize = 64 * 1024;
 
 /// Commands that run a script given as an argument.
 const SHELLS: &[&str] = &["bash", "sh", "zsh", "dash", "ksh"];
@@ -45,6 +60,24 @@ impl Word {
             Self::Literal(text) | Self::Dynamic(text) => text,
         }
     }
+
+    /// What the word gives a program that reads it as a script of its own: a literal as it
+    /// is, a dynamic word's source without its outer quotes.
+    pub(crate) fn unquoted(&self) -> &str {
+        match self {
+            Self::Literal(text) => text,
+            Self::Dynamic(text) => strip_quotes(text),
+        }
+    }
+
+    /// The word as a script writes it to mean the same: a literal in single quotes, a dynamic
+    /// word as its source.
+    pub(crate) fn quoted(&self) -> String {
+        match self {
+            Self::Literal(text) => format!("'{}'", text.replace('\'', "'\\''")),
+            Self::Dynamic(text) => text.clone(),
+        }
+    }
 }
 
 /// One command in a script.
@@ -68,7 +101,7 @@ pub(crate) struct Parsed {
     pub(crate) plain: bool,
     /// Something fetched from the network runs as code: `curl … | sh`, `bash <(curl …)`.
     pub(crate) runs_fetched_code: bool,
-    /// `bash -c` nested deeper than glave reads.
+    /// `bash -c` nested deeper, or more scripts and commands, than glave reads.
     pub(crate) too_deep: bool,
 }
 
@@ -81,6 +114,8 @@ pub(crate) fn parse(script: &str, cwd: &Path) -> Parsed {
     let mut walk = Walk {
         cwd: Some(cwd.to_path_buf()),
         parsed: &mut parsed,
+        scripts: 0,
+        made: 0,
     };
     walk.script(script, 0);
     parsed
@@ -89,11 +124,16 @@ pub(crate) fn parse(script: &str, cwd: &Path) -> Parsed {
 struct Walk<'p> {
     cwd: Option<PathBuf>,
     parsed: &'p mut Parsed,
+    /// The scripts read so far.
+    scripts: usize,
+    /// The bytes of the scripts glave made so far.
+    made: usize,
 }
 
 impl Walk<'_> {
     fn script(&mut self, script: &str, depth: usize) {
-        if depth > MOST_NESTING {
+        self.scripts = self.scripts.saturating_add(1);
+        if depth > MOST_NESTING || self.scripts > MOST_SCRIPTS || self.parsed.too_deep {
             self.parsed.too_deep = true;
             return;
         }
@@ -194,6 +234,10 @@ impl Walk<'_> {
         source: &[u8],
         depth: usize,
     ) {
+        if self.parsed.commands.len() >= MOST_COMMANDS {
+            self.parsed.too_deep = true;
+            return;
+        }
         let mut words = Vec::new();
         let mut cursor = node.walk();
         let parts: Vec<Node<'_>> = node.named_children(&mut cursor).collect();
@@ -278,10 +322,28 @@ impl Walk<'_> {
         } else {
             None
         };
-        if let Some(script) = script {
+        // `env -S '…'` and `find … -exec … ;` run commands of their own, read as scripts too,
+        // made within what is left of [`MOST_MADE`].
+        let left = MOST_MADE.saturating_sub(self.made);
+        let Some(found) = find::scripts(unwrapped(words), left) else {
+            self.parsed.too_deep = true;
+            return;
+        };
+        let made: Vec<String> = split_string(words).into_iter().chain(found).collect();
+        let length = made.iter().map(String::len).fold(0, usize::saturating_add);
+        self.made = self.made.saturating_add(length);
+        if self.made > MOST_MADE {
+            self.parsed.too_deep = true;
+            return;
+        }
+        let scripts = script
+            .map(|script| strip_quotes(script).to_owned())
+            .into_iter()
+            .chain(made);
+        for script in scripts {
             self.parsed.plain = false;
             let saved = self.cwd.clone();
-            self.script(strip_quotes(script), depth.saturating_add(1));
+            self.script(&script, depth.saturating_add(1));
             self.cwd = saved;
         }
     }
@@ -355,7 +417,7 @@ fn first_word(node: Node<'_>, source: &[u8]) -> Option<String> {
                 .map(|arg| word(arg, source)),
         )
         .collect();
-    crate::rules::unwrapped(&words)
+    unwrapped(&words)
         .first()
         .and_then(Word::literal)
         .map(|name| basename(name).to_owned())

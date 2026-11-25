@@ -115,6 +115,19 @@ mod judging {
             "file -bC -m magic",
             "file --compile -m magic",
             "find . -name '*.o' -delete",
+            "find src /tmp/build -name '*.o' -delete",
+            "find . -name '*.o' -exec rm {} \\;",
+            "find . -type d -name node_modules -exec rm -rf {} +",
+            "find src -execdir mv {} {}.bak ';'",
+            "find . -type f -name '*.tmp' -delete",
+            "find . -maxdepth 1 -name '*.log' -exec rm {} +",
+            "find -- src -mindepth 1 -delete",
+            "xargs -a list.txt rm",
+            "find . -exec rm -rf {}",
+            "git ls-files -z | xargs -0 rm",
+            "xargs -I{} cp {} out/",
+            "env -S 'cargo test'",
+            "env -i --split-string='cargo build' --release",
             "chmod -R u+w target",
             "curl -o page.html https://example.com",
             "bash -c 'cargo build'",
@@ -148,6 +161,43 @@ mod judging {
             "echo $(rm -rf ~)",
             "for d in a b; do rm -rf ~/$d; done",
             "rm -r -f -- ~/x",
+            // env runs the string it splits as a command, with the words after it.
+            "env -S 'rm -rf ~'",
+            "env -S\"rm -rf ~\"",
+            "env --split-string='rm -rf ~'",
+            "env --split-string 'rm -rf' ~",
+            "env -iS 'rm -rf' ~/x",
+            "env -u HOME -S 'rm -rf /usr'",
+            "timeout 5 env -S 'rm -rf ~'",
+            // xargs gives a recursive rm the paths it reads.
+            "find . | xargs rm -rf",
+            "xargs -0 rm -rf < list",
+            "xargs -I{} rm -rf {}",
+            "cat dirs | xargs -n 1 rm -r --",
+            // find removes, or runs a command on, what it finds in each folder it searches.
+            "find / -name x -delete",
+            "find ~ -delete",
+            "find -L ~/notes -type f -delete",
+            "find \"$DIR\" -delete",
+            "find /usr -exec rm -rf {} \\;",
+            "find ~ -execdir rm {} +",
+            "find / -ok rm {} ';'",
+            "find . -exec rm -rf ~ \\;",
+            "find . -exec sh -c 'rm -rf ~' \\;",
+            "find \"$DIR\" -exec rm -rf {} +",
+            // With nothing tested first, find takes the folder it searches too.
+            "find . -delete",
+            "find -maxdepth 3 -delete",
+            "find . -exec rm -rf {} +",
+            "find . -depth -exec rm -r {} ';'",
+            "find -- ~ -delete",
+            "find -H -- /usr -name x -delete",
+            // The values xargs and env take are not the command.
+            "xargs -a list rm -rf",
+            "xargs --arg-file list rm -rf",
+            "xargs -J % rm -rf % ",
+            "env -P /bin -S 'rm -rf ~'",
+            "env -P/bin rm -rf ~",
         ] {
             assert_eq!(kind(script), Some(Kind::Deletes), "{script}");
         }
@@ -513,6 +563,33 @@ mod judging {
         assert_eq!(verdict("cat 日本.txt"), Verdict::ReadOnly);
     }
 
+    /// Scripts that run scripts, many times over (`find`'s every folder runs `find` on every
+    /// folder, eight deep, or a long folder stood in for `{}` again and again), are read only so
+    /// far: past that the command is unreadable, and asks, with little read and little held.
+    #[test]
+    fn a_line_that_multiplies_what_it_runs_is_unreadable_not_read() {
+        let roots: Vec<String> = (0..40).map(|n| format!("d{n}")).collect();
+        let find = format!("find {} -exec ", roots.join(" "));
+        let nested = format!("{}rm -rf {{}}{}", find.repeat(8), " ';'".repeat(8));
+        let unended = format!("{}rm -rf {{}}", find.repeat(8));
+        let clauses = format!(
+            "find {} {}",
+            roots.join(" "),
+            "-exec true {} ';' ".repeat(400)
+        );
+        let long = format!(
+            "find {} -name x -exec echo {}",
+            "a".repeat(5000),
+            "{}".repeat(5000)
+        );
+        let long = format!("{long} ';'");
+        for script in [nested, clauses, long] {
+            assert_eq!(kind(&script), Some(Kind::Unreadable), "{script:.80}");
+        }
+        // With nothing to end it, find runs no command at all.
+        assert_eq!(verdict(&unended), Verdict::Unknown);
+    }
+
     const RISKY: &[&str] = &[
         "rm -rf ~",
         "git reset --hard",
@@ -528,6 +605,7 @@ mod judging {
     const PREFIXES: &[&str] = &[
         "{}",
         "env A=1 {}",
+        "env -S \"{}\"",
         "timeout 9 {}",
         "nice -n 5 {}",
         "command {}",
