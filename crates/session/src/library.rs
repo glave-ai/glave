@@ -166,6 +166,10 @@ where
         asset: AssetId,
     ) -> Result<Reply, ApiError> {
         let (scope, kept) = self.item(caller, project, asset).await?;
+        // Its share stops first: nothing shared outlives the place its owner sees it, and a
+        // failure after leaves the item listed, removed again to finish.
+        let item = SharedFrom::Item { asset };
+        self.stop_shares(&scope, |of| *of == item).await?;
         self.inner
             .harness
             .blobs()
@@ -176,9 +180,6 @@ where
         let removed = LibraryRemoved { asset };
         self.keep_latest(&scope, Reserved::Library.id(), &kinds, &removed)
             .await?;
-        // Its share stops with it: nothing shared outlives the place its owner sees it.
-        let item = SharedFrom::Item { asset };
-        self.stop_shares(&scope, |of| *of == item).await?;
         Ok(Reply::Done {})
     }
 }

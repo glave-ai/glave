@@ -2057,11 +2057,14 @@ version = "0.0.0"
 dependencies = [
  "glave-event",
  "glave-ports",
+ "insta",
  "jiff",
  "proptest",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "toml",
  "tracing",
 ]
 
