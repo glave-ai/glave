@@ -317,6 +317,7 @@ fn a_link_serves_its_share_alone_at_a_name_of_its_own_and_stops_at_once() {
 
         let file = fetch(listening.address, &host, "/file").await;
         assert_eq!(header_of(&file, "content-type"), "image/png");
+        let file_policy = header_of(&file, "cross-origin-resource-policy");
         let pixel = STANDARD.decode(PIXEL).unwrap();
         assert_eq!(file.bytes().await.unwrap().as_ref(), pixel.as_slice());
         let download = fetch(listening.address, &host, "/download").await;
@@ -326,6 +327,12 @@ fn a_link_serves_its_share_alone_at_a_name_of_its_own_and_stops_at_once() {
             "{saved}"
         );
         assert!(header_of(&download, "content-security-policy").contains("sandbox"));
+        // No other page, another share's among them, loads the file.
+        let corp = "cross-origin-resource-policy";
+        assert_eq!(
+            [file_policy, header_of(&download, corp)],
+            ["same-origin", "same-origin"]
+        );
 
         // A share's name answers nothing of glave's: no API.
         assert_eq!(discover_at(listening.address, &host).await, 405);

@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::blob::BlobRef;
 use crate::codec::{Body, Payload, parse};
-use crate::id::{AssetId, ShareId, ThreadId};
+use crate::id::{AssetId, PrincipalId, ShareId, ThreadId};
 use crate::payload::{AssetKind, MadePreview};
 
 pub(crate) const SET: &str = "share.set";
@@ -59,6 +59,9 @@ pub struct ShareSet {
     /// The id its copy is held under, its own, so it outlives the chat.
     pub holder: ThreadId,
     pub audience: Audience,
+    /// Who shares it: the project's owner, whose link stops opening once they leave its
+    /// organization.
+    pub owner: PrincipalId,
 }
 
 /// A share was stopped: its link opens nothing, and its holder let go of its copy.
@@ -76,6 +79,8 @@ pub struct SharePlaced {
     pub link: String,
     pub org: Uuid,
     pub project: Uuid,
+    /// Who shares it, whose links are counted together.
+    pub owner: PrincipalId,
 }
 
 /// A link stopped, and the shares' list no longer holds it.
@@ -84,6 +89,8 @@ pub struct SharePlaced {
 pub struct ShareUnplaced {
     /// The SHA-256 of the link's id, in hex.
     pub link: String,
+    /// Who shared it, whose links count one fewer.
+    pub owner: PrincipalId,
 }
 
 impl Payload for ShareSet {
