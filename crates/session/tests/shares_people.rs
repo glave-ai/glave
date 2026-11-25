@@ -1,7 +1,8 @@
 //! Sharing with specific people (`specs/session.md`, "Sharing"): the page asks for an email and
 //! emails a one-time link only to one the share lists, answering alike either way; opening the
 //! link, once, gives the browser a proof for that share's name alone, which any change to who
-//! may open the share ends for good, and asking for another link leaves the first working.
+//! may open the share ends for good, opening it twice at once gives one, and asking for another
+//! link leaves the first working.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -224,6 +225,25 @@ fn asking_for_another_link_leaves_the_first_working() {
         assert_eq!(mails.len(), 2, "a minute after, a second link");
         let (cookie, _) = browser.open(&first).await;
         assert!(cookie.is_some(), "the first link still opens it");
+        listening.close().await;
+    });
+}
+
+#[test]
+fn a_link_opened_twice_at_once_gives_one_proof() {
+    let dir = folder("shares-people-race");
+    block_on!(async {
+        let outbox = Arc::new(Outbox::default());
+        let (server, of, _) = drawn_fox(&dir, &outbox).await;
+        let (listening, browser) = for_ada(&server, &of).await;
+        browser.post("/link", "email=ada%40example.com").await;
+        let link = outbox.sent_by(1).await[0].text.clone();
+        let (one, other) = tokio::join!(browser.open(&link), browser.open(&link));
+        let proofs = [one.0, other.0].into_iter().flatten().count();
+        assert_eq!(
+            proofs, 1,
+            "a link works once, however quickly it is opened again"
+        );
         listening.close().await;
     });
 }

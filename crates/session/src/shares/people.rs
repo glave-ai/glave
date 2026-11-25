@@ -18,7 +18,7 @@ use glave_event::{
     At, Audience, Body, RawEvent, Seq, ShareId, ShareLinkSent, ShareOpened, ShareSet,
 };
 use glave_identity::signin::{kept, one_time_code, same_kept};
-use glave_ports::stream::{Reserved, catch_up, in_order};
+use glave_ports::stream::{Reserved, append_retrying, catch_up, in_order};
 use glave_ports::{BlobStore, Caller, EventLog, Located, Mail, ModelProvider, Scope};
 use jiff::SignedDuration;
 
@@ -36,6 +36,10 @@ const LINK_FOR: SignedDuration = SignedDuration::from_mins(10);
 
 /// How long a proof works on the browser that holds it.
 pub(crate) const PROOF_FOR: SignedDuration = SignedDuration::from_hours(30 * 24);
+
+/// The most links sent for one share within [`LINK_FOR`], to every address together, so asking
+/// for many addresses at once sends few.
+const MOST_SENT: usize = 10;
 
 /// The most projects' ledgers a server keeps read in memory; past them, it starts over, and
 /// reads each again from its start when next asked.
@@ -70,10 +74,20 @@ pub(crate) fn listed(people: &[String]) -> Result<Vec<String>, ApiError> {
 /// proofs past their `until` ([`Ledger::prune`]). So a link is never spent twice, and no
 /// recipient whose proof still works is asked again; what is kept is bounded by what can still
 /// open a live share.
+/// A live share as its ledger last set it.
+#[derive(Debug, Clone)]
+pub(crate) struct Live {
+    pub(crate) set: ShareSet,
+    /// When it was last set.
+    pub(crate) at: At,
+    /// The `seq` its list of people was last set at.
+    given: u64,
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Ledger {
     next: u64,
-    pub(crate) live: BTreeMap<ShareId, (ShareSet, u64)>,
+    pub(crate) live: BTreeMap<ShareId, Live>,
     sent: BTreeMap<ShareId, Vec<(u64, At, ShareLinkSent)>>,
     opened: BTreeMap<ShareId, Vec<ShareOpened>>,
 }
@@ -87,7 +101,7 @@ impl Ledger {
         match body {
             Body::ShareSet(set) => {
                 let given = match self.live.get(&set.share) {
-                    Some((before, given)) if before.audience == set.audience => *given,
+                    Some(before) if before.set.audience == set.audience => before.given,
                     _ => {
                         // A new list of people: what was given for the old one opens nothing.
                         self.sent.remove(&set.share);
@@ -95,7 +109,7 @@ impl Ledger {
                         seq
                     }
                 };
-                self.live.insert(set.share, (set, given));
+                self.live.insert(set.share, Live { set, at, given });
             }
             Body::ShareStopped(stopped) => {
                 self.live.remove(&stopped.share);
@@ -117,7 +131,7 @@ impl Ledger {
 
     /// The `seq` `share`'s list of people was last set at, while it is live.
     fn given(&self, share: ShareId) -> Option<u64> {
-        self.live.get(&share).map(|(_, given)| *given)
+        self.live.get(&share).map(|live| live.given)
     }
 }
 
@@ -153,6 +167,21 @@ impl Ledger {
 /// link's page reads only the project the shares' list names for that link; the cache itself
 /// checks nothing.
 pub(crate) type Ledgers = HashMap<Located, Ledger>;
+
+/// Whether another link may go to the address whose SHA-256 is `to`, after the links `sent`
+/// for its share: none to it within the minute, and fewer than [`MOST_SENT`] to anyone within
+/// [`LINK_FOR`].
+fn room(sent: &[(u64, At, ShareLinkSent)], to: &str, now: jiff::Timestamp) -> bool {
+    let within = |at: &At| {
+        at.timestamp()
+            .checked_add(LINK_FOR)
+            .is_ok_and(|by| by > now)
+    };
+    let recent = (sent.iter().rev())
+        .find(|(_, _, sent)| sent.to == to)
+        .is_some_and(|(_, at, _)| just_now(at.timestamp(), now));
+    !recent && sent.iter().filter(|(_, at, _)| within(at)).count() < MOST_SENT
+}
 
 /// Whether `share` lists the address whose SHA-256 is `to`.
 fn lists(share: &ShareSet, to: &str) -> bool {
@@ -237,15 +266,11 @@ where
         let to_kept = kept(&address);
         let ledger = self.share_ledger(scope).await?;
         let now = self.inner.harness.clock().now();
-        let (Some((live, _)), Some(given)) =
-            (ledger.live.get(&share.share), ledger.given(share.share))
+        let (Some(live), Some(given)) = (ledger.live.get(&share.share), ledger.given(share.share))
         else {
             return Ok(());
         };
-        let recent = (ledger.sent(share.share).iter().rev())
-            .find(|(_, _, sent)| sent.to == to_kept)
-            .is_some_and(|(_, at, _)| just_now(at.timestamp(), now));
-        if !lists(live, &to_kept) || recent {
+        if !lists(&live.set, &to_kept) || !room(ledger.sent(share.share), &to_kept, now) {
             return Ok(());
         }
         let token = one_time_code().map_err(|error| ApiError::internal(&error))?;
@@ -283,11 +308,38 @@ where
         share: &ShareSet,
         token: &str,
     ) -> Result<Option<String>, ApiError> {
-        let ledger = self.share_ledger(scope).await?;
-        let now = self.inner.harness.clock().now();
         let held = kept(token);
+        let proof = one_time_code().map_err(|error| ApiError::internal(&error))?;
+        let log = self.inner.harness.log();
+        let ledger_id = Reserved::Shares.id();
+        // Checked on the ledger as read, and written right after it, at its next place: a link
+        // opened meanwhile by anyone, on any server, takes that place first, so this one reads
+        // the ledger again and finds the link used.
+        let opened = append_retrying(log, scope, ledger_id, || async {
+            let ledger = self.share_ledger(scope).await?;
+            let Some(opened) = self.opening(&ledger, share, &held, proof.expose())? else {
+                return Ok(None);
+            };
+            let seq = Seq::new(ledger.next.max(1)).map_err(|error| ApiError::internal(&error))?;
+            let event = self.ledger_event(ledger_id, seq, &opened)?;
+            Ok::<_, ApiError>(Some((vec![event], ())))
+        });
+        Ok(opened.await?.map(|_| proof.expose().to_owned()))
+    }
+
+    /// What opening `share` with the link whose token's SHA-256 is `held` records, giving
+    /// `proof`: when it is a link sent for `share`, unused, within [`LINK_FOR`], for an address
+    /// the share still lists and its list of people as it is. None for any other.
+    fn opening(
+        &self,
+        ledger: &Ledger,
+        share: &ShareSet,
+        held: &str,
+        proof: &str,
+    ) -> Result<Option<ShareOpened>, ApiError> {
+        let now = self.inner.harness.clock().now();
         let found =
-            (ledger.sent(share.share).iter()).find(|(_, _, sent)| same_kept(&sent.token, &held));
+            (ledger.sent(share.share).iter()).find(|(_, _, sent)| same_kept(&sent.token, held));
         let Some((seq, at, sent)) = found else {
             return Ok(None);
         };
@@ -300,21 +352,17 @@ where
         if used || !fresh || !current || !lists(share, &sent.to) {
             return Ok(None);
         }
-        let proof = one_time_code().map_err(|error| ApiError::internal(&error))?;
         let until = now
             .checked_add(PROOF_FOR)
             .map_err(|error| ApiError::internal(&error))?;
-        let opened = ShareOpened {
+        Ok(Some(ShareOpened {
             share: share.share,
             to: sent.to.clone(),
-            proof: kept(proof.expose()),
+            proof: kept(proof),
             link: *seq,
             given: sent.given,
             until: At::from(until),
-        };
-        self.keep_latest(scope, Reserved::Shares.id(), &SHARES, &opened)
-            .await?;
-        Ok(Some(proof.expose().to_owned()))
+        }))
     }
 
     /// Whether `proof` lets its browser open `share` now: given for it, within its time, for an
@@ -340,5 +388,38 @@ where
             let at = reached.at.as_deref()?;
             at.rsplit_once(':')?.1.parse().ok()
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use jiff::Timestamp;
+
+    use super::*;
+
+    fn sent_to(to: &str, at: Timestamp) -> (u64, At, ShareLinkSent) {
+        let share = ShareId::new(Timestamp::UNIX_EPOCH, [1; 10]).unwrap();
+        let sent = ShareLinkSent {
+            share,
+            to: to.to_owned(),
+            token: String::new(),
+            given: 1,
+        };
+        (1, At::from(at), sent)
+    }
+
+    #[test]
+    fn a_share_sends_one_link_a_minute_to_an_address_and_a_few_in_ten_minutes_to_all() {
+        let start = Timestamp::from_second(1_800_000_000).unwrap();
+        let later = |secs: i64| start.checked_add(SignedDuration::from_secs(secs)).unwrap();
+        let mut sent = vec![sent_to("ada", start)];
+        assert!(!room(&sent, "ada", later(30)), "not twice in a minute");
+        assert!(room(&sent, "ada", later(61)));
+        sent.extend((1..MOST_SENT).map(|n| sent_to(&format!("other-{n}"), later(1))));
+        assert!(
+            !room(&sent, "bea", later(120)),
+            "{MOST_SENT} in ten minutes"
+        );
+        assert!(room(&sent, "bea", later(601)), "ten minutes on, again");
     }
 }

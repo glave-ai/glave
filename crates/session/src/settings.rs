@@ -3,7 +3,7 @@
 //! last event, whatever that chose. The session API keeps the language they read glave in, how
 //! their threads are grouped, and whether their computer stays awake through it.
 
-use glave_event::{At, Body, EventId, Header, Payload, Seq, ThreadId, decode, encode};
+use glave_event::{At, Body, EventId, Header, Payload, RawEvent, Seq, ThreadId, decode, encode};
 use glave_ports::stream::{Reserved, SETTINGS, append_retrying};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
 
@@ -62,16 +62,26 @@ where
             let seq = last
                 .map_or(Some(Seq::FIRST), |raw| raw.seq.next())
                 .ok_or_else(|| ApiError::internal(&"the ledger is full"))?;
-            let now = this.inner.harness.clock().now();
-            let header = Header {
-                id: EventId::new(now, this.inner.harness.entropy().bytes()?)?,
-                thread: ledger,
-                seq,
-                at: At::from(now),
-            };
-            Ok::<_, ApiError>(Some((vec![encode(header, event)?], ())))
+            Ok::<_, ApiError>(Some((vec![this.ledger_event(ledger, seq, event)?], ())))
         })
         .await?;
         Ok(())
+    }
+
+    /// `event` as `ledger`'s `seq`th, written now.
+    pub(crate) fn ledger_event<T: Payload>(
+        &self,
+        ledger: ThreadId,
+        seq: Seq,
+        event: &T,
+    ) -> Result<RawEvent, ApiError> {
+        let now = self.inner.harness.clock().now();
+        let header = Header {
+            id: EventId::new(now, self.inner.harness.entropy().bytes()?)?,
+            thread: ledger,
+            seq,
+            at: At::from(now),
+        };
+        Ok(encode(header, event)?)
     }
 }

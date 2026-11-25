@@ -15,11 +15,11 @@ pub(crate) use self::people::{Ledgers, PROOF_FOR};
 use std::collections::{BTreeMap, HashMap};
 
 use glave_event::{
-    At, Audience, Body, MadePreview, Payload as _, Principal, PrincipalId, ShareId, ShareSet,
-    ShareStopped, SharedFrom, ThreadId, decode,
+    At, Audience, MadePreview, Payload as _, Principal, PrincipalId, ShareId, ShareSet,
+    ShareStopped, SharedFrom, ThreadId,
 };
 use glave_ports::host::PublicOrigin;
-use glave_ports::stream::{Reserved, catch_up};
+use glave_ports::stream::Reserved;
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, OrgId, Scope, digest};
 
 use crate::files::not_here;
@@ -172,29 +172,16 @@ where
         people.into_iter().chain([ShareChoice::Anyone]).collect()
     }
 
-    /// The live shares of `scope`'s shares ledger, each with when it was last set.
+    /// The live shares of `scope`'s shares ledger, each with when it was last set, read on from
+    /// where this server last read it.
     pub(crate) async fn shares_in(
         &self,
         scope: &Scope,
     ) -> Result<BTreeMap<ShareId, (At, ShareSet)>, ApiError> {
-        let mut shares = BTreeMap::new();
-        let log = self.inner.harness.log();
-        catch_up(log, scope, Reserved::Shares.id(), None, |page| {
-            for raw in page {
-                let at = raw.at;
-                match decode(raw).map(|event| event.body) {
-                    Ok(Body::ShareSet(set)) => {
-                        shares.insert(set.share, (at, set));
-                    }
-                    Ok(Body::ShareStopped(stopped)) => {
-                        shares.remove(&stopped.share);
-                    }
-                    _ => {}
-                }
-            }
-        })
-        .await?;
-        Ok(shares)
+        let ledger = self.share_ledger(scope).await?;
+        Ok((ledger.live.into_iter())
+            .map(|(share, live)| (share, (live.at, live.set)))
+            .collect())
     }
 
     /// Who each shared file of `scope` is shared with, in a sentence, by what it is of.
@@ -501,7 +488,7 @@ where
                 .unwrap_or_default(),
             None => BTreeMap::new(),
         };
-        let Some((set, _)) = live.into_values().find(|(set, _)| set.link == id) else {
+        let Some(set) = (live.into_values().map(|live| live.set)).find(|set| set.link == id) else {
             return Ok(None);
         };
         // Someone taken out of the organization shares nothing there any more, even before
