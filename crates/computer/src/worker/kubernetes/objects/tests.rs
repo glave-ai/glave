@@ -198,8 +198,12 @@ fn a_persons_computer_is_never_root_and_reaches_nothing_in_the_cluster() {
     assert_eq!(pod["spec"]["dnsPolicy"], json!("None"));
     assert_eq!(
         pod["spec"]["dnsConfig"],
-        json!({"nameservers": ["8.8.8.8", "8.8.4.4", "2001:4860:4860::8888"]}),
-        "names from the internet's resolvers, never the cluster's"
+        json!({
+            "nameservers": ["8.8.8.8", "8.8.4.4", "2001:4860:4860::8888"],
+            "options": [{"name": "timeout", "value": "1"}, {"name": "attempts", "value": "3"}]
+        }),
+        "names from the internet's resolvers, never the cluster's, a lost question asked again \
+         after a second"
     );
     let policy = computer.network_policy();
     let out = &policy["spec"]["egress"][0]["to"];

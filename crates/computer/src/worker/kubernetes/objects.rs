@@ -66,6 +66,13 @@ const PERSON_USER: u32 = 65_532;
 /// host names none), reached through its policy's rule for the internet like any other
 /// address, so it asks nothing of the cluster's DNS or the metadata server's (#393).
 const RESOLVERS: [&str; 3] = ["8.8.8.8", "8.8.4.4", "2001:4860:4860::8888"];
+/// How long, in seconds, the computer's resolver waits for an answer before asking the next
+/// resolver: a question lost on the way (UDP, through the node's NAT) costs a second, not
+/// glibc's default five, which outlasts a command's own short limit (#1641).
+const RESOLVER_TIMEOUT: &str = "1";
+/// How many rounds of `RESOLVERS` it asks before giving up on a name, one more than glibc's
+/// default, so the shorter wait still gives a slow answer time.
+const RESOLVER_ATTEMPTS: &str = "3";
 /// How long a person's computer goes unasked, with nothing running in the background, before
 /// it ends on its own: asleep after 2 hours idle (`specs/computers.md`, decision 4).
 pub(crate) const IDLE_MINUTES: u32 = 120;
@@ -229,7 +236,13 @@ impl Shape<'_> {
                 // Names from the internet's resolvers (`RESOLVERS`): a computer reaches
                 // nothing inside, so the cluster's names are no use to it.
                 "dnsPolicy": "None",
-                "dnsConfig": {"nameservers": RESOLVERS},
+                "dnsConfig": {
+                    "nameservers": RESOLVERS,
+                    "options": [
+                        {"name": "timeout", "value": RESOLVER_TIMEOUT},
+                        {"name": "attempts", "value": RESOLVER_ATTEMPTS}
+                    ]
+                },
                 "runtimeClassName": self.runtime_class,
                 "nodeSelector": nodes,
                 // Its disk owned by its group, set only when it differs, so a large home is
