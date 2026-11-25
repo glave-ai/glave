@@ -14,6 +14,8 @@
 //!   that says whose work it is goes only where they allow, at a router to the providers that
 //!   fit.
 //! - **Metering**: every answer says the route and target that served it, for `model.responded`.
+//! - **Prices**: glave's own list of what each model costs at each maker it names, which wins
+//!   over a service's catalog.
 //!
 //! The contract is `specs/gateway.md`.
 
@@ -24,6 +26,7 @@ mod gateway;
 mod media;
 mod plan;
 mod price;
+mod price_list;
 mod routes;
 mod search;
 mod target;
@@ -34,6 +37,7 @@ pub use filtering::{Facts, Filtering, Router, floor_hides, hidden_by};
 pub use gateway::Gateway;
 pub use media::Tier;
 pub use price::Price;
+pub use price_list::{PriceList, PriceListError};
 pub use routes::{RouteError, Routes};
 pub use search::WebSearch;
 pub use target::{Capabilities, Model, Target};

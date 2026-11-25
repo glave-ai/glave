@@ -75,6 +75,7 @@ fn offering(models: &[&str]) -> GatewaySwitch {
         .collect();
     let allowed = Allowed {
         constraints: &Constraints::default(),
+        prices: &glave_gateway::PriceList::built_in().unwrap(),
         main: None,
         judge: &Source::Default,
         models: &Source::Default,

@@ -134,13 +134,12 @@ fn a_route_needs_a_target() {
 #[test]
 fn a_configured_price_costs_an_answer_the_provider_did_not() {
     let provider = Fake::new("vllm");
-    let price = Price {
-        list: "ours-2026-10".into(),
-        currency: Currency::USD,
-        input_per_mtok: Nanos::new(1_000_000_000),
-        cache_read_per_mtok: Nanos::ZERO,
-        output_per_mtok: Nanos::new(2_000_000_000),
-    };
+    let price = Price::per_mtok(
+        "ours-2026-10",
+        Nanos::new(1_000_000_000),
+        Nanos::ZERO,
+        Nanos::new(2_000_000_000),
+    );
     let gateway =
         Gateway::new(Routes::new(vec![provider.target("hope").with_price(price)]).unwrap());
     let answer = block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();

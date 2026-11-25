@@ -21,7 +21,11 @@ static WHOLE: Price = Price {
     currency: Currency::USD,
     input_per_mtok: Nanos::ZERO,
     cache_read_per_mtok: Nanos::ZERO,
+    cache_write_per_mtok: Nanos::ZERO,
     output_per_mtok: Nanos::ZERO,
+    long: None,
+    image_output_per_mtok: None,
+    per_request: Nanos::ZERO,
 };
 
 /// The service a server searches the web through, and what one search costs there.

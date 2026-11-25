@@ -5,7 +5,7 @@
 //! tried first, the levels too where that service has some, and the level it is sent unasked;
 //! and what the gateway checks a request against, prices it at and sends it with.
 
-use glave_event::{Catalog, CatalogModel, Currency, Precision, ProviderKind, Reasoning};
+use glave_event::{Catalog, CatalogModel, Precision, ProviderKind, Reasoning};
 use glave_gateway::{Capabilities, Price, Target};
 use glave_session::protocol::{EndpointInfo, ModelInfo};
 
@@ -69,13 +69,12 @@ pub(super) fn price(card: &CatalogModel, catalog: &Catalog) -> Option<Price> {
     let price = card.price?;
     let day = catalog.listed.timestamp().strftime("%Y-%m-%d");
     let kind = serde_json::to_value(catalog.kind).ok()?;
-    Some(Price {
-        list: format!("{} catalog {day}", kind.as_str()?),
-        currency: Currency::USD,
-        input_per_mtok: price.input,
-        cache_read_per_mtok: price.cache_read.unwrap_or(price.input),
-        output_per_mtok: price.output,
-    })
+    Some(Price::per_mtok(
+        format!("{} catalog {day}", kind.as_str()?),
+        price.input,
+        price.cache_read.unwrap_or(price.input),
+        price.output,
+    ))
 }
 
 /// A target with what `card`, its service's own description of it, says, if there is one,

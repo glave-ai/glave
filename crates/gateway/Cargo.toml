@@ -20,8 +20,11 @@ glave-ports.workspace = true
 # The calendar month, in UTC, an organization's credits' monthly limit counts (already in the
 # tree, under glave-ports).
 jiff.workspace = true
+# glave's own price list, `prices.toml`, read as connectors.toml is (both already in the tree).
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+toml.workspace = true
 # Each organization's turn at its credits ledger, held across the read and the append, so a
 # server's calls queue instead of racing (already in the tree, under glave-ports).
 tokio = { workspace = true, features = ["sync"] }
@@ -29,6 +32,7 @@ tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true
 
 [dev-dependencies]
+insta.workspace = true
 proptest.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }
 tokio = { workspace = true, features = ["rt", "sync"] }
