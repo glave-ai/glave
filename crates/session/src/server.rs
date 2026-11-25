@@ -373,8 +373,6 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) push: Option<Arc<Pushing>>,
     /// The glave accounts it keeps, where it keeps any.
     pub(crate) accounts: Option<Arc<Accounts>>,
-    /// The accounts being made by invites (`joining.rs`).
-    pub(crate) joinings: Mutex<crate::joining::Joinings>,
     /// Whether it takes sign-ups, as its configuration says.
     pub(crate) signup: bool,
     /// How many addresses the proxies in front of it add to `X-Forwarded-For`, as its
@@ -382,8 +380,6 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) forwarded: Option<NonZeroU8>,
     /// The sign-ups waiting, as far as this server has read.
     pub(crate) signups: Mutex<crate::signups::Signups>,
-    /// The accounts being made by sign-up on this server.
-    pub(crate) signings: Mutex<crate::signups::Signings>,
     /// What each network asked here without signing in (`strangers.rs`).
     pub(crate) strangers: Mutex<crate::strangers::Strangers>,
     /// Where people reach the server from elsewhere, if they do.
@@ -489,11 +485,9 @@ where
                 accounts: wiring.accounts,
                 mail: wiring.mail,
                 push: wiring.push,
-                joinings: Mutex::new(crate::joining::Joinings::default()),
                 signup: wiring.signup,
                 forwarded: wiring.forwarded,
                 signups: Mutex::new(crate::signups::Signups::default()),
-                signings: Mutex::new(crate::signups::Signings::default()),
                 strangers: Mutex::new(crate::strangers::Strangers::default()),
                 origin: wiring.origin,
                 stopping: AtomicBool::new(false),

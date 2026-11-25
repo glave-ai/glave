@@ -1,9 +1,17 @@
-//! What someone not signed in may ask that makes the server keep or read something: beginning
-//! to sign in or make a passkey, which a request kept in memory waits for, and what an invite's
-//! link opens, which reads its organization's people. Each is counted against the network it
-//! came from on this server, as emails asked for are (`mailing.rs`), so no one network fills
-//! what every sign-in waits in, nor keeps the server reading. One asked on this computer, in
-//! process or over stdio, counts against nothing.
+//! What someone not signed in may ask that makes the server read an organization's whole
+//! people ledger: what an invite's link opens, and beginning to make a passkey with it. Each is
+//! counted against the network it came from on this server, as emails asked for are
+//! (`mailing.rs`), so no one network keeps the server reading. Nothing else a stranger asks
+//! is counted: a passkey request is the browser's to hold, and the server keeps nothing of it.
+//! One asked on this computer, in process or over stdio, counts against nothing.
+//!
+//! The network is where the request came from as `http::hosts::client` reads it. Where the
+//! server takes a request from a proxy on this computer or a private network and its
+//! configuration doesn't say how many addresses proxies add (`forwarded`), that is the last
+//! address `X-Forwarded-For` names, which a proxy that passes on what a client sent, rather
+//! than adding its own, lets the client choose: there a client may change the network it is
+//! counted against. Past [`MOST_NETWORKS`] networks counted within a minute, a new one is let
+//! through uncounted.
 
 use std::collections::BTreeMap;
 use std::sync::{MutexGuard, PoisonError};
@@ -12,12 +20,12 @@ use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use jiff::{SignedDuration, Timestamp};
 
 use crate::mailing::networks;
-use crate::protocol::{ApiError, Request, code};
+use crate::protocol::{ApiError, LinkKind, Request, code};
 use crate::server::Server;
 use crate::words::Sentence;
 
-/// How many one network may ask within [`WITHIN`]: a household or an office signing in
-/// together, not a stranger's way to push everyone else's sign-in out.
+/// How many one network may ask within [`WITHIN`]: a household or an office opening invites
+/// together, not a stranger's way to keep the server reading.
 const PER_NETWORK: u32 = 20;
 
 /// How many the networks of one IPv6 /48 together may ask within [`WITHIN`]: one person may
@@ -62,9 +70,11 @@ impl Strangers {
 fn counted(request: &Request) -> bool {
     matches!(
         request,
-        Request::PasskeyCreateOptions { .. }
-            | Request::PasskeyGetOptions {}
-            | Request::InviteShow { .. }
+        Request::InviteShow { .. }
+            | Request::PasskeyCreateOptions {
+                link: LinkKind::Invite,
+                ..
+            }
     )
 }
 
@@ -95,7 +105,7 @@ where
         if self.strangers().count(&counts, now) {
             Ok(())
         } else {
-            Err(ApiError::new(code::LIMIT, Sentence::SignInsTooOften))
+            Err(ApiError::new(code::LIMIT, Sentence::InvitesTooOften))
         }
     }
 

@@ -116,11 +116,12 @@ fn no_one_reads_or_makes_anything_of_anyone_s() {
     });
 }
 
-/// No one asks to begin signing in, or to see an invite, at most 20 times a minute from one
-/// network: past that they are told to wait, while another network, and anyone signed in, asks
-/// on, so no stranger pushes everyone else's sign-in out.
+/// No one opens an invite, or begins making a passkey with one, more than 20 times a minute
+/// from one network, each reading its organization's people: past that they are told to wait,
+/// while another network, and the person here, ask on. Beginning to sign in is never counted:
+/// the server keeps nothing of it.
 #[test]
-fn a_network_not_signed_in_begins_at_most_twenty_sign_ins_a_minute() {
+fn a_network_not_signed_in_opens_at_most_twenty_invites_a_minute() {
     let dir = folder("no-one-counted");
     block_on!(async {
         let server = server(&dir, Vec::new(), Answering::NoOne).await;
@@ -128,33 +129,34 @@ fn a_network_not_signed_in_begins_at_most_twenty_sign_ins_a_minute() {
         let limited = |answered: Result<Reply, ApiError>| {
             answered.err().map(|refused| refused.code) == Some(code::LIMIT)
         };
+        let show = || Request::InviteShow {
+            code: Secret::new("not-an-invite"),
+        };
         for n in 0..20 {
-            let request = match n % 3 {
-                0 => Request::PasskeyGetOptions {},
-                1 => Request::InviteShow {
+            let request = if n % 2 == 0 {
+                show()
+            } else {
+                Request::PasskeyCreateOptions {
                     code: Secret::new("not-an-invite"),
-                },
-                _ => Request::PasskeyCreateOptions {
-                    code: Secret::new("not-a-setup-code"),
-                    link: LinkKind::Setup,
-                },
+                    link: LinkKind::Invite,
+                }
             };
             assert!(!limited(server.request_as(&asking, request).await), "{n}");
         }
-        let again = server
-            .request_as(&asking, Request::PasskeyGetOptions {})
-            .await;
-        assert!(limited(again), "the network's twenty-first");
+        assert!(
+            limited(server.request_as(&asking, show()).await),
+            "its twenty-first"
+        );
+        for _ in 0..30 {
+            let signing_in = server
+                .request_as(&asking, Request::PasskeyGetOptions {})
+                .await;
+            assert!(!limited(signing_in), "signing in is never counted");
+        }
         let other = Caller::no_one(IpAddr::from([198, 51, 100, 4]));
-        let elsewhere = server
-            .request_as(&other, Request::PasskeyGetOptions {})
-            .await;
+        let elsewhere = server.request_as(&other, show()).await;
         assert!(!limited(elsewhere), "another network's first");
-        let discover = server.request_as(&asking, Request::Discover {}).await;
-        assert!(discover.is_ok(), "what isn't counted is answered");
-        let signed_in = server
-            .request_as(&Caller::default(), Request::PasskeyGetOptions {})
-            .await;
-        assert!(!limited(signed_in), "the person here is never counted");
+        let here = server.request_as(&Caller::default(), show()).await;
+        assert!(!limited(here), "the person here is never counted");
     });
 }

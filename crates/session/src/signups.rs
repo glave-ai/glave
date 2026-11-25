@@ -11,8 +11,8 @@
 //! hand to one person, with no address, while it takes no sign-ups (`operator.rs`).
 
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::PoisonError;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{MutexGuard, PoisonError};
 
 use glave_event::{
     At, Body, EventId, Header, MailAsked, Money, OrganizationKind, PersonJoined, PrincipalId,
@@ -22,7 +22,9 @@ use glave_identity::signin::{Proof, kept, one_time_code};
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, OrgId, Scope};
 use jiff::{SignedDuration, Timestamp};
+use serde::{Deserialize, Serialize};
 
+use crate::joining::Making;
 use crate::mailing::{ASKED_WITHIN, just_now};
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
@@ -34,11 +36,6 @@ mod operator;
 /// How long a sign-up's link works: long enough to open it from a mailbox, short enough that
 /// one left there is no key for long.
 const LIFETIME: SignedDuration = SignedDuration::from_mins(15);
-
-/// Accounts being made by sign-up at once; a new one past this forgets the oldest. Each
-/// passkey request expires on its own, as any does. Enough that the asks the server lets one
-/// network make within a request's lifetime never fill it (`strangers.rs`).
-const MOST: usize = 4_096;
 
 /// Sign-ups waiting at once, at most; past this, an address is answered as ever and sent
 /// nothing, until some expire.
@@ -133,7 +130,8 @@ impl Signups {
 }
 
 /// What an emailed link is for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Emailed {
     /// Signing up: a new account, and an organization of its own.
     Signup,
@@ -142,8 +140,8 @@ pub(crate) enum Emailed {
 }
 
 /// A passkey being made by an emailed link: a new account's, or an account's to get back in.
+#[derive(Serialize, Deserialize)]
 pub(crate) struct Signing {
-    ceremony: String,
     pub(crate) person: PrincipalId,
     pub(crate) hash: String,
     /// The address its link went to: none for one whoever runs the server handed over.
@@ -152,10 +150,6 @@ pub(crate) struct Signing {
     /// What the personal space it makes starts with, from a link whoever runs the server made.
     credits: Option<Money>,
 }
-
-/// The passkeys being made by emailed links on this server.
-#[derive(Default)]
-pub(crate) struct Signings(Vec<Signing>);
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -286,43 +280,25 @@ where
                 (person, accounts.browsers(person).await?)
             }
         };
-        let ceremony = browsers.create_options(Proof::SignedIn)?;
-        let mut signing = self.signings();
-        if signing.0.len() >= MOST {
-            signing.0.remove(0);
-        }
-        signing.0.push(Signing {
-            ceremony: ceremony.id.clone(),
+        let making = Making::Link(Signing {
             person,
             hash,
             email,
             emailed,
             credits,
         });
+        let ceremony =
+            browsers.create_options_carrying(Proof::SignedIn, Some(making.carried()?))?;
         Ok(crate::browsers::options(ceremony))
     }
 
-    /// Whether the passkey being made with the request `ceremony` is a new account's, by a
-    /// sign-up link whoever runs the server handed over, which carries no address.
-    pub(crate) fn signing_unaddressed(&self, ceremony: &str) -> bool {
-        self.signings().0.iter().any(|it| {
-            it.ceremony == ceremony && it.emailed == Emailed::Signup && it.email.is_none()
-        })
-    }
-
-    /// The passkey being made by an emailed link with the request `ceremony`, taken, if one is.
-    pub(crate) fn signing(&self, ceremony: &str) -> Option<Signing> {
-        let mut signing = self.signings();
-        let at = signing.0.iter().position(|it| it.ceremony == ceremony)?;
-        Some(signing.0.remove(at))
-    }
-
-    /// Answers `passkey/create` for a passkey being made by an emailed link: the link spent,
-    /// then, for a sign-up, the new account's first passkey, their personal space with them its
-    /// Owner, and the browser signed in; to get back in, the account's new passkey.
+    /// Answers `passkey/create` for a passkey being made by an emailed link with the request
+    /// `ceremony`: the link spent, then, for a sign-up, the new account's first passkey, their
+    /// personal space with them its Owner, and the browser signed in; to get back in, the
+    /// account's new passkey.
     pub(crate) async fn finish_link(
         &self,
-        signing: Signing,
+        (ceremony, signing): (&str, Signing),
         credential: &serde_json::Value,
         name: Option<&str>,
         person_name: Option<String>,
@@ -330,8 +306,8 @@ where
         let accounts = self.accounts()?;
         let browsers = accounts.browsers(signing.person).await?;
         // Checked, then the link spent, and only then is anything of the account kept: a link
-        // spent meanwhile leaves nothing behind.
-        let checked = browsers.checked(&signing.ceremony, credential, name)?;
+        // spent meanwhile leaves nothing behind, and the request is spent with it.
+        let checked = browsers.checked(ceremony, credential, name)?;
         if signing.emailed == Emailed::Recovery {
             self.spend(&signing, None).await?;
             return self.recovered(&signing, &browsers, checked).await;
@@ -479,13 +455,6 @@ where
             Emailed::Recovery => Sentence::RecoveryGone,
         };
         ApiError::new(code::NO_INVITE, sentence)
-    }
-
-    fn signings(&self) -> MutexGuard<'_, Signings> {
-        self.inner
-            .signings
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 
