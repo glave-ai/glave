@@ -11,7 +11,9 @@ use calamine::{Data, Reader, Xlsx};
 use crate::command::office;
 use crate::error::OfficeError;
 use crate::package::Kind;
+use crate::reach::{Budget, values};
 use crate::read::{chosen, open, shown};
+use crate::shared::shared_strings;
 use crate::{data, document, presentation, table};
 
 /// The rows shown of each sheet, or of a CSV file: a preview, not the whole file.
@@ -94,6 +96,7 @@ fn body(read: &str) -> String {
 /// [`ROWS`]: a heading and a table of what its cells show, a formula with no value computed yet
 /// shown as itself. Whether rows were left out.
 fn streamed(bytes: &[u8]) -> Result<(String, bool), OfficeError> {
+    shared_strings(bytes)?;
     let mut book = Xlsx::new(Cursor::new(bytes))
         .map_err(|error| OfficeError::NotAWorkbook(error.to_string()))?;
     let listed = book.sheets_metadata().to_vec();
@@ -146,10 +149,9 @@ fn sheets(bytes: &[u8]) -> Result<(String, bool), OfficeError> {
     let listed = book.sheets_metadata().to_vec();
     let mut text = Vec::new();
     let mut cut = false;
+    let mut budget = Budget::new();
     for sheet in chosen(&listed, None)?.into_iter().take(SHEETS) {
-        let values = book
-            .worksheet_range(&sheet.name)
-            .map_err(|error| OfficeError::Sheet(sheet.name.clone(), error.to_string()))?;
+        let values = values(&mut book, &sheet.name, &mut budget)?;
         let rows: Vec<Vec<String>> = values
             .rows()
             .map(|row| {

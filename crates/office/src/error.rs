@@ -54,6 +54,27 @@ pub enum OfficeError {
     NoSuchSheet { wanted: String, sheets: Vec<String> },
     #[error("could not read the sheet {0:?}: {1}")]
     Sheet(String, String),
+    /// A workbook whose sheets' cells, each from its first used to its last, are more than
+    /// glave holds: the sheet that went past.
+    #[error(
+        "the workbook is too big to read whole: its sheets span more than the {most} cells \
+         glave reads, from each sheet's first cell to its last, at the sheet {sheet:?}. Read \
+         one sheet with --sheet, or open it in a spreadsheet app and copy the part you need to \
+         a file of its own"
+    )]
+    TooWide { sheet: String, most: u64 },
+    /// A workbook whose shared text is more than glave holds.
+    #[error(
+        "the workbook's text takes more than {most} MB unpacked, more than glave reads. Open it \
+         in a spreadsheet app and copy the part you need to a file of its own"
+    )]
+    TooMuchText { most: u64 },
+    /// A workbook that says it shares more strings than glave holds: what it said.
+    #[error(
+        "the workbook says it shares {said} strings, more than the {most} glave reads. Open it \
+         in a spreadsheet app and copy the part you need to a file of its own"
+    )]
+    TooManyStrings { said: String, most: u64 },
     /// A workbook to write was described wrongly: what is wrong, and where.
     #[error("the workbook's description is not right: {0}")]
     Description(String),

@@ -1,0 +1,203 @@
+//! A workbook's sheets read within a budget of cells for the whole workbook. calamine holds every
+//! cell of a range from its first used cell to its last, empty or not, so two cells far apart
+//! (A1 and XFD1048576) would take hundreds of gigabytes. An xlsx or xlsb sheet is read once, as
+//! a stream of the cells it holds, stopped as soon as they span more than is left, and only then
+//! made a range; the text its cells hold is counted too, as calamine copies a shared string
+//! into every cell that names it. calamine reads an xls or ods workbook whole when it opens it,
+//! xls within the format's 65,536 rows by 256 columns and ods within a cap of its own (100
+//! million cells), and its sheets spend the budget all the same. The strings an xlsx or xlsb
+//! workbook shares are read whole when it opens too, so they are measured first
+//! (`shared.rs`).
+
+use calamine::{Cell, CellType, Data, DataRef, Range, Reader as _, Sheets};
+
+use crate::error::OfficeError;
+use crate::read::Book;
+
+/// The most cells glave holds of a workbook, each sheet's from its first used cell to its
+/// last, values and formulas apart: a few hundred MB as calamine holds them.
+const MOST_CELLS: u64 = 10_000_000;
+
+/// The most bytes of text glave holds of a workbook's cells, values and formulas: a cell's own
+/// text, or a copy of a shared string for each cell that names it.
+const MOST_TEXT: u64 = 256 * 1024 * 1024;
+
+/// What is left to read of a workbook, in cells and in bytes of their text.
+pub(crate) struct Budget {
+    left: u64,
+    text: u64,
+}
+
+impl Budget {
+    pub(crate) fn new() -> Self {
+        Self {
+            left: MOST_CELLS,
+            text: MOST_TEXT,
+        }
+    }
+
+    /// Spends `bytes` of text.
+    fn read(&mut self, bytes: usize) -> Result<(), OfficeError> {
+        let bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
+        self.text = self
+            .text
+            .checked_sub(bytes)
+            .ok_or(OfficeError::TooMuchText {
+                most: MOST_TEXT / (1024 * 1024),
+            })?;
+        Ok(())
+    }
+
+    /// Spends what `cells` span, refusing `sheet` when that is more than is left.
+    fn spend(&mut self, sheet: &str, cells: u64) -> Result<(), OfficeError> {
+        self.left = self
+            .left
+            .checked_sub(cells)
+            .ok_or_else(|| OfficeError::TooWide {
+                sheet: sheet.to_owned(),
+                most: MOST_CELLS,
+            })?;
+        Ok(())
+    }
+}
+
+/// The first and last row and column of the cells read so far.
+#[derive(Default)]
+struct Span {
+    corners: Option<((u32, u32), (u32, u32))>,
+}
+
+impl Span {
+    /// Takes in the cell at `(row, column)`: how many cells the span now covers.
+    fn take(&mut self, (row, column): (u32, u32)) -> u64 {
+        let ((top, left), (bottom, right)) = self.corners.unwrap_or(((row, column), (row, column)));
+        let ((top, left), (bottom, right)) = (
+            (top.min(row), left.min(column)),
+            (bottom.max(row), right.max(column)),
+        );
+        self.corners = Some(((top, left), (bottom, right)));
+        u64::from(bottom.saturating_sub(top))
+            .saturating_add(1)
+            .saturating_mul(u64::from(right.saturating_sub(left)).saturating_add(1))
+    }
+}
+
+/// The cells `next` gives that `kept` keeps, each with the bytes of text it holds, as a range,
+/// the cells they span and their text spent from `budget`: stopped, refusing `sheet`, as soon
+/// as either is more than is left, or the cells kept are, which a file naming one cell again
+/// and again makes more than they span.
+fn collected<S: CellType, T: CellType, E: ToString>(
+    sheet: &str,
+    budget: &mut Budget,
+    mut next: impl FnMut() -> Result<Option<Cell<S>>, E>,
+    kept: impl Fn(&Cell<S>) -> Option<(Cell<T>, usize)>,
+) -> Result<Range<T>, OfficeError> {
+    let mut span = Span::default();
+    let mut spanned = 0;
+    let mut cells = Vec::new();
+    while let Some(cell) =
+        next().map_err(|error| OfficeError::Sheet(sheet.to_owned(), error.to_string()))?
+    {
+        let Some((cell, text)) = kept(&cell) else {
+            continue;
+        };
+        budget.read(text)?;
+        spanned = span.take(cell.get_position());
+        cells.push(cell);
+        let kept = u64::try_from(cells.len()).unwrap_or(u64::MAX);
+        if spanned.max(kept) > budget.left {
+            budget.spend(sheet, spanned.max(kept))?;
+        }
+    }
+    budget.spend(sheet, spanned)?;
+    Ok(Range::from_sparse(cells))
+}
+
+/// A range calamine already holds, its size spent from `budget`.
+fn spent<T: CellType>(
+    sheet: &str,
+    budget: &mut Budget,
+    range: Range<T>,
+) -> Result<Range<T>, OfficeError> {
+    let (rows, columns) = range.get_size();
+    let size = u64::try_from(rows.saturating_mul(columns)).unwrap_or(u64::MAX);
+    budget.spend(sheet, size)?;
+    Ok(range)
+}
+
+/// A value that is there, as calamine gives it to keep, and the bytes of text it holds: a
+/// shared string is copied into each cell that names it.
+fn value(cell: &Cell<DataRef<'_>>) -> Option<(Cell<Data>, usize)> {
+    let value = cell.get_value();
+    let text = match value {
+        DataRef::Empty => return None,
+        DataRef::String(text) | DataRef::DateTimeIso(text) | DataRef::DurationIso(text) => {
+            text.len()
+        }
+        DataRef::SharedString(text) => text.len(),
+        _ => 0,
+    };
+    Some((Cell::new(cell.get_position(), value.clone().into()), text))
+}
+
+/// The values of `sheet`, within `budget`.
+pub(crate) fn values(
+    book: &mut Book,
+    sheet: &str,
+    budget: &mut Budget,
+) -> Result<Range<Data>, OfficeError> {
+    let unread = |error: String| OfficeError::Sheet(sheet.to_owned(), error);
+    match book {
+        Sheets::Xlsx(xlsx) => {
+            let mut cells = xlsx
+                .worksheet_cells_reader(sheet)
+                .map_err(|error| unread(error.to_string()))?;
+            collected(sheet, budget, || cells.next_cell(), value)
+        }
+        Sheets::Xlsb(xlsb) => {
+            let mut cells = xlsb
+                .worksheet_cells_reader(sheet)
+                .map_err(|error| unread(error.to_string()))?;
+            collected(sheet, budget, || cells.next_cell(), value)
+        }
+        Sheets::Xls(_) | Sheets::Ods(_) => {
+            let range = book
+                .worksheet_range(sheet)
+                .map_err(|error| unread(error.to_string()))?;
+            spent(sheet, budget, range)
+        }
+    }
+}
+
+/// A formula that is there.
+fn formula(cell: &Cell<String>) -> Option<(Cell<String>, usize)> {
+    let text = cell.get_value().len();
+    (text > 0).then(|| (cell.clone(), text))
+}
+
+/// The formulas of `sheet`, within `budget`; none when they can't be read, as a kind of
+/// workbook that keeps none has none.
+pub(crate) fn formulas(
+    book: &mut Book,
+    sheet: &str,
+    budget: &mut Budget,
+) -> Result<Range<String>, OfficeError> {
+    let read = match book {
+        Sheets::Xlsx(xlsx) => match xlsx.worksheet_cells_reader(sheet) {
+            Ok(mut cells) => collected(sheet, budget, || cells.next_formula(), formula),
+            Err(error) => Err(OfficeError::Sheet(sheet.to_owned(), error.to_string())),
+        },
+        Sheets::Xlsb(xlsb) => match xlsb.worksheet_cells_reader(sheet) {
+            Ok(mut cells) => collected(sheet, budget, || cells.next_formula(), formula),
+            Err(error) => Err(OfficeError::Sheet(sheet.to_owned(), error.to_string())),
+        },
+        Sheets::Xls(_) | Sheets::Ods(_) => match book.worksheet_formula(sheet) {
+            Ok(range) => spent(sheet, budget, range),
+            Err(error) => Err(OfficeError::Sheet(sheet.to_owned(), error.to_string())),
+        },
+    };
+    match read {
+        Err(OfficeError::Sheet(..)) => Ok(Range::default()),
+        read => read,
+    }
+}

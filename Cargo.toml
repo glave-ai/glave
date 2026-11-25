@@ -251,8 +251,8 @@ opt-level = 3
 opt-level = 3
 
 # Inflating and checking what a file a turn made unpacks to takes minutes unoptimized for the
-# largest the tests make: one looked through for secrets (crates/harness/src/made/tests.rs), and a
-# workbook's strings of 2 GB that a reader is held to its memory by (crates/cli/tests/reading.rs).
+# largest the tests make: one looked through for secrets (crates/harness/src/made/tests.rs), and
+# workbooks of hundreds of MB unpacked that glave doc refuses (crates/office/tests/wide.rs).
 [profile.dev.package.zlib-rs]
 opt-level = 3
 

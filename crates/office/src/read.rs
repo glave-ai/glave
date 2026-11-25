@@ -11,6 +11,8 @@ use calamine::{Data, Range, Reader, Sheet, SheetType, SheetVisible, Sheets};
 use crate::cells::{cell_name, column_name, listed};
 use crate::command::Answer;
 use crate::error::OfficeError;
+use crate::reach::{Budget, formulas, values};
+use crate::shared::shared_strings;
 use crate::table::escaped;
 
 /// The rows shown of each sheet when no rows are asked for: enough to see what a sheet holds,
@@ -33,9 +35,10 @@ pub(crate) struct Reading {
 /// A cell's row and column, counted from 0 as calamine counts them.
 type At = (u32, u32);
 
-type Book = Sheets<Cursor<Vec<u8>>>;
+pub(crate) type Book = Sheets<Cursor<Vec<u8>>>;
 
 pub(crate) fn open(bytes: Vec<u8>) -> Result<Book, OfficeError> {
+    shared_strings(&bytes)?;
     calamine::open_workbook_auto_from_rs(Cursor::new(bytes))
         .map_err(|error| OfficeError::NotAWorkbook(error.to_string()))
 }
@@ -60,13 +63,12 @@ pub(crate) fn read(bytes: Vec<u8>, name: &str, reading: &Reading) -> Result<Stri
             let _ = writeln!(text, "Name {defined} = {refers}");
         }
     }
+    let mut budget = Budget::new();
     for sheet in chosen {
-        let values = book
-            .worksheet_range(&sheet.name)
-            .map_err(|error| OfficeError::Sheet(sheet.name.clone(), error.to_string()))?;
+        let values = values(&mut book, &sheet.name, &mut budget)?;
         // A sheet's formulas are read apart from its values; a kind of workbook that keeps
         // none reads as having none.
-        let formulas = book.worksheet_formula(&sheet.name).unwrap_or_default();
+        let formulas = formulas(&mut book, &sheet.name, &mut budget)?;
         text.push('\n');
         let table = Table {
             file: name,
@@ -89,16 +91,15 @@ pub(crate) fn csv(bytes: Vec<u8>, sheet: Option<&str>) -> Result<Answer, OfficeE
         .first()
         .map(|chosen| chosen.name.clone())
         .ok_or(OfficeError::NoSheets)?;
-    let values = book
-        .worksheet_range(&name)
-        .map_err(|error| OfficeError::Sheet(name.clone(), error.to_string()))?;
+    let mut budget = Budget::new();
+    let values = values(&mut book, &name, &mut budget)?;
     let mut text = String::new();
     for row in values.rows() {
         let fields: Vec<String> = row.iter().map(|value| quoted(&shown(value))).collect();
         text.push_str(&fields.join(","));
         text.push('\n');
     }
-    let formulas = book.worksheet_formula(&name).unwrap_or_default();
+    let formulas = formulas(&mut book, &name, &mut budget)?;
     let uncomputed: Vec<String> = formulas_by_cell(&formulas)
         .into_keys()
         .filter(|at| computed(values.get_value(*at)).is_none())
