@@ -342,8 +342,8 @@ fn a_file_the_turn_made_prints_as_one_line() {
     );
 }
 
-/// A file glave can't read without more memory than reading should take (a workbook whose
-/// strings claim a quadrillion entries) ends the reader that reads it, never the server: the turn
+/// A file glave can't read without more memory than reading should take (a spreadsheet calamine
+/// holds at some 3 GB, `reading.rs`) ends the reader that reads it, never the server: the turn
 /// ends, the file is kept and only downloads, and a file beside it reads as it should.
 #[test]
 fn a_file_that_would_take_too_much_to_read_ends_its_reader_never_the_server() {
@@ -352,12 +352,17 @@ fn a_file_that_would_take_too_much_to_read_ends_its_reader_never_the_server() {
     choose(&place, "permissions", "\"full-access\"");
     choose(&place, "titles", "false");
     let files = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/files");
-    for name in ["strings-past-memory.xlsx", "budget.xlsx"] {
-        let hidden = place.project.join(format!(".{name}"));
-        std::fs::copy(format!("{files}/{name}"), hidden).unwrap();
-    }
-    let copy =
-        json!({"command": "cp .strings-past-memory.xlsx huge.xlsx && cp .budget.xlsx budget.xlsx"});
+    std::fs::copy(
+        format!("{files}/budget.xlsx"),
+        place.project.join(".budget.xlsx"),
+    )
+    .unwrap();
+    std::fs::write(
+        place.project.join(".spread.xlsx"),
+        crate::reading::spread_workbook(),
+    )
+    .unwrap();
+    let copy = json!({"command": "cp .spread.xlsx huge.xlsx && cp .budget.xlsx budget.xlsx"});
     let model = FakeServer::start(vec![
         Reply::tool_call("call_1", "bash", &copy),
         Reply::text("Made them."),

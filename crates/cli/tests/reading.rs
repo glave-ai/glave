@@ -25,7 +25,7 @@ const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8"?><manifest:manife
 
 /// An OpenDocument spreadsheet holding numbers at its four corners, 6,100 rows and 16,384
 /// columns apart, every part stored as it is.
-fn spread_workbook() -> Vec<u8> {
+pub(crate) fn spread_workbook() -> Vec<u8> {
     let empty = r#"<table:table-row table:number-rows-repeated="6098"><table:table-cell table:number-columns-repeated="16384"/></table:table-row>"#;
     let content = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" office:version="1.2"><office:body><office:spreadsheet><table:table table:name="Budget">{ENDS}{empty}{ENDS}</table:table></office:spreadsheet></office:body></office:document-content>"#
