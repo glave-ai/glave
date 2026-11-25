@@ -310,27 +310,15 @@ impl ServeFile {
         (plain && !local.is_empty() && domain.contains('.')).then(|| report.to_owned())
     }
 
-    /// What is wrong with the share domain beside the public origin `origin`, if anything: it
-    /// must be one, and neither glave's own host nor a name under it, so a shared page reaches
-    /// nothing of glave's; `localhost`, a public suffix whose names are each a site of their
-    /// own, may hold both.
-    fn shares_problem(&self, origin: &PublicOrigin) -> Option<String> {
+    /// What is wrong with the share domain, if anything: it must be one. Whether it is a site
+    /// apart from glave's is checked on the choices as resolved ([`super::choices::apart`]).
+    fn shares_problem(&self) -> Option<String> {
         let shares = self.shares.as_deref()?;
-        let Some(domain) = PublicOrigin::parse(shares) else {
-            return Some(
-                "shares is not a domain to share at: https:// and its name, such as \
-                 https://share.example.com, and nothing after it; or, to try sharing on this \
-                 computer, http://localhost"
-                    .to_owned(),
-            );
-        };
-        let (own, apart) = (origin.host(), domain.host());
-        let under = apart == own || apart.ends_with(&format!(".{own}"));
-        (under && own != "localhost").then(|| {
-            format!(
-                "shares = {shares:?} is glave's own name or under it, where a shared page could \
-                 reach glave's sign-in: name a domain apart, such as https://share.example.net"
-            )
+        PublicOrigin::parse(shares).is_none().then(|| {
+            "shares is not a domain to share at: https:// and its name, such as \
+             https://share.example.net, and nothing after it; or, to try sharing on this \
+             computer, http://localhost"
+                .to_owned()
         })
     }
 
@@ -371,14 +359,14 @@ impl ServeFile {
                     .to_owned(),
             );
         }
-        let Some(origin) = self.public_origin() else {
+        if self.public_origin().is_none() {
             return Some(
                 "needs origin, where a tunnel or a proxy serves HTTPS for glave, or domain, \
                  for which glave serves HTTPS itself: one of them"
                     .to_owned(),
             );
-        };
-        if let Some(problem) = self.shares_problem(&origin) {
+        }
+        if let Some(problem) = self.shares_problem() {
             return Some(problem);
         }
         if self.report.is_some() && self.report_address().is_none() {

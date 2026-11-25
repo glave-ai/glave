@@ -133,6 +133,26 @@ describe('ShareDialogComponent', () => {
     expect(hook('share-older')).toBeNull();
   });
 
+  it('offers nothing to choose until it has read the share, and says why when it can’t', async () => {
+    const fake = new FakeSession();
+    const give = fake.held('share/get');
+    const { fixture } = await opened(fake);
+    expect(hook('share-who')).toBeNull();
+    expect(hook('share-apply')?.getAttribute('aria-disabled')).toBe('true');
+    give({ share: SHARED });
+    await settle(fixture);
+    expect(hook<HTMLInputElement>('share-link')?.value).toBe(SHARED.link);
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    const failed = new ApiError({
+      code: ErrorCode.INTERNAL,
+      message: 'the shares could not be read',
+    });
+    await opened(new FakeSession().answer('share/get', failed));
+    expect(hook('share-problem')?.textContent).toContain('The shares could not be read.');
+    expect(hook('share-who')).toBeNull();
+  });
+
   it('says why it could not share, in the server’s words', async () => {
     const refused = new ApiError({
       code: ErrorCode.NOT_AVAILABLE,

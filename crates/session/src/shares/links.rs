@@ -84,10 +84,15 @@ where
         Ok(self.held_links(|links| links.held.get(key).copied()))
     }
 
-    /// How many links the list holds now.
-    pub(crate) async fn links_held(&self) -> Result<usize, ApiError> {
+    /// How many links the list holds now, and how many of them the projects `theirs` hold.
+    pub(crate) async fn links_held(&self, theirs: &[Located]) -> Result<(usize, usize), ApiError> {
         self.read_links().await?;
-        Ok(self.held_links(|links| links.held.len()))
+        Ok(self.held_links(|links| {
+            let each = (links.held.values())
+                .filter(|at| theirs.contains(at))
+                .count();
+            (links.held.len(), each)
+        }))
     }
 
     /// Reads whatever was added to the list since this server last looked.

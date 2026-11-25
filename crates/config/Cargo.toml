@@ -13,6 +13,9 @@ publish.workspace = true
 glave-event.workspace = true
 glave-ports.workspace = true
 globset.workspace = true
+# Whether the share domain is a site apart from glave's: registrable domains, by the Public
+# Suffix List built in (policy/choices.rs).
+psl.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

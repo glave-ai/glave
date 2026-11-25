@@ -52,13 +52,18 @@ const DOORS: [(&str, &str, &str); 32] = [
         "let posted = method == Method::POST;",
         SHARED,
     ),
+    ("http/shared.rs", "let head = method == Method::HEAD;", SHARED),
     (
         "http/shared.rs",
-        "if !posted && method != Method::GET && method != Method::HEAD {",
         SHARED,
     ),
-    // A share for specific people: a form posted to its own name, an address for a code or a
-    // code for a proof. Attacked by `shares_people.rs`.
+    (
+        "http/shared.rs",
+        "if !posted && method != Method::GET && !head {",
+        SHARED,
+    ),
+    // A share for specific people: a form posted to its own name, an address for a link or a
+    // link's token for a proof. Attacked by `shares_people.rs`.
     (
         "http/shared/asking.rs",
         "let path = request.uri().path().to_owned();",

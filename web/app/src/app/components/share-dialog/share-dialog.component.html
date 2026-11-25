@@ -1,53 +1,55 @@
 <glz-dialog testId="share" [heading]="heading()" [(open)]="open">
   <div class="glz-stack glz-gap-4">
-    <glz-radio-group
-      data-testid="share-who"
-      cards
-      [label]="copy.who"
-      [value]="choice()"
-      (valueChange)="chose($event)"
-    >
-      <glz-radio value="only_you" [hint]="onlyYouHint()">{{ copy.onlyYou }}</glz-radio>
-      @if (offersPeople()) {
-        <glz-radio value="people" [hint]="copy.peopleHint">{{ copy.people }}</glz-radio>
-      }
-      <glz-radio value="anyone" [hint]="copy.anyoneHint">{{ copy.anyone }}</glz-radio>
-    </glz-radio-group>
-    @if (choosingPeople()) {
-      <glz-form-field [label]="copy.emails">
-        <textarea
-          glzInput
-          rows="2"
-          autocomplete="off"
-          data-testid="share-emails"
-          [value]="emails()"
-          (input)="typed($event)"
-        ></textarea>
-      </glz-form-field>
-    }
-    @if (link(); as link) {
-      <div class="link">
-        <glz-form-field [label]="copy.link">
-          <input glzInput readonly data-testid="share-link" [value]="link" />
+    @if (loaded()) {
+      <glz-radio-group
+        data-testid="share-who"
+        cards
+        [label]="copy.who"
+        [value]="choice()"
+        (valueChange)="chose($event)"
+      >
+        <glz-radio value="only_you" [hint]="onlyYouHint()">{{ copy.onlyYou }}</glz-radio>
+        @if (offersPeople()) {
+          <glz-radio value="people" [hint]="copy.peopleHint">{{ copy.people }}</glz-radio>
+        }
+        <glz-radio value="anyone" [hint]="copy.anyoneHint">{{ copy.anyone }}</glz-radio>
+      </glz-radio-group>
+      @if (choosingPeople()) {
+        <glz-form-field [label]="copy.emails">
+          <textarea
+            glzInput
+            rows="2"
+            autocomplete="off"
+            data-testid="share-emails"
+            [value]="emails()"
+            (input)="typed($event)"
+          ></textarea>
         </glz-form-field>
-        <glz-copy-button testId="share-copy" [label]="copy.copyLink" [text]="link" />
-      </div>
-    }
-    @if (older()) {
-      <div class="glz-stack glz-gap-2" data-testid="share-older">
-        <p>{{ copy.changedSince }}</p>
-        <div class="glz-row glz-gap-2">
-          <button
-            glzButton
-            data-testid="share-update"
-            [attr.aria-disabled]="busy()"
-            (click)="update()"
-          >
-            {{ copy.update }}
-          </button>
+      }
+      @if (link(); as link) {
+        <div class="link">
+          <glz-form-field [label]="copy.link">
+            <input glzInput readonly data-testid="share-link" [value]="link" />
+          </glz-form-field>
+          <glz-copy-button testId="share-copy" [label]="copy.copyLink" [text]="link" />
         </div>
-        <p class="note">{{ copy.updateHint }}</p>
-      </div>
+      }
+      @if (older()) {
+        <div class="glz-stack glz-gap-2" data-testid="share-older">
+          <p>{{ copy.changedSince }}</p>
+          <div class="glz-row glz-gap-2">
+            <button
+              glzButton
+              data-testid="share-update"
+              [attr.aria-disabled]="busy()"
+              (click)="update()"
+            >
+              {{ copy.update }}
+            </button>
+          </div>
+          <p class="note">{{ copy.updateHint }}</p>
+        </div>
+      }
     }
     <p class="note">{{ copy.note }}</p>
     @if (problem(); as problem) {

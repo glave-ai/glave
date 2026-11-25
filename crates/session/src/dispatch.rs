@@ -279,9 +279,7 @@ where
             Request::ThreadUnarchive { thread } => {
                 boxed(|| self.change(caller, thread, Change::Unarchive)).await
             }
-            Request::ThreadDelete { thread } => {
-                boxed(|| self.change(caller, thread, Change::Delete)).await
-            }
+            Request::ThreadDelete { thread } => boxed(|| self.delete_thread(caller, thread)).await,
             Request::ThreadEvents {
                 thread,
                 after,
