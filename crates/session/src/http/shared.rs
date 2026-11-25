@@ -11,6 +11,7 @@ use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, read_all};
 use hyper::body::Bytes;
 use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
 use hyper::{Method, Response, StatusCode};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
 use super::body::Answer;
 use crate::server::Server;
@@ -148,14 +149,37 @@ where
     let Some(bytes) = read(server, scope, &preview.blob.sha256, MOST_PREVIEW).await else {
         return String::new();
     };
-    let markdown = escaped(&String::from_utf8_lossy(&bytes));
+    let page = drawn(&String::from_utf8_lossy(&bytes));
     let cut = if preview.cut {
         let said = escaped(&say(language, &Sentence::PreviewCut));
         format!("<p class=\"note\">{said}</p>")
     } else {
         String::new()
     };
-    format!("<pre class=\"preview\">{markdown}</pre>{cut}")
+    format!("<div class=\"preview\">{page}</div>{cut}")
+}
+
+/// `markdown` drawn as HTML: its headings, paragraphs, lists and tables, any HTML it holds shown
+/// as text, so nothing in a file glave read becomes markup of the page's; a link to anything but
+/// a web page or an email address (`javascript:`, `data:`, a path on the share's own name) is
+/// kept as its text alone.
+fn drawn(markdown: &str) -> String {
+    let options = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH;
+    // Whether each link open now is kept, innermost last.
+    let mut links: Vec<bool> = Vec::new();
+    let events = Parser::new_ext(markdown, options).filter_map(|event| match event {
+        Event::Html(html) | Event::InlineHtml(html) => Some(Event::Text(html)),
+        Event::Start(Tag::Link { ref dest_url, .. }) => {
+            let kept = leads_out(dest_url);
+            links.push(kept);
+            kept.then_some(event)
+        }
+        Event::End(TagEnd::Link) => links.pop().unwrap_or(false).then_some(event),
+        other => Some(other),
+    });
+    let mut page = String::with_capacity(markdown.len());
+    pulldown_cmark::html::push_html(&mut page, events);
+    page
 }
 
 /// The first language of `headers`'s `Accept-Language` the server writes, else English.
@@ -164,6 +188,15 @@ fn language_of(headers: &HeaderMap) -> Language {
         .and_then(|value| value.to_str().ok())
         .and_then(Language::accepted)
         .unwrap_or(Language::English)
+}
+
+/// Whether a link to `url` leads to a web page or an email address: its scheme `http`, `https`
+/// or `mailto`, in any case.
+fn leads_out(url: &str) -> bool {
+    let url = url.trim_start().to_ascii_lowercase();
+    ["http://", "https://", "mailto:"]
+        .iter()
+        .any(|scheme| url.starts_with(scheme))
 }
 
 /// The page a link that opens nothing answers with.
@@ -365,6 +398,38 @@ mod tests {
             escaped("<script>\"a\" & 'b'</script>"),
             "&lt;script&gt;&quot;a&quot; &amp; &#39;b&#39;&lt;/script&gt;"
         );
+    }
+
+    #[test]
+    fn a_preview_is_drawn_as_a_page_and_its_html_as_text() {
+        let page = drawn(
+            "# Budget\n\n| Item | Total |\n|---|---|\n| Flights | 780 |\n\n<script>x</script>",
+        );
+        assert!(page.contains("<h1>Budget</h1>"), "{page}");
+        assert!(page.contains("<td>Flights</td>"), "{page}");
+        assert!(
+            page.contains("&lt;script&gt;") && !page.contains("<script>"),
+            "{page}"
+        );
+    }
+
+    #[test]
+    fn a_preview_links_only_to_web_pages_and_email_addresses() {
+        let page = drawn(
+            "[run](javascript:alert(1)) [Run](JavaScript:x) [data](data:text/html,x) \
+             [here](/download) [site](https://example.com) [mail](mailto:ada@example.com)",
+        );
+        assert!(!page.to_ascii_lowercase().contains("javascript"), "{page}");
+        assert!(
+            !page.contains("data:") && !page.contains("href=\"/download"),
+            "{page}"
+        );
+        assert!(
+            page.contains("run") && page.contains("here"),
+            "the text stays: {page}"
+        );
+        assert!(page.contains("href=\"https://example.com\""), "{page}");
+        assert!(page.contains("href=\"mailto:ada@example.com\""), "{page}");
     }
 
     #[test]
