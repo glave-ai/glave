@@ -15,12 +15,12 @@ pub(crate) use self::people::{Ledgers, PROOF_FOR};
 use std::collections::{BTreeMap, HashMap};
 
 use glave_event::{
-    At, Audience, Body, MadePreview, Payload as _, Principal, ShareId, ShareSet, ShareStopped,
-    SharedFrom, ThreadId, decode,
+    At, Audience, Body, MadePreview, Payload as _, Principal, PrincipalId, ShareId, ShareSet,
+    ShareStopped, SharedFrom, ThreadId, decode,
 };
 use glave_ports::host::PublicOrigin;
 use glave_ports::stream::{Reserved, catch_up};
-use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope, digest};
+use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, OrgId, Scope, digest};
 
 use crate::files::not_here;
 use crate::projects::MOST_PROJECTS;
@@ -28,11 +28,7 @@ use crate::protocol::{ApiError, Reply, ShareChoice, ShareInfo, ShareOf, ShareSet
 use crate::server::Server;
 use crate::words::Sentence;
 
-/// The most links the shares' list holds on a store, which each server keeps in memory: past
-/// it, sharing is refused, saying so.
-const MOST_LINKS: usize = 100_000;
-
-/// The most live links one person holds, so no one fills the store's room alone.
+/// The most live links one person holds, in every organization together.
 const MOST_EACH: usize = 1_000;
 
 /// Where shared files are served: each at a name of its own under the share domain
@@ -63,34 +59,34 @@ impl ShareDomain {
     /// directly under the domain, or an empty id, which no share has, for any other name there,
     /// the bare domain among them. `localhost` alone, which glave's own pages may share, claims
     /// only the names under it.
+    /// The port is split off before a name's final dot is, so `id.domain.:443` is the domain's
+    /// as `id.domain:443` is; and a name under the domain at another port than one it names is
+    /// claimed too, opening nothing, so no name there ever reaches glave's own pages.
     pub(crate) fn claims<'a>(&self, host: &'a str) -> Option<&'a str> {
-        let host = host.trim_end_matches('.');
-        let authority = self.origin.authority();
-        let named = if authority.contains(':') {
-            host
-        } else {
-            match host.rsplit_once(':') {
-                Some((name, port)) if port.bytes().all(|b| b.is_ascii_digit()) => name,
-                _ => host,
-            }
+        let (name, port) = match host.rsplit_once(':') {
+            Some((name, port)) if port.bytes().all(|b| b.is_ascii_digit()) => (name, Some(port)),
+            _ => (host, None),
         };
-        let lower = named.to_ascii_lowercase();
-        if lower == authority {
-            return (self.origin.host() != "localhost").then_some("");
+        let name = name.trim_end_matches('.');
+        let domain = self.origin.host();
+        let lower = name.to_ascii_lowercase();
+        let id = if lower == domain {
+            if domain == "localhost" {
+                return None;
+            }
+            ""
+        } else {
+            let under = lower.strip_suffix(domain)?.strip_suffix('.')?;
+            name.get(..under.len())
+                .filter(|id| is_link_id(id))
+                .unwrap_or_default()
+        };
+        let wanted = (self.origin.authority().strip_prefix(domain))
+            .and_then(|named| named.strip_prefix(':'));
+        match wanted {
+            Some(wanted) if port != Some(wanted) => Some(""),
+            _ => Some(id),
         }
-        let under = lower.strip_suffix(authority)?.strip_suffix('.')?;
-        let id = named.get(..under.len()).filter(|id| is_link_id(id));
-        Some(id.unwrap_or_default())
-    }
-}
-
-/// The limit a new link would pass, when the store holds `listed` links and the person `each`:
-/// the store's ([`MOST_LINKS`]) or each person's ([`MOST_EACH`]); none while there is room.
-fn refused_at(listed: usize, each: usize) -> Option<usize> {
-    if each >= MOST_EACH {
-        Some(MOST_EACH)
-    } else {
-        (listed >= MOST_LINKS).then_some(MOST_LINKS)
     }
 }
 
@@ -138,6 +134,8 @@ pub(crate) fn said(audience: &Audience) -> Told {
 /// A file the caller may share, as it is now: where it is, what it is of, and its copy.
 struct Shareable {
     scope: Scope,
+    /// The person sharing it, who owns its project.
+    owner: PrincipalId,
     from: SharedFrom,
     name: String,
     file_name: String,
@@ -258,7 +256,7 @@ where
             self.stop_share(&scope, set).await?;
         }
         let set = match current {
-            None => self.new_share(caller, shareable, audience).await?,
+            None => self.new_share(shareable, audience).await?,
             Some((_, before)) if setting.update && before.blob.sha256 != shareable.blob.sha256 => {
                 let set = self
                     .held_copy(&shareable, before.share, before.link.clone(), audience)
@@ -283,24 +281,26 @@ where
     /// a link that opens nothing, then its copy held and the share recorded.
     async fn new_share(
         &self,
-        caller: &Caller,
         shareable: Shareable,
         audience: Audience,
     ) -> Result<ShareSet, ApiError> {
-        let theirs = self.projects_everywhere(caller).await?;
-        let (listed, each) = self.links_held(&theirs).await?;
-        if let Some(most) = refused_at(listed, each) {
-            return Err(ApiError::new(
-                code::LIMIT,
-                Sentence::TooManyShares { most: most as u64 },
-            ));
-        }
         let harness = &self.inner.harness;
         let share = ShareId::new(harness.clock().now(), harness.entropy().bytes()?)?;
         let link = new_link_id()?;
         let key = link_key(&link);
-        self.place_link(&key, shareable.scope.located()).await?;
+        let owner = shareable.owner;
+        // Counted once listed, so two made at once on any servers both count: past the limit,
+        // each is unlisted again and refused.
+        let held = self.place_link(&key, shareable.scope.located(), owner);
         let made = async {
+            if held.await? > MOST_EACH {
+                return Err(ApiError::new(
+                    code::LIMIT,
+                    Sentence::TooManyShares {
+                        most: MOST_EACH as u64,
+                    },
+                ));
+            }
             let set = self.held_copy(&shareable, share, link, audience).await?;
             self.record_share(&shareable.scope, &set).await?;
             Ok::<_, ApiError>(set)
@@ -309,7 +309,7 @@ where
             Ok(set) => Ok(set),
             Err(error) => {
                 // Unlisted again, so a share that failed counts against nothing.
-                if self.unplace_link(&key).await.is_err() {
+                if self.unplace_link(&key, owner).await.is_err() {
                     tracing::warn!("a link a failed share listed stays listed, opening nothing");
                 }
                 Err(error)
@@ -317,29 +317,19 @@ where
         }
     }
 
-    /// Every project `caller` owns, in every organization they belong to: the links they hold
-    /// are counted across all of them, so joining another never gives room for more.
-    async fn projects_everywhere(&self, caller: &Caller) -> Result<Vec<Located>, ApiError> {
-        let person = self.person_of(caller)?;
-        let orgs = match self.inner.accounts.as_deref() {
-            Some(accounts) if crate::organizations::with_account(caller) => {
-                accounts.organizations(person).await?
-            }
-            _ => vec![self.org_of(caller)],
-        };
-        let (owner, mut theirs) = (Principal::person(person), Vec::new());
-        for org in orgs {
-            let projects = self.inner.projects.list(org, &owner, MOST_PROJECTS);
-            for project in projects.await? {
-                if Scope::of_owner(org, &project, person).is_some() {
-                    theirs.push(Located {
-                        org,
-                        project: project.id,
-                    });
-                }
-            }
+    /// Stops the shares of every project `person` owns in `org`, as they are taken out of it.
+    pub(crate) async fn stop_shares_of(
+        &self,
+        org: OrgId,
+        person: PrincipalId,
+    ) -> Result<(), ApiError> {
+        let owner = Principal::person(person);
+        for project in self.inner.projects.list(org, &owner, MOST_PROJECTS).await? {
+            // glave's own: what they shared stops, whoever takes them out.
+            let scope = Scope::glaves_own(org, project.id);
+            self.stop_shares(&scope, |_| true).await?;
         }
-        Ok(theirs)
+        Ok(())
     }
 
     /// Stops every live share in `scope` whose file `stops` picks: a chat deleted, an item
@@ -403,6 +393,7 @@ where
             preview: shareable.preview.clone(),
             holder,
             audience,
+            owner: shareable.owner,
         })
     }
 
@@ -414,7 +405,7 @@ where
         let stopped = ShareStopped { share: set.share };
         self.keep_latest(scope, Reserved::Shares.id(), &SHARES, &stopped)
             .await?;
-        self.unplace_link(&link_key(&set.link)).await
+        self.unplace_link(&link_key(&set.link), set.owner).await
     }
 
     async fn record_share(&self, scope: &Scope, set: &ShareSet) -> Result<(), ApiError> {
@@ -448,6 +439,7 @@ where
     /// The file `of` names, when the caller may share it: a file one of their chat's turns made
     /// and kept, or an item of their Library. Anyone else's is "no longer here".
     async fn shareable(&self, caller: &Caller, of: &ShareOf) -> Result<Shareable, ApiError> {
+        let owner = self.person_of(caller)?;
         match of {
             ShareOf::File { thread, sha256 } => {
                 let scope = self.scope_of(*thread)?;
@@ -457,6 +449,7 @@ where
                 };
                 Ok(Shareable {
                     scope,
+                    owner,
                     from: SharedFrom::File {
                         thread: *thread,
                         path: made.path,
@@ -472,6 +465,7 @@ where
                 let (scope, kept) = self.item(caller, *project, *asset).await?;
                 Ok(Shareable {
                     scope,
+                    owner,
                     from: SharedFrom::Item { asset: kept.asset },
                     name: kept.name,
                     file_name: kept.file_name,
@@ -486,6 +480,9 @@ where
     /// The live share whose link's id is `id`, and its scope: found through the shares' list,
     /// then the ledger of the project that holds it, for serving its link to anyone.
     pub(crate) async fn share_at(&self, id: &str) -> Result<Option<(Scope, ShareSet)>, ApiError> {
+        if !is_link_id(id) {
+            return Ok(None);
+        }
         let Some(Located { org, project }) = self.find_link(&link_key(id)).await? else {
             return Ok(None);
         };
@@ -504,8 +501,13 @@ where
                 .unwrap_or_default(),
             None => BTreeMap::new(),
         };
-        let found = live.into_values().find(|(set, _)| set.link == id);
-        Ok(found.map(|(set, _)| (scope, set)))
+        let Some((set, _)) = live.into_values().find(|(set, _)| set.link == id) else {
+            return Ok(None);
+        };
+        // Someone taken out of the organization shares nothing there any more, even before
+        // their shares are stopped; a people ledger that can't be read opens nothing.
+        let member = matches!(self.removed_from(org, set.owner).await, Ok(false));
+        Ok(member.then_some((scope, set)))
     }
 }
 
@@ -521,12 +523,52 @@ const SHARES: [&str; 4] = [
 mod tests {
     use super::*;
 
+    fn at(origin: &str) -> ShareDomain {
+        let origin = PublicOrigin::parse(origin).unwrap();
+        ShareDomain {
+            origin,
+            report: None,
+        }
+    }
+
     #[test]
-    fn a_new_link_is_refused_past_each_person_s_room_or_the_store_s() {
-        assert_eq!(refused_at(0, 0), None);
-        assert_eq!(refused_at(MOST_LINKS - 1, MOST_EACH - 1), None);
-        assert_eq!(refused_at(10, MOST_EACH), Some(MOST_EACH));
-        assert_eq!(refused_at(MOST_LINKS, 10), Some(MOST_LINKS));
-        assert_eq!(refused_at(MOST_LINKS, MOST_EACH), Some(MOST_EACH));
+    fn every_name_under_the_share_domain_is_claimed_however_it_is_written() {
+        let id = "abcdefghijklmnopqrstuvwxyz";
+        let domain = at("https://share.example.net");
+        for host in [
+            format!("{id}.share.example.net"),
+            format!("{id}.share.example.net."),
+            format!("{id}.share.example.net:443"),
+            format!("{id}.share.example.net.:8443"),
+            format!("{id}.SHARE.example.net"),
+        ] {
+            assert_eq!(domain.claims(&host), Some(id), "{host}");
+        }
+        for host in [
+            "share.example.net.:8443",
+            "login.share.example.net.:1",
+            "x.share.example.net.",
+        ] {
+            assert_eq!(domain.claims(host), Some(""), "{host}");
+        }
+        for host in [
+            "glave.example.net",
+            "share.example.net.evil.test",
+            "example.net:443",
+        ] {
+            assert_eq!(domain.claims(host), None, "{host}");
+        }
+        // A domain that names its port claims every name under it, at any port, opening a link
+        // only at its own.
+        let ported = at("https://share.example.org:8443");
+        let at_its_port = format!("{id}.share.example.org.:8443");
+        assert_eq!(ported.claims(&at_its_port), Some(id));
+        let elsewhere = format!("{id}.share.example.org:9000");
+        assert_eq!(ported.claims(&elsewhere), Some(""));
+        // Bare `localhost` is glave's own; the names under it are shares'.
+        let here = at("http://localhost");
+        assert_eq!(here.claims("localhost:8080"), None);
+        assert_eq!(here.claims("localhost.:8080"), None);
+        assert_eq!(here.claims(&format!("{id}.localhost:8080")), Some(id));
     }
 }

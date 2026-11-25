@@ -1,6 +1,6 @@
 //! Taking someone out of an organization (`specs/model.md`, "Identity"): one admin action that
 //! records `person.removed`, takes their glave account's membership out of the directory,
-//! deletes their schedules there, and ends their watches and what they have running. Their next
+//! deletes their schedules there, stops what they share there, and ends their watches and what they have running. Their next
 //! request there is refused, and a company login lets them back only by an invite.
 //!
 //! Every server on the store does its own part. Whatever reads the organization's people ledger
@@ -103,6 +103,8 @@ where
         // Their schedules go first, so a failure after them leaves none to fire; asking again
         // finishes the rest.
         self.delete_schedules_of(org, person, &by).await?;
+        // And what they shared there stops, so no link of theirs opens once they are out.
+        self.stop_shares_of(org, person).await?;
         if let Some(accounts) = self.inner.accounts.as_deref() {
             accounts.leave(person, org).await?;
         }
