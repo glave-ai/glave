@@ -5,7 +5,7 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::{PROTECTED, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{GIT_RUNS_CODE, PROTECTED, SandboxLevel, SandboxNetwork};
 
 use super::folders_leading_to;
 
@@ -202,10 +202,12 @@ fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
         r#"(require-not (literal (param "GIT")))"#.to_owned(),
     ];
     let git = places.root.join(".git");
-    let protected = PROTECTED
-        .iter()
-        .map(|path| places.root.join(path))
-        .chain(NESTED_GIT.iter().map(|name| git.join(name)));
+    let protected = PROTECTED.iter().map(|path| places.root.join(path)).chain(
+        GIT_RUNS_CODE
+            .iter()
+            .chain(NESTED_GIT)
+            .map(|name| git.join(name)),
+    );
     unless(profile, &mut conditions, "PROTECTED", protected);
     unless(
         profile,
@@ -227,10 +229,6 @@ fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
 /// Inside a git folder: the folders of other worktrees and of submodules, each a git folder
 /// with hooks and config of its own. Whole, since a folder moved in whole brings its own.
 const NESTED_GIT: &[&str] = &["worktrees", "modules"];
-
-/// Inside any git folder: what runs code later, and `commondir`, which names the folder git
-/// takes config and hooks from.
-const GIT_RUNS_CODE: &[&str] = &["hooks", "config", "config.worktree", "commondir"];
 
 /// A worktree's repository's shared git folder: its objects, refs and logs, so commits work,
 /// but never its hooks or config, which would run code in every checkout of it, nor other
@@ -329,7 +327,7 @@ mod tests {
             param(&profile, "ROOT"),
             Some(Path::new("/Users/me/my.project"))
         );
-        let protected: Vec<&Path> = (0..PROTECTED.len() + NESTED_GIT.len())
+        let protected: Vec<&Path> = (0..PROTECTED.len() + GIT_RUNS_CODE.len() + NESTED_GIT.len())
             .filter_map(|i| param(&profile, &format!("PROTECTED_{i}")))
             .collect();
         assert!(protected.contains(&Path::new("/Users/me/my.project/.git/hooks")));

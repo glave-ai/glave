@@ -218,10 +218,16 @@ const MOVED: &[(&str, &str)] = &[
     (".cache/", "XDG_CACHE_HOME"),
 ];
 
+/// The variable that moves the X server's cookie from `~/.Xauthority`, as display managers do
+/// (to `/tmp` or the runtime folder): with it, a command that reaches the X server could read
+/// and type into every window.
+const X_COOKIE: &str = "XAUTHORITY";
+
 /// Where `environment` moves the stores of `home_secrets`: one kept under `~/.config`,
 /// `~/.local/share` or `~/.cache` is under `XDG_CONFIG_HOME`, `XDG_DATA_HOME` or
-/// `XDG_CACHE_HOME` instead where that is set, and so is hidden there too. The last value of
-/// each, as a command takes it; one that is not a full path is no folder to the tools either.
+/// `XDG_CACHE_HOME` instead where that is set, and so is hidden there too; and the X server's
+/// cookie where `XAUTHORITY` names it. The last value of each, as a command takes it; one that
+/// is not a full path is no place to the tools either.
 pub(crate) fn moved_stores(environment: &[(OsString, OsString)]) -> Vec<PathBuf> {
     let set = |variable: &str| {
         environment
@@ -239,6 +245,7 @@ pub(crate) fn moved_stores(environment: &[(OsString, OsString)]) -> Vec<PathBuf>
                 .filter_map(move |store| store.strip_prefix(default))
                 .map(move |store| folder.join(store))
         })
+        .chain(set(X_COOKIE))
         .collect()
 }
 
@@ -271,6 +278,14 @@ mod tests {
         // Only what is kept under the folder a variable moves, and only where the last says.
         let elsewhere = |path: &PathBuf| !path.starts_with("/x") || path.ends_with(".ssh");
         assert!(!moved.iter().any(elsewhere), "{moved:?}");
+    }
+
+    #[test]
+    fn the_x_server_s_cookie_is_hidden_where_the_environment_names_it() {
+        let moved = moved_stores(&environment(&[("XAUTHORITY", "/tmp/xauth_abc")]));
+        assert_eq!(moved, [PathBuf::from("/tmp/xauth_abc")]);
+        let relative = moved_stores(&environment(&[("XAUTHORITY", "xauth")]));
+        assert!(relative.is_empty(), "{relative:?}");
     }
 
     #[test]

@@ -133,7 +133,6 @@ fn bubblewrap_keeps_protected_paths_read_only_even_moved_or_not_there_yet() {
         "echo x > .envrc",
         "echo ../elsewhere > .git/commondir",
         "mkdir -p .claude && echo x > .claude/settings.json",
-        "echo x > mise.toml",
         "echo x > HEAD",
         "mv .git/hooks moved-hooks",
         "mv .git moved-git && mkdir -p .git/hooks && echo x > .git/hooks/pre-commit",
@@ -164,14 +163,18 @@ fn bubblewrap_keeps_protected_paths_read_only_even_moved_or_not_there_yet() {
         ".mcp.json",
         ".vscode",
         ".envrc",
-        ".git/commondir",
         ".claude",
-        "mise.toml",
         "HEAD",
         "moved-git",
     ] {
         assert!(!project.join(gone).exists(), "{gone}: {said}");
     }
+    // A `commondir` that was not there stays as its stand-in, naming its own git folder.
+    assert_eq!(
+        std::fs::read_to_string(project.join(".git/commondir")).unwrap(),
+        ".\n",
+        "{said}"
+    );
     // Control: without the sandbox the same hook is written, so the check above can fail.
     run(&dir, None, None, "echo x > .git/hooks/pre-commit").unwrap();
     assert!(project.join(".git/hooks/pre-commit").exists());

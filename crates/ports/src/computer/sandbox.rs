@@ -9,14 +9,10 @@ use serde::{Deserialize, Serialize};
 
 use super::ComputerError;
 
-/// Inside the project: paths that make code run later, outside the sandbox. Neither commands
-/// nor glave's file tools may change them in a sandbox, even before they exist. `commondir`
-/// names the folder git takes the repository's config and hooks from.
+/// Inside the project, beside its git folder's [`GIT_RUNS_CODE`]: paths that make code run
+/// later, outside the sandbox. Neither commands nor glave's file tools may change them in a
+/// sandbox, even before they exist.
 pub const PROTECTED: &[&str] = &[
-    ".git/hooks",
-    ".git/config",
-    ".git/config.worktree",
-    ".git/commondir",
     "HEAD",
     "objects",
     "refs",
@@ -31,9 +27,12 @@ pub const PROTECTED: &[&str] = &[
     ".cursor",
     ".gemini",
     ".zed",
-    "mise.toml",
-    ".mise.toml",
 ];
+
+/// Inside any git folder (the project's `.git`, a repository's shared one, a worktree's or a
+/// submodule's own): what makes code run at the person's next git command. `commondir` names
+/// the folder git takes the repository's config and hooks from.
+pub const GIT_RUNS_CODE: &[&str] = &["hooks", "config", "config.worktree", "commondir"];
 
 /// In the home folder: git's own settings, which every git the person runs reads, in every
 /// repository, whatever the project.
@@ -56,17 +55,20 @@ pub fn is_protected(root: &Path, path: &Path) -> bool {
         .iter()
         .map(|part| part.to_string_lossy().into_owned())
         .collect();
+    let runs_code =
+        |part: Option<&String>| part.is_some_and(|part| GIT_RUNS_CODE.contains(&part.as_str()));
+    let git_runs_code = match parts.as_slice() {
+        [git, rest @ ..] if git == ".git" => runs_code(rest.first()),
+        _ => false,
+    };
     let nested_git_runs_code = match parts.as_slice() {
         [git, kind, _, rest @ ..] => {
-            git == ".git"
-                && (kind == "worktrees" || kind == "modules")
-                && rest.first().is_some_and(|part| {
-                    ["hooks", "config", "config.worktree", "commondir"].contains(&part.as_str())
-                })
+            git == ".git" && (kind == "worktrees" || kind == "modules") && runs_code(rest.first())
         }
         _ => false,
     };
     relative == Path::new(".git")
+        || git_runs_code
         || nested_git_runs_code
         || PROTECTED
             .iter()
