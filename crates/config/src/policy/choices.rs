@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use glave_event::Permissions;
 use glave_ports::host::PublicOrigin;
 use glave_ports::memories::ProjectMemory;
-use glave_ports::settings::Judge;
+use glave_ports::settings::{Judge, PriceEntry};
 
 use crate::policy::files::{
     ConfigFile, CreditsFile, EmailFile, GithubFile, ModelEntry, RouterFloorFile,
@@ -114,6 +114,8 @@ pub struct Choices {
     pub credits: Option<Chosen<CreditsFile>>,
     /// What this server allows among a router's providers for everyone (`[router_floor]`).
     pub router_floor: Option<Chosen<RouterFloorFile>>,
+    /// The prices of whoever pays the provider (`[[prices]]`), before glave's own list.
+    pub prices: Option<Chosen<Vec<PriceEntry>>>,
 }
 
 /// One level choices come from.
@@ -193,6 +195,7 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
         }),
         credits: nearest(layers, "credits", |file| file.credits.clone()),
         router_floor: nearest(layers, "router_floor", |file| file.router_floor.clone()),
+        prices: nearest(layers, "prices", |file| file.prices.clone()),
         store: nearest(layers, "store", |file| {
             let url = file.store.as_ref()?.url.as_ref()?;
             Some(url.trim().to_owned())
@@ -219,12 +222,12 @@ pub(super) fn resolve(layers: &[Layer]) -> Choices {
     }
 }
 
-/// `chosen`, or glave's default `value`.
-/// Refuses a share domain on glave's own site, as `choices` resolved them: its registrable
-/// domain (one label past its public suffix, by the Public Suffix List) must differ from that of
-/// glave's public origin, so a shared page can neither use glave's passkeys nor set cookies on
-/// its site. `localhost` may be both, to try sharing on one computer: browsers take it as a
-/// public suffix by the list's default rule, each name under it a site of its own.
+/// Refuses a share domain on glave's own site, as `choices` resolved them from every layer: the
+/// share domain's registrable domain (one label past its public suffix, by the Public Suffix
+/// List) must differ from that of glave's public origin, so a shared page can neither use
+/// glave's passkeys nor set cookies on its site. Either one unset, there is nothing to check.
+/// `localhost` is exempt, to try sharing on one computer: it is not on the list, but browsers
+/// apply the list's default rule to it, so each name under it is a site of its own.
 pub(super) fn apart(choices: &Choices) -> crate::Result<()> {
     let (Some(origin), Some(shares)) = (&choices.origin, &choices.shares) else {
         return Ok(());
@@ -251,6 +254,7 @@ fn site(host: &str) -> Option<String> {
     Some(psl::domain_str(&host).unwrap_or(&host).to_owned())
 }
 
+/// `chosen`, or glave's default `value`.
 fn defaulted<T>(chosen: Option<Chosen<T>>, value: T) -> Chosen<T> {
     chosen.unwrap_or(Chosen {
         value,

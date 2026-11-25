@@ -15,14 +15,15 @@ pub(crate) use self::people::{Ledgers, PROOF_FOR};
 use std::collections::{BTreeMap, HashMap};
 
 use glave_event::{
-    At, Audience, Body, MadePreview, Payload as _, ShareId, ShareSet, ShareStopped, SharedFrom,
-    ThreadId, decode,
+    At, Audience, Body, MadePreview, Payload as _, Principal, ShareId, ShareSet, ShareStopped,
+    SharedFrom, ThreadId, decode,
 };
 use glave_ports::host::PublicOrigin;
 use glave_ports::stream::{Reserved, catch_up};
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, Scope, digest};
 
 use crate::files::not_here;
+use crate::projects::MOST_PROJECTS;
 use crate::protocol::{ApiError, Reply, ShareChoice, ShareInfo, ShareOf, ShareSetting, Told, code};
 use crate::server::Server;
 use crate::words::Sentence;
@@ -80,6 +81,16 @@ impl ShareDomain {
         let under = lower.strip_suffix(authority)?.strip_suffix('.')?;
         let id = named.get(..under.len()).filter(|id| is_link_id(id));
         Some(id.unwrap_or_default())
+    }
+}
+
+/// The limit a new link would pass, when the store holds `listed` links and the person `each`:
+/// the store's ([`MOST_LINKS`]) or each person's ([`MOST_EACH`]); none while there is room.
+fn refused_at(listed: usize, each: usize) -> Option<usize> {
+    if each >= MOST_EACH {
+        Some(MOST_EACH)
+    } else {
+        (listed >= MOST_LINKS).then_some(MOST_LINKS)
     }
 }
 
@@ -276,15 +287,9 @@ where
         shareable: Shareable,
         audience: Audience,
     ) -> Result<ShareSet, ApiError> {
-        let theirs = self.libraries(caller).await?;
-        let theirs: Vec<Located> = theirs.iter().map(|scope| scope.located()).collect();
+        let theirs = self.projects_everywhere(caller).await?;
         let (listed, each) = self.links_held(&theirs).await?;
-        if listed >= MOST_LINKS || each >= MOST_EACH {
-            let most = if each >= MOST_EACH {
-                MOST_EACH
-            } else {
-                MOST_LINKS
-            };
+        if let Some(most) = refused_at(listed, each) {
             return Err(ApiError::new(
                 code::LIMIT,
                 Sentence::TooManyShares { most: most as u64 },
@@ -312,6 +317,31 @@ where
         }
     }
 
+    /// Every project `caller` owns, in every organization they belong to: the links they hold
+    /// are counted across all of them, so joining another never gives room for more.
+    async fn projects_everywhere(&self, caller: &Caller) -> Result<Vec<Located>, ApiError> {
+        let person = self.person_of(caller)?;
+        let orgs = match self.inner.accounts.as_deref() {
+            Some(accounts) if crate::organizations::with_account(caller) => {
+                accounts.organizations(person).await?
+            }
+            _ => vec![self.org_of(caller)],
+        };
+        let (owner, mut theirs) = (Principal::person(person), Vec::new());
+        for org in orgs {
+            let projects = self.inner.projects.list(org, &owner, MOST_PROJECTS);
+            for project in projects.await? {
+                if Scope::of_owner(org, &project, person).is_some() {
+                    theirs.push(Located {
+                        org,
+                        project: project.id,
+                    });
+                }
+            }
+        }
+        Ok(theirs)
+    }
+
     /// Stops every live share in `scope` whose file `stops` picks: a chat deleted, an item
     /// taken out of the Library, or Only you.
     pub(crate) async fn stop_shares(
@@ -332,14 +362,14 @@ where
         caller: &Caller,
         thread: ThreadId,
     ) -> Result<Reply, ApiError> {
-        let reply = self
-            .change(caller, thread, glave_harness::Change::Delete)
-            .await?;
+        // Its shares stop first: a failure after leaves the chat, deleted again to finish, and
+        // never a share of a chat already gone.
         let scope = self.scope_of(thread)?;
         let made_here =
             |of: &SharedFrom| matches!(of, SharedFrom::File { thread: at, .. } if *at == thread);
         self.stop_shares(&scope, made_here).await?;
-        Ok(reply)
+        self.change(caller, thread, glave_harness::Change::Delete)
+            .await
     }
 
     /// `share` of `shareable` as it is now, its copy and preview held under a new holder.
@@ -486,3 +516,17 @@ const SHARES: [&str; 4] = [
     glave_event::ShareLinkSent::TYPE,
     glave_event::ShareOpened::TYPE,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_new_link_is_refused_past_each_person_s_room_or_the_store_s() {
+        assert_eq!(refused_at(0, 0), None);
+        assert_eq!(refused_at(MOST_LINKS - 1, MOST_EACH - 1), None);
+        assert_eq!(refused_at(10, MOST_EACH), Some(MOST_EACH));
+        assert_eq!(refused_at(MOST_LINKS, 10), Some(MOST_LINKS));
+        assert_eq!(refused_at(MOST_LINKS, MOST_EACH), Some(MOST_EACH));
+    }
+}

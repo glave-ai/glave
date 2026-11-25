@@ -155,13 +155,12 @@ fn paying(
     runtime: &tokio::runtime::Runtime,
 ) -> Result<(Gateway, ModelRequest)> {
     let handle: Arc<dyn Model> = Arc::clone(fake) as Arc<dyn Model>;
-    let price = Price {
-        list: "bench".into(),
-        currency: Currency::USD,
-        input_per_mtok: Nanos::new(1_000),
-        cache_read_per_mtok: Nanos::new(100),
-        output_per_mtok: Nanos::new(1_000),
-    };
+    let price = Price::per_mtok(
+        "bench",
+        Nanos::new(1_000),
+        Nanos::new(100),
+        Nanos::new(1_000),
+    );
     let target = Target::new(handle, "bench", "bench-model").with_price(price);
     let credits = Arc::new(Credits::new(
         InMemoryLog::new(),

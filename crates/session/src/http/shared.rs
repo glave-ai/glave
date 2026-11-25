@@ -208,7 +208,9 @@ fn gone(language: Language) -> Response<Answer> {
     )
 }
 
-/// The share's file: shown as itself, or, as a download, saved under its name.
+/// The share's file: shown as itself, or, as a download, saved under its name. Its bytes are
+/// streamed as read; a share stopped while they go doesn't cut a download already under way,
+/// which is at most 10 MB (a kept file's limit), so no piece checks the share again.
 async fn file<P, L, B>(
     server: &Server<P, L, B>,
     scope: &Scope,
