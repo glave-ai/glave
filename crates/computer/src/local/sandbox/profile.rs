@@ -1,6 +1,7 @@
 //! The macOS sandbox profile for one project: Codex's deny-everything base, then reads everywhere
-//! except secret locations and other terminals, writes to the project and temp folder except
-//! protected paths, and the network only when allowed.
+//! except secret locations, other terminals and, for someone else's commands, the person's own
+//! folders, writes to the project and temp folder except protected paths, and the network only
+//! when allowed.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -8,6 +9,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::computer::{PROTECTED, SandboxLevel, SandboxNetwork};
 
 use super::folders_leading_to;
+use super::shut::Shut;
 
 const BASE: &str = include_str!("base.sbpl");
 const PREFERENCES: &str = include_str!("preferences.sbpl");
@@ -56,6 +58,12 @@ pub(crate) struct Places {
     pub shared_tmp: bool,
     /// The person's own temp folder (`/var/folders/…/T`), which holds each command's.
     pub person_temp: Option<PathBuf>,
+    /// The person's folders someone else's commands never read, and what stays readable there.
+    pub shut: Shut,
+    /// Whether commands read preferences through `cfprefsd`, which reads the person's files
+    /// past every read rule: only the person's own, whose reads are everywhere but secrets
+    /// (Codex's own note on it says as much).
+    pub preferences: bool,
 }
 
 /// The parameter naming a command's own temp folder, made for it when it starts.
@@ -70,9 +78,13 @@ pub(crate) struct Profile {
 
 pub(crate) fn profile(places: &Places, level: SandboxLevel, network: SandboxNetwork) -> Profile {
     let mut profile = Profile {
-        text: format!("{BASE}\n{PREFERENCES}\n"),
+        text: format!("{BASE}\n"),
         params: Vec::new(),
     };
+    if places.preferences {
+        profile.text.push_str(PREFERENCES);
+        profile.text.push('\n');
+    }
     reads(&mut profile, places);
     writes(&mut profile, places, level);
     match network {
@@ -88,8 +100,13 @@ pub(crate) fn profile(places: &Places, level: SandboxLevel, network: SandboxNetw
 fn reads(profile: &mut Profile, places: &Places) {
     let mut conditions = vec![r#"(subpath "/")"#.to_owned(), OTHER_TERMINALS.to_owned()];
     if !places.shared_tmp {
-        conditions.push(r#"(require-not (subpath "/private/tmp"))"#.to_owned());
-        conditions.push(r#"(require-not (subpath "/private/var/tmp"))"#.to_owned());
+        // But for their own temp folder and workspace, where the system's temp folder is in
+        // one of these (`TMPDIR=/tmp/...`, as `cargo xtask ci` sets it).
+        for shared in ["/private/tmp", "/private/var/tmp"] {
+            conditions.push(format!(
+                r#"(require-any (require-not (subpath "{shared}")) (subpath (param "TEMP")) (subpath (param "ROOT")))"#
+            ));
+        }
         if let Some(person_temp) = &places.person_temp {
             conditions.push(
                 r#"(require-any (require-not (subpath (param "PERSON_TEMP"))) (subpath (param "TEMP")) (subpath (param "ROOT")))"#
@@ -100,6 +117,7 @@ fn reads(profile: &mut Profile, places: &Places) {
                 .push(("PERSON_TEMP".into(), person_temp.clone()));
         }
     }
+    shut(profile, &mut conditions, places);
     for (index, path) in places.hidden.iter().cloned().enumerate() {
         let name = format!("SECRET_{index}");
         conditions.push(format!(r#"(require-not (subpath (param "{name}")))"#));
@@ -139,6 +157,7 @@ fn reads(profile: &mut Profile, places: &Places) {
         "; reads: everywhere except other terminals and secret locations\n(allow file-read*\n  (require-all\n    {}))",
         conditions.join("\n    ")
     );
+    shut_on_the_way(profile, places);
     if let Some(glave_home) = &places.glave_home {
         // That glave's folder is a folder, not what it holds, and so is each folder between it
         // and the workspace when the workspace lives there (a thread's worktree, under
@@ -161,6 +180,71 @@ fn reads(profile: &mut Profile, places: &Places) {
             folders.join(" ")
         );
     }
+}
+
+/// The person's folders hidden whole from someone else's commands, but for what is theirs in
+/// them (the workspace, the command's own temp folder, glave's folder on `PATH`) and what stays
+/// readable there (`OPEN_<n>`).
+fn shut(profile: &mut Profile, conditions: &mut Vec<String>, places: &Places) {
+    if places.shut.folders.is_empty() {
+        return;
+    }
+    let mut theirs = vec![
+        r#"(subpath (param "ROOT"))"#.to_owned(),
+        format!(r#"(subpath (param "{TEMP_PARAM}"))"#),
+    ];
+    // Named by glave's folder's own rule, which comes with glave's folder.
+    if places.glave_home.is_some() && places.glave_on_path.is_some() {
+        theirs.push(r#"(subpath (param "ON_PATH"))"#.to_owned());
+    }
+    for (index, open) in places.shut.open.iter().enumerate() {
+        let name = format!("OPEN_{index}");
+        theirs.push(format!(r#"(subpath (param "{name}"))"#));
+        profile.params.push((name, open.clone()));
+    }
+    let theirs = theirs.join(" ");
+    for (index, folder) in places.shut.folders.iter().enumerate() {
+        let name = format!("SHUT_{index}");
+        conditions.push(format!(
+            r#"(require-any (require-not (subpath (param "{name}"))) {theirs})"#
+        ));
+        profile.params.push((name, folder.clone()));
+    }
+}
+
+/// That each folder hidden from someone else's commands is a folder, and so is each between it
+/// and what stays readable in it, not what they hold: a tool resolving a path there looks at
+/// each folder on the way.
+fn shut_on_the_way(profile: &mut Profile, places: &Places) {
+    let readable = std::iter::once(&places.root)
+        .chain(places.glave_on_path.iter())
+        .chain(places.shut.open.iter());
+    let mut folders: Vec<&Path> = places.shut.folders.iter().map(PathBuf::as_path).collect();
+    for path in readable {
+        for folder in &places.shut.folders {
+            folders.extend(
+                path.ancestors()
+                    .skip(1)
+                    .take_while(|up| up.starts_with(folder) && *up != folder.as_path()),
+            );
+        }
+    }
+    folders.sort();
+    folders.dedup();
+    if folders.is_empty() {
+        return;
+    }
+    let mut literals = Vec::new();
+    for (index, folder) in folders.into_iter().enumerate() {
+        let name = format!("SHUT_UP_{index}");
+        literals.push(format!(r#"(literal (param "{name}"))"#));
+        profile.params.push((name, folder.to_path_buf()));
+    }
+    let _ = writeln!(
+        profile.text,
+        "(allow file-read-metadata {})",
+        literals.join(" ")
+    );
 }
 
 fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
@@ -308,6 +392,8 @@ mod tests {
             git_own: None,
             shared_tmp: true,
             person_temp: None,
+            shut: Shut::default(),
+            preferences: true,
         }
     }
 
@@ -485,6 +571,68 @@ mod tests {
         assert!(
             profile.text.contains("mDNSResponder"),
             "names are looked up"
+        );
+    }
+
+    #[test]
+    fn someone_else_s_commands_read_nothing_of_the_person_s_folders_but_toolchains() {
+        let owner = profile(&places(), SandboxLevel::Project, SandboxNetwork::Off);
+        assert!(!owner.text.contains("SHUT_"), "the person's own read them");
+        assert!(
+            owner.text.contains("cfprefsd"),
+            "the person's own read preferences"
+        );
+        let mut someone = places();
+        someone.preferences = false;
+        someone.shared_tmp = false;
+        someone.root = PathBuf::from("/Users/me/.glave/scratch/t");
+        someone.shut = Shut {
+            folders: vec![PathBuf::from("/Users/me"), PathBuf::from("/srv/projects")],
+            open: vec![PathBuf::from("/Users/me/.cargo")],
+            hidden: Vec::new(),
+        };
+        let profile = profile(&someone, SandboxLevel::Project, SandboxNetwork::Off);
+        assert_eq!(param(&profile, "SHUT_0"), Some(Path::new("/Users/me")));
+        assert_eq!(param(&profile, "SHUT_1"), Some(Path::new("/srv/projects")));
+        assert_eq!(
+            param(&profile, "OPEN_0"),
+            Some(Path::new("/Users/me/.cargo"))
+        );
+        let theirs = format!(
+            r#"(subpath (param "ROOT")) (subpath (param "{TEMP_PARAM}")) (subpath (param "ON_PATH")) (subpath (param "OPEN_0")))"#
+        );
+        for shut in ["SHUT_0", "SHUT_1"] {
+            let rule = format!(r#"(require-any (require-not (subpath (param "{shut}"))) {theirs}"#);
+            assert!(profile.text.contains(&rule), "{shut}: {}", profile.text);
+        }
+        let on_the_way: Vec<&Path> = (0..)
+            .map_while(|index| param(&profile, &format!("SHUT_UP_{index}")))
+            .collect();
+        assert_eq!(
+            on_the_way,
+            [
+                "/Users/me",
+                "/Users/me/.glave",
+                "/Users/me/.glave/scratch",
+                "/srv/projects"
+            ]
+            .map(Path::new),
+            "folders, never what they hold"
+        );
+        assert!(
+            profile
+                .text
+                .contains("(allow file-read-metadata (literal (param \"SHUT_UP_0\"))")
+        );
+        assert!(
+            !profile.text.contains("cfprefsd"),
+            "nor theirs, preferences"
+        );
+        assert!(
+            profile.text.contains(&format!(
+                r#"(require-any (require-not (subpath "/private/tmp")) (subpath (param "{TEMP_PARAM}")) (subpath (param "ROOT")))"#
+            )),
+            "their own temp folder stays theirs where the system's is in /tmp"
         );
     }
 

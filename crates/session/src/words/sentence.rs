@@ -731,8 +731,8 @@ sentences! {
         "that sign-in link was used already or has expired: open glave again for a new one",
     SetupSpent = "setup-spent"
         "that link to make a passkey was used already or has expired: on the computer glave runs on, ask glave for a new one",
-    TooManyLinks = "too-many-links"
-        "too many sign-in links that do not work were tried: wait a minute, then try again",
+    InvitesTooOften = "invites-too-often"
+        "too many invites were opened from your network in the last minute: wait a minute, then try again",
     SignInEnded = "sign-in-ended" "this browser's sign-in has ended: open glave again to sign in",
     SignedInThere = "signed-in-there"
         "this browser was signed in on the computer glave runs on, and signs in only there",

@@ -4,33 +4,38 @@
 //! email: elsewhere, glave on its computer makes a setup code, good once and for ten minutes,
 //! which a browser there trades for a passkey it makes and a session with it; on this
 //! computer, a browser signed in by glave's link makes one. After that, a passkey signs a
-//! browser in, and someone signed in may make another. Each request to make or
-//! use one is answered within five minutes, on the server that began it, and kept in memory
-//! meanwhile, at most 16 of each. Setup codes that are not one are counted, and past 10 in a
-//! minute none is taken until it passes. Removing a passkey ends the sessions it began. Every
-//! passkey carries the person's handle, which the caller gives, so a passkey made again on a
-//! device replaces the one made there before; and the browser is told which of the person's
-//! passkeys still sign in, and of one that does not, so its passkey manager forgets the rest
-//! (`signals`).
+//! browser in, and someone signed in may make another. Each request to make or use one is
+//! held by the browser, sealed (`sealed`), and answered within five minutes, once, on the
+//! server that began it, which keeps nothing of it meanwhile. A setup code, 32 random bytes,
+//! is never guessed: one that is not one is refused, and no more. Removing a passkey ends the
+//! sessions it began. Every passkey carries the person's handle, which the caller gives, so a
+//! passkey made again on a device replaces the one made there before; and the browser is told
+//! which of the person's passkeys still sign in, and of one that does not, so its passkey
+//! manager forgets the rest (`signals`).
 
 mod discoverable;
+mod sealed;
 mod signals;
 
 pub use self::discoverable::Discovered;
 pub(crate) use self::discoverable::Discoverer;
+pub(crate) use self::sealed::Sealer;
 
 pub use self::signals::{AcceptedPasskeys, UnknownPasskey};
 
-use std::sync::{MutexGuard, PoisonError};
+use std::sync::MutexGuard;
 
 use glave_event::Secret;
 use glave_ports::host::PublicOrigin;
 use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 use webauthn_rs::prelude::{
-    AuthenticationResult, Passkey, PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential,
-    RegisterPublicKeyCredential, Url, Webauthn, WebauthnBuilder,
+    AuthenticationResult, DiscoverableAuthentication, DiscoverableKey, Passkey,
+    PasskeyRegistration, PublicKeyCredential, RegisterPublicKeyCredential, Url, Webauthn,
+    WebauthnBuilder, WebauthnError,
 };
+
+use self::sealed::{Kind, Request};
 
 use super::state::{Change, KeptPasskey, State};
 use super::{BrowserError, Browsers, Session, new_id, random_hex};
@@ -42,17 +47,8 @@ const SETUP_LIFETIME: SignedDuration = SignedDuration::from_mins(10);
 /// How long a request to make or use a passkey may wait for its answer.
 const CEREMONY_LIFETIME: SignedDuration = SignedDuration::from_mins(5);
 
-/// Requests of each kind waiting at once; a new one past this forgets the oldest.
-const MOST_CEREMONIES: usize = 16;
-
 /// Passkeys kept at once.
 const MOST_PASSKEYS: usize = 32;
-
-/// Setup codes that are not one taken in a minute before none is taken.
-const MOST_MISSES: usize = 10;
-
-/// What a setup code that is not one is counted against.
-const MISS_WINDOW: SignedDuration = SignedDuration::from_mins(1);
 
 /// The longest name a passkey keeps, in characters.
 const LONGEST_NAME: usize = 64;
@@ -148,22 +144,6 @@ impl Relying {
     }
 }
 
-/// The passkey requests begun and not yet answered.
-#[derive(Default)]
-pub(super) struct Ceremonies {
-    making: Vec<Making>,
-    using: Vec<(Uuid, PasskeyAuthentication, Timestamp)>,
-}
-
-/// A request to make a passkey.
-struct Making {
-    id: Uuid,
-    state: PasskeyRegistration,
-    began: Timestamp,
-    /// The digest of the setup code that proved it, if one did.
-    code: Option<[u8; 32]>,
-}
-
 impl Browsers {
     /// Makes and uses passkeys for browsers on this computer, which reach the server as
     /// `http://localhost:<port>`, once it listens there on every address that name stands for:
@@ -226,12 +206,22 @@ impl Browsers {
 
     /// Begins making a passkey, as `proof` allows.
     pub fn create_options(&self, proof: Proof<'_>) -> Result<Ceremony, BrowserError> {
+        self.create_options_carrying(proof, None)
+    }
+
+    /// Begins making a passkey, as `proof` allows, the request carrying `carried` to its answer
+    /// ([`Browsers::checked`]), sealed with it.
+    pub fn create_options_carrying(
+        &self,
+        proof: Proof<'_>,
+        carried: Option<serde_json::Value>,
+    ) -> Result<Ceremony, BrowserError> {
         let relying = self.relying()?;
         let now = self.clock.now();
         let (code, exclude) = {
-            let mut state = self.state();
+            let state = self.state();
             let code = match proof {
-                Proof::Code(code) => Some(live_setup(&mut state, code, now)?),
+                Proof::Code(code) => Some(live_setup(&state, code, now)?),
                 Proof::SignedIn => None,
             };
             if state.passkeys.len() >= MOST_PASSKEYS {
@@ -251,24 +241,14 @@ impl Browsers {
             .webauthn
             .start_passkey_registration(relying.handle, "glave", "glave", Some(exclude))
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
-        let id = new_id(now)?;
-        let mut asked = ceremony(id, &options)?;
+        let registration: PasskeyRegistration = stripped(&registration, "/rs/exclude_credentials")?;
+        let mut request = Request::new(Kind::Make, relying.handle, now, registration)?;
+        request.code = code;
+        request.carried = carried;
+        let mut asked = ceremony(self.sealer.seal(&request)?, &options)?;
         if matches!(relying.party, Party::Public) {
             discoverable(&mut asked.options);
         }
-        let mut ceremonies = self.ceremonies();
-        ceremonies
-            .making
-            .retain(|making| now.duration_since(making.began) <= CEREMONY_LIFETIME);
-        if ceremonies.making.len() >= MOST_CEREMONIES {
-            ceremonies.making.remove(0);
-        }
-        ceremonies.making.push(Making {
-            id,
-            state: registration,
-            began: now,
-            code,
-        });
         Ok(asked)
     }
 
@@ -281,22 +261,23 @@ impl Browsers {
         credential: &serde_json::Value,
         name: Option<&str>,
     ) -> Result<(PasskeyInfo, Session), BrowserError> {
-        let (passkey, change) = self.made(ceremony, credential, name, true)?;
+        let (passkey, change, _) = self.made(ceremony, credential, name, Proved::Code)?;
         let id = parse(&passkey.id).ok_or(BrowserError::Ceremony)?;
         let session = self.begin(Some(id), vec![change]).await?;
         Ok((passkey, session))
     }
 
     /// The passkey `credential` answers the request `ceremony` with, called `name` if named,
-    /// checked but not kept yet: the first of a new glave account, which [`Browsers::keep`]
-    /// keeps once the invite it was made for is spent.
+    /// checked but not kept yet, the request one [`Browsers::create_options_carrying`] began
+    /// carrying something: the first of a new glave account, which [`Browsers::keep`] keeps
+    /// once the invite or link it was made by is spent, which spends the request too.
     pub fn checked(
         &self,
         ceremony: &str,
         credential: &serde_json::Value,
         name: Option<&str>,
     ) -> Result<Checked, BrowserError> {
-        let (info, change) = self.made(ceremony, credential, name, false)?;
+        let (info, change, _) = self.made(ceremony, credential, name, Proved::Carried)?;
         Ok(Checked { info, change })
     }
 
@@ -327,35 +308,31 @@ impl Browsers {
         credential: &serde_json::Value,
         name: Option<&str>,
     ) -> Result<PasskeyInfo, BrowserError> {
-        let (passkey, change) = self.made(ceremony, credential, name, false)?;
+        let (passkey, change, _) = self.made(ceremony, credential, name, Proved::SignedIn)?;
         self.change(|_, _| vec![change.clone()]).await?;
         Ok(passkey)
     }
 
     /// The passkey `credential` answers the request `ceremony` with, called `name` if named,
-    /// and its record: a request a setup code proved when `by_code` says so, which spends it,
-    /// else one the person signed in made.
+    /// its record, and what the request carried: a request `proved` as it says. One a setup
+    /// code proved spends the code; one the person signed in made is spent here; one that
+    /// carries something is spent with what proved it, by the caller.
     fn made(
         &self,
         ceremony: &str,
         credential: &serde_json::Value,
         name: Option<&str>,
-        by_code: bool,
-    ) -> Result<(PasskeyInfo, Change), BrowserError> {
+        proved: Proved,
+    ) -> Result<(PasskeyInfo, Change, Option<serde_json::Value>), BrowserError> {
         let relying = self.relying()?;
         let now = self.clock.now();
-        let making = {
-            let mut ceremonies = self.ceremonies();
-            let at = ceremonies
-                .making
-                .iter()
-                .position(|making| {
-                    Some(making.id) == parse(ceremony) && making.code.is_some() == by_code
-                })
-                .ok_or(BrowserError::Ceremony)?;
-            ceremonies.making.remove(at)
+        let making: Request<PasskeyRegistration> = self.sealer.open(ceremony, Kind::Make, now)?;
+        let as_proved = match proved {
+            Proved::Code => making.code.is_some(),
+            Proved::SignedIn => making.code.is_none() && making.carried.is_none(),
+            Proved::Carried => making.code.is_none() && making.carried.is_some(),
         };
-        if now.duration_since(making.began) > CEREMONY_LIFETIME {
+        if making.handle != relying.handle || !as_proved {
             return Err(BrowserError::Ceremony);
         }
         let answer: RegisterPublicKeyCredential = serde_json::from_value(credential.clone())
@@ -364,6 +341,21 @@ impl Browsers {
             .webauthn
             .finish_passkey_registration(&answer, &making.state)
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
+        if making.carried.is_none() {
+            self.sealer
+                .spend(relying.handle, (making.id, making.began), now)?;
+        }
+        // The passkeys the request named for the browser to make none again, as kept now.
+        let again = self
+            .state()
+            .passkeys
+            .iter()
+            .filter(|kept| relying.made(kept))
+            .any(|kept| kept.credential.cred_id() == passkey.cred_id());
+        if again {
+            let excluded = WebauthnError::CredentialExcludedFromRequest;
+            return Err(BrowserError::Passkey(excluded.to_string()));
+        }
         if let Some(code) = making.code {
             spend_setup(&mut self.state(), &code, now)?;
         }
@@ -379,7 +371,8 @@ impl Browsers {
             emailed: false,
         };
         let party = relying.id.clone();
-        Ok((info, Change::PasskeyAdded(id, name, kept, party, false)))
+        let change = Change::PasskeyAdded(id, name, kept, party, false);
+        Ok((info, change, making.carried))
     }
 
     /// Begins signing a browser in with a passkey: any of the person's made for this relying
@@ -400,17 +393,9 @@ impl Browsers {
             .webauthn
             .start_passkey_authentication(&passkeys)
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
-        let now = self.clock.now();
-        let id = new_id(now)?;
-        let mut ceremonies = self.ceremonies();
-        ceremonies
-            .using
-            .retain(|(_, _, began)| now.duration_since(*began) <= CEREMONY_LIFETIME);
-        if ceremonies.using.len() >= MOST_CEREMONIES {
-            ceremonies.using.remove(0);
-        }
-        ceremonies.using.push((id, authentication, now));
-        ceremony(id, &options)
+        let state: DiscoverableAuthentication = stripped(&authentication, "/ast/credentials")?;
+        let request = Request::new(Kind::Use, relying.handle, self.clock.now(), state)?;
+        ceremony(self.sealer.seal(&request)?, &options)
     }
 
     /// Signs a browser in with the passkey `credential` answers the request `ceremony` with:
@@ -422,17 +407,9 @@ impl Browsers {
         credential: &serde_json::Value,
     ) -> Result<Session, BrowserError> {
         let relying = self.relying()?;
-        let now = self.clock.now();
-        let (_, authentication, began) = {
-            let mut ceremonies = self.ceremonies();
-            let at = ceremonies
-                .using
-                .iter()
-                .position(|(id, _, _)| Some(*id) == parse(ceremony))
-                .ok_or(BrowserError::Ceremony)?;
-            ceremonies.using.remove(at)
-        };
-        if now.duration_since(began) > CEREMONY_LIFETIME {
+        let using: Request<DiscoverableAuthentication> =
+            self.sealer.open(ceremony, Kind::Use, self.clock.now())?;
+        if using.handle != relying.handle {
             return Err(BrowserError::Ceremony);
         }
         let answer: PublicKeyCredential = serde_json::from_value(credential.clone())
@@ -440,10 +417,14 @@ impl Browsers {
         // Removed, or added, on another server on this store since this one last looked.
         self.catch_up().await?;
         let (id, kept) = self.kept(relying, &answer)?;
+        // Checked against the passkey it answered with, as it is kept now.
+        let key = DiscoverableKey::from(&kept);
         let result = relying
             .webauthn
-            .finish_passkey_authentication(&answer, &authentication)
+            .finish_discoverable_authentication(&answer, using.state, &[key])
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
+        let spent = (using.id, using.began);
+        self.sealer.spend(relying.handle, spent, self.clock.now())?;
         self.used(id, kept, &result).await
     }
 
@@ -520,36 +501,46 @@ impl Browsers {
     fn relying(&self) -> Result<&Relying, BrowserError> {
         self.relying.get().ok_or(BrowserError::NoPasskeys)
     }
-
-    fn ceremonies(&self) -> MutexGuard<'_, Ceremonies> {
-        self.ceremonies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-    }
 }
 
-/// The digest of `code`, when it is a live setup code; counted against the limit when it is
-/// not.
-fn live_setup(
-    state: &mut MutexGuard<'_, State>,
-    code: &str,
-    now: Timestamp,
-) -> Result<[u8; 32], BrowserError> {
-    state
-        .misses
-        .retain(|missed| now.duration_since(*missed) <= MISS_WINDOW);
-    if state.misses.len() >= MOST_MISSES {
-        return Err(BrowserError::TooMany);
-    }
+/// What proved a request to make a passkey, as its answer says.
+#[derive(Clone, Copy)]
+enum Proved {
+    /// A setup code.
+    Code,
+    /// The person, signed in.
+    SignedIn,
+    /// What the request carries, which its caller checks.
+    Carried,
+}
+
+/// A request's `state` without the passkeys it names at `named`, so the request the browser
+/// holds stays small however many passkeys the person has, up to 32 with ids of up to 1,023
+/// bytes each. Its answer is checked against the person's passkeys as they are kept then: a
+/// sign-in's against the one it answered with, as a request for any passkey's is (the state
+/// it becomes); a new passkey's against those made already, which the request named for the
+/// browser to make none again.
+fn stripped<T: serde::de::DeserializeOwned>(
+    state: &impl serde::Serialize,
+    named: &str,
+) -> Result<T, BrowserError> {
+    let refused = |error: serde_json::Error| BrowserError::Passkey(error.to_string());
+    let mut state = serde_json::to_value(state).map_err(refused)?;
+    let passkeys = state.pointer_mut(named).ok_or_else(|| {
+        BrowserError::Passkey(format!("a passkey request's state has no {named}"))
+    })?;
+    *passkeys = serde_json::Value::Array(Vec::new());
+    serde_json::from_value(state).map_err(refused)
+}
+
+/// The digest of `code`, when it is a live setup code.
+fn live_setup(state: &State, code: &str, now: Timestamp) -> Result<[u8; 32], BrowserError> {
     let presented = digest(code);
-    let found = state.setups.iter().position(|(kept, made)| {
-        same(kept, &presented) && now.duration_since(*made) <= SETUP_LIFETIME
-    });
-    if found.is_none() {
-        state.misses.push(now);
-        return Err(BrowserError::Setup);
-    }
-    Ok(presented)
+    let live = state
+        .setups
+        .iter()
+        .any(|(kept, made)| same(kept, &presented) && now.duration_since(*made) <= SETUP_LIFETIME);
+    live.then_some(presented).ok_or(BrowserError::Setup)
 }
 
 /// Spends the setup code whose digest is `code`, which must still be live.
@@ -567,10 +558,10 @@ fn spend_setup(
     Ok(())
 }
 
-/// The request `id`, its options as JSON.
-fn ceremony(id: Uuid, options: &impl serde::Serialize) -> Result<Ceremony, BrowserError> {
+/// The request the browser holds as `id`, its options as JSON.
+fn ceremony(id: String, options: &impl serde::Serialize) -> Result<Ceremony, BrowserError> {
     Ok(Ceremony {
-        id: id.to_string(),
+        id,
         options: serde_json::to_value(options)
             .map_err(|error| BrowserError::Passkey(error.to_string()))?,
     })

@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 use crate::signups::linked;
 
+mod flood;
 mod indexing;
 use crate::support::issuer::fixed_clock;
 use crate::support::web::{ORIGIN, Served, Web, asked, elsewhere, make_passkey, serve_with};
