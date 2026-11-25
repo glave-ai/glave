@@ -27,9 +27,9 @@ const PAGE_POLICY: &str = "default-src 'none'; style-src 'self'; img-src 'self';
 const FILE_POLICY: &str = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; \
     sandbox; frame-ancestors 'self'";
 
-/// A PDF framed by its page: Chrome's viewer shows none in a sandbox, so it is only kept to
-/// frames of its own page.
-const PDF_POLICY: &str = "frame-ancestors 'self'";
+/// A PDF framed by its page: Chrome's viewer shows none in a sandbox, so it loads nothing but
+/// itself, as the viewer's embedded document, and only in frames of its own page.
+const PDF_POLICY: &str = "default-src 'none'; object-src 'self'; frame-ancestors 'self'";
 
 /// The page's style: plain, light or dark as the reader's system is.
 const STYLE: &str = include_str!("shared.css");
@@ -212,9 +212,13 @@ where
         Answer::file(found.bytes, length)
     };
     let mut response = sent(body, media_type, policy);
-    response
-        .headers_mut()
-        .insert(header::CONTENT_LENGTH, HeaderValue::from(length));
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_LENGTH, HeaderValue::from(length));
+    // No other page, another share's among them, may load it.
+    headers.insert(
+        HeaderName::from_static("cross-origin-resource-policy"),
+        HeaderValue::from_static("same-origin"),
+    );
     if download && let Ok(disposition) = HeaderValue::from_str(&disposition(&share.file_name)) {
         response
             .headers_mut()
