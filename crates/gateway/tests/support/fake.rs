@@ -291,3 +291,19 @@ pub(crate) fn balance(credits: &Credits<FaultyLog>) -> i64 {
         .nanos
         .get()
 }
+
+/// Cancels `call` once it reached `fake` and waits at its gate for an answer.
+pub(crate) async fn cancelled_once_sent<T: std::fmt::Debug>(
+    fake: &Fake,
+    call: tokio::task::JoinHandle<T>,
+) {
+    for _ in 0..1_000 {
+        if fake.calls.load(Ordering::SeqCst) > 0 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(fake.calls.load(Ordering::SeqCst), 1, "sent");
+    call.abort();
+    assert!(call.await.unwrap_err().is_cancelled());
+}

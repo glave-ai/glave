@@ -11,7 +11,8 @@ use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
 use glave_ports::{EventLog as _, MediaAsk, ModelProvider, Payer, ProviderError, Purpose, Scope};
 
 use crate::support::{
-    Fake, answer, balance, block_on, dollars, funded, org, person, price, request,
+    Fake, answer, balance, block_on, cancelled_once_sent, dollars, funded, org, person, price,
+    request,
 };
 
 #[test]
@@ -199,16 +200,7 @@ fn a_media_call_dropped_once_sent_is_charged_its_hold() {
     block_on!(async {
         let making = Arc::clone(&gateway);
         let call = tokio::spawn(async move { making.make(&paid(), &MediaAsk::default()).await });
-        // Sent, and waiting at the fake's gate for an answer, where it is dropped.
-        for _ in 0..1_000 {
-            if fake.calls.load(Ordering::SeqCst) > 0 {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 1, "sent");
-        call.abort();
-        assert!(call.await.unwrap_err().is_cancelled());
+        cancelled_once_sent(&fake, call).await;
     });
     assert_eq!(balance(&credits), 1_000 - HELD);
 }

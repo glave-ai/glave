@@ -6,7 +6,6 @@
 //! they may read, a PDF never past a few pages' worth nor anything past the window.
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use glave_event::{TokenCounts, Usage};
 use glave_gateway::{Credits, Gateway, Routes, Target};
@@ -17,7 +16,9 @@ use glave_ports::{
 };
 use tokio::sync::Semaphore;
 
-use crate::support::{Fake, answer, balance, block_on, funded, org, person, price, request};
+use crate::support::{
+    Fake, answer, balance, block_on, cancelled_once_sent, funded, org, person, price, request,
+};
 
 /// What the test request reads at a billionth of a dollar a token, "Be brief." and "hello",
 /// 14 bytes at 4 a token, and what "Twelve bytes" of answer comes to at 4 bytes a token.
@@ -197,16 +198,7 @@ fn cancelled_with(file: InlineFile, fake: &Arc<Fake>, target: Target) -> i64 {
         let asked = with_file(file);
         let calling = Arc::clone(&gateway);
         let call = tokio::spawn(async move { calling.complete(&asked, &mut |_| {}).await });
-        // Sent, and waiting at the fake's gate for an answer, where it is cancelled.
-        for _ in 0..1_000 {
-            if fake.calls.load(Ordering::SeqCst) > 0 {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 1, "sent");
-        call.abort();
-        assert!(call.await.unwrap_err().is_cancelled());
+        cancelled_once_sent(fake, call).await;
     });
     1_000_000 - balance(&credits)
 }
