@@ -223,12 +223,21 @@ fn a_call_that_breaks_off_is_charged_for_what_it_read_and_what_came() {
     add(&credits, acme, 1_000, "order-1");
     assert!(ask(&gateway(&fake, &credits), &paid(acme, ada)).is_err());
     assert_eq!(balance(&credits, acme), 1_000 - SO_FAR);
-    let failing = Fake::failing("p", ProviderError::Protocol("garbled".into()));
-    assert!(ask(&gateway(&failing, &credits), &paid(acme, ada)).is_err());
+    let refused = ProviderError::Http {
+        status: 429,
+        body: "slow down".into(),
+    };
+    assert!(
+        ask(
+            &gateway(&Fake::failing("p", refused), &credits),
+            &paid(acme, ada)
+        )
+        .is_err()
+    );
     assert_eq!(
         balance(&credits, acme),
         1_000 - SO_FAR,
-        "one that failed before any answer came is charged nothing"
+        "one its provider refused is charged nothing"
     );
 }
 

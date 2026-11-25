@@ -11,5 +11,6 @@ mod fallback;
 mod filters;
 mod floor;
 mod media;
+mod metering;
 mod routes;
 mod search;

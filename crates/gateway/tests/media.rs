@@ -10,7 +10,10 @@ use glave_gateway::{Credits, Gateway, Routes};
 use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
 use glave_ports::{EventLog as _, MediaAsk, ModelProvider, Payer, ProviderError, Purpose, Scope};
 
-use crate::support::{Fake, block_on, dollars, org, person, price, request};
+use crate::support::{
+    Fake, answer, balance, block_on, cancelled_once_sent, dollars, funded, org, person, price,
+    request,
+};
 
 #[test]
 fn a_media_call_goes_only_to_its_own_route_and_comes_back_with_what_it_made() {
@@ -100,19 +103,6 @@ fn a_media_call_is_held_at_what_it_allows_and_charged_as_media() {
     assert_eq!(kinds, [CostKind::Media]);
 }
 
-/// Credits on a log of their own, with `nanos` added for the test's organization.
-fn funded(nanos: i64) -> Arc<Credits<FaultyLog>> {
-    let credits = Arc::new(Credits::new(
-        FaultyLog::default(),
-        Box::new(ManualClock::ticking(1_793_350_800_000)),
-        Box::new(CountingEntropy::starting_at(1)),
-        None,
-    ));
-    let by = Principal::person(person());
-    block_on!(credits.add(org(), dollars(nanos), "order-1", by)).unwrap();
-    credits
-}
-
 /// A gateway making images at `fake`'s `painter`, a billionth of a dollar a token, charging
 /// `credits`.
 fn painting(fake: &Arc<Fake>, credits: &Arc<Credits<FaultyLog>>) -> Gateway {
@@ -131,14 +121,6 @@ fn paid() -> glave_ports::ModelRequest {
         person: Some(person()),
     });
     asked
-}
-
-fn balance(credits: &Credits<FaultyLog>) -> i64 {
-    block_on!(credits.account(org()))
-        .unwrap()
-        .balance
-        .nanos
-        .get()
 }
 
 /// What the test request holds at a billionth of a dollar a token: what it reads and its 100
@@ -170,6 +152,47 @@ fn a_media_call_left_unanswered_is_charged_its_hold_and_one_refused_nothing() {
 }
 
 #[test]
+fn a_media_answer_that_says_nothing_of_what_it_used_is_charged_its_hold() {
+    let credits = funded(1_000);
+    let fake = Fake::new("images");
+    fake.script
+        .lock()
+        .unwrap()
+        .push_back(Ok(answer("images", "painter", 0, 0)));
+    block_on!(painting(&fake, &credits).make(&paid(), &MediaAsk::default())).unwrap();
+    assert_eq!(balance(&credits), 1_000 - HELD, "never nothing");
+}
+
+#[test]
+fn a_media_call_that_never_reached_its_provider_is_charged_nothing_and_its_fallback_once() {
+    let credits = funded(1_000);
+    let unreached = Fake::failing(
+        "down",
+        ProviderError::Unserved {
+            failure: glave_ports::Failure::Unreachable,
+            reason: "connection refused".into(),
+        },
+    );
+    let painters = vec![
+        unreached.target("painter").with_price(price(1_000_000)),
+        Fake::new("up")
+            .target("painter")
+            .with_price(price(1_000_000)),
+    ];
+    let routes = Routes::new(vec![Fake::new("chat").target("m")])
+        .unwrap()
+        .with_route(Purpose::ImageGenerate, painters)
+        .unwrap();
+    let gateway = Gateway::new(routes).with_credits(Arc::clone(&credits));
+    block_on!(gateway.make(&paid(), &MediaAsk::default())).unwrap();
+    assert_eq!(
+        balance(&credits),
+        1_000 - 110,
+        "the fake's 110 tokens, once"
+    );
+}
+
+#[test]
 fn a_media_call_dropped_once_sent_is_charged_its_hold() {
     let credits = funded(1_000);
     let fake = Fake::gated("images", Arc::new(tokio::sync::Semaphore::new(0)));
@@ -177,16 +200,7 @@ fn a_media_call_dropped_once_sent_is_charged_its_hold() {
     block_on!(async {
         let making = Arc::clone(&gateway);
         let call = tokio::spawn(async move { making.make(&paid(), &MediaAsk::default()).await });
-        // Sent, and waiting at the fake's gate for an answer, where it is dropped.
-        for _ in 0..1_000 {
-            if fake.calls.load(Ordering::SeqCst) > 0 {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-        assert_eq!(fake.calls.load(Ordering::SeqCst), 1, "sent");
-        call.abort();
-        assert!(call.await.unwrap_err().is_cancelled());
+        cancelled_once_sent(&fake, call).await;
     });
     assert_eq!(balance(&credits), 1_000 - HELD);
 }

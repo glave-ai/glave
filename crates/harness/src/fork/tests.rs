@@ -175,6 +175,7 @@ fn every_blob_an_event_names_is_found_in_it() {
         author: None,
         thought: None,
         key: None,
+        typed: None,
     };
     let message = encode(header(3), &line).unwrap();
     assert_eq!(blobs_named(&message), [Sha256::new(HEX).unwrap()]);

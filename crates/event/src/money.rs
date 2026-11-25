@@ -157,7 +157,7 @@ impl Money {
     pub fn parse_dollars(text: &str) -> Result<Self, InvalidValue> {
         Some(text)
             .filter(|text| !text.contains(['e', 'E']))
-            .and_then(Self::reported_dollars)
+            .and_then(Self::dollars)
             .ok_or_else(|| {
                 InvalidValue::new(
                     "amount",
@@ -166,10 +166,16 @@ impl Money {
             })
     }
 
-    /// US dollars as a provider reports them, a JSON number, so with an exponent if it likes:
-    /// JavaScript and Python write a very cheap call as `4e-7`. Rounded as
-    /// [`parse_dollars`](Self::parse_dollars) is; `None` unless it is a number that fits.
+    /// US dollars as a provider reports what a call cost, a JSON number, so with an exponent if
+    /// it likes: JavaScript and Python write a very cheap call as `4e-7`. Rounded as
+    /// [`parse_dollars`](Self::parse_dollars) is; `None` unless it is a number that fits and not
+    /// below nothing, since no call pays its caller.
     pub fn reported_dollars(text: &str) -> Option<Self> {
+        Self::dollars(text).filter(|money| money.nanos >= Nanos::ZERO)
+    }
+
+    /// US dollars written as a decimal, with an exponent if any; `None` unless it fits.
+    fn dollars(text: &str) -> Option<Self> {
         Some(Self {
             nanos: Nanos(scaled(text, PLACES)?),
             currency: Currency::USD,

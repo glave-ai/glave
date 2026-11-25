@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use glave_ports::auth::{
-    Auth, CONNECT_TIMEOUT, KeyHeader, Outgoing, credential_header, not_json, request_failed,
-    send_signed,
+    Auth, CONNECT_TIMEOUT, KeyHeader, Outgoing, credential_header, not_encoded, not_json,
+    request_failed, send_signed,
 };
 use glave_ports::{Completion, Delta, EndUser, ModelProvider, ModelRequest, ProviderError};
 use reqwest::header::CONTENT_TYPE;
@@ -106,8 +106,7 @@ impl ModelProvider for Anthropic {
         let end_user = request.end_user.as_ref().filter(|_| self.own_api());
         let body = messages_request(request, &self.provider, self.api)
             .for_end_user(end_user.map(EndUser::as_str));
-        let body = serde_json::to_vec(&body)
-            .map_err(|e| ProviderError::Protocol(format!("could not encode the request: {e}")))?;
+        let body = serde_json::to_vec(&body).map_err(|e| not_encoded(&e))?;
         let url = self.api.url(&self.base_url, &request.model)?;
         let version = self.api.version_header();
         let mut sent = vec![("content-type", "application/json")];

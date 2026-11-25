@@ -272,6 +272,8 @@ fn runs(deltas: &[Delta]) -> Vec<(Kind, String)> {
         let (kind, piece) = match delta {
             Delta::Text(text) => (Kind::Text, text),
             Delta::Reasoning(text) => (Kind::Reasoning, text),
+            // A tool call is read whole from the answer, not from its pieces.
+            Delta::Arguments(_) => continue,
         };
         match runs.last_mut() {
             Some((last, joined)) if *last == kind => joined.push_str(piece),

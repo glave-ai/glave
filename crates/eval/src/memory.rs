@@ -361,6 +361,7 @@ async fn write_past(store: &Store, scope: Scope, messages: &[String]) -> Result<
             author: None,
             thought: None,
             key: None,
+            typed: None,
         };
         events.push(encode(header, &message).map_err(|e| fail(&e))?);
     }

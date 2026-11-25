@@ -5,9 +5,11 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use glave_event::Principal;
 use glave_event::{Currency, ModelRef, Money, Nanos, Opaque, Part, StopReason, TokenCounts, Usage};
-use glave_gateway::{Model, Price, Target};
+use glave_gateway::{Credits, Model, Price, Target};
 pub(crate) use glave_ports::block_on;
+use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
 use glave_ports::{
     BoxFuture, Completion, Delta, Hit, Made, MadeFile, MediaAsk, Message, ModelRequest,
     ProviderError, Purpose, SearchAsk, SearchResults, ToolChoice, ToolSpec,
@@ -15,10 +17,12 @@ use glave_ports::{
 use tokio::sync::Semaphore;
 
 /// A provider that answers each call with the next scripted result, or a plain answer when the
-/// script is empty, saying `says` as it begins when set.
+/// script is empty, saying `says` as it begins when set, then `calls_with` as a tool call's
+/// arguments.
 pub(crate) struct Fake {
     pub provider: String,
     pub says: Option<String>,
+    pub calls_with: Option<String>,
     pub script: Mutex<VecDeque<Result<Completion, ProviderError>>>,
     pub seen: Mutex<Vec<ModelRequest>>,
     /// When set, every call waits for a permit before answering.
@@ -32,6 +36,7 @@ impl Fake {
         Arc::new(Self {
             provider: provider.into(),
             says: None,
+            calls_with: None,
             script: Mutex::new(VecDeque::new()),
             seen: Mutex::new(Vec::new()),
             gate: None,
@@ -49,6 +54,7 @@ impl Fake {
         Arc::new(Self {
             provider: provider.into(),
             says: None,
+            calls_with: None,
             script: Mutex::new(VecDeque::new()),
             seen: Mutex::new(Vec::new()),
             gate: Some(gate),
@@ -96,6 +102,9 @@ impl Model for Fake {
             self.seen.lock().unwrap().push(request.clone());
             if let Some(says) = &self.says {
                 on_delta(Delta::Text(says.clone()));
+            }
+            if let Some(arguments) = &self.calls_with {
+                on_delta(Delta::Arguments(arguments.clone()));
             }
             if let Some(gate) = &self.gate {
                 gate.acquire().await.unwrap().forget();
@@ -259,4 +268,42 @@ pub(crate) fn person() -> glave_event::PrincipalId {
 pub(crate) fn org() -> glave_ports::OrgId {
     let id = glave_event::PrincipalId::new(jiff::Timestamp::from_second(2).unwrap(), [2; 10]);
     glave_ports::OrgId::from_uuid(id.unwrap().as_uuid())
+}
+
+/// Credits on a log of their own, with `nanos` added for the test's organization.
+pub(crate) fn funded(nanos: i64) -> Arc<Credits<FaultyLog>> {
+    let credits = Arc::new(Credits::new(
+        FaultyLog::default(),
+        Box::new(ManualClock::ticking(1_793_350_800_000)),
+        Box::new(CountingEntropy::starting_at(1)),
+        None,
+    ));
+    let by = Principal::person(person());
+    block_on!(credits.add(org(), dollars(nanos), "order-1", by)).unwrap();
+    credits
+}
+
+/// What is left of the test organization's balance.
+pub(crate) fn balance(credits: &Credits<FaultyLog>) -> i64 {
+    block_on!(credits.account(org()))
+        .unwrap()
+        .balance
+        .nanos
+        .get()
+}
+
+/// Cancels `call` once it reached `fake` and waits at its gate for an answer.
+pub(crate) async fn cancelled_once_sent<T: std::fmt::Debug>(
+    fake: &Fake,
+    call: tokio::task::JoinHandle<T>,
+) {
+    for _ in 0..1_000 {
+        if fake.calls.load(Ordering::SeqCst) > 0 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(fake.calls.load(Ordering::SeqCst), 1, "sent");
+    call.abort();
+    assert!(call.await.unwrap_err().is_cancelled());
 }

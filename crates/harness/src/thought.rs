@@ -121,6 +121,8 @@ impl Thinking {
                 self.end(now, live);
                 live(Live::Text(text));
             }
+            // A tool call is shown once it is whole.
+            Delta::Arguments(_) => {}
         }
     }
 

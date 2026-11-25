@@ -240,9 +240,10 @@ fn dangling_calls(events: &[Event]) -> Vec<ToolCall> {
         .collect()
 }
 
-/// The person's own messages, oldest first: the last text of each message they added (a new
-/// thread's first message opens with the project's instructions). A subagent's thread has
-/// none of its own: its prompts came from the parent's agent.
+/// The person's own messages, oldest first: what they typed when it named a command, else the
+/// last text of each message they added (a new thread's first message opens with the
+/// project's instructions). A subagent's thread has none of its own: its prompts came from
+/// the parent's agent.
 fn asked(events: &[Event]) -> Vec<String> {
     if !above(events).is_empty() {
         return Vec::new();
@@ -250,12 +251,12 @@ fn asked(events: &[Event]) -> Vec<String> {
     events
         .iter()
         .filter_map(|event| match &event.body {
-            Body::MessageAdded(added) if by_person(added) => {
+            Body::MessageAdded(added) if by_person(added) => added.typed.clone().or_else(|| {
                 added.parts.iter().rev().find_map(|part| match part {
                     Part::Text { text } => Some(text.clone()),
                     _ => None,
                 })
-            }
+            }),
             _ => None,
         })
         .collect()

@@ -13,6 +13,22 @@ use crate::model::{
 };
 use crate::web_search::{SearchAsk, SearchResults};
 
+/// Whether `result` is a provider never reached, saying `says`: sent nothing, so billed
+/// nothing, and tried at the next target. Says what it was instead when it is not.
+pub fn unreached(result: Result<Completion, ProviderError>, says: &str) -> Result<(), String> {
+    match result {
+        Err(
+            error @ ProviderError::Unserved {
+                failure: crate::Failure::Unreachable,
+                ..
+            },
+        ) if !error.unanswered() && error.to_string().to_ascii_lowercase().contains(says) => Ok(()),
+        other => Err(format!(
+            "expected the provider unreached, saying {says:?}: {other:?}"
+        )),
+    }
+}
+
 /// Every request a scripted model received, in order.
 pub type Seen = Arc<Mutex<Vec<ModelRequest>>>;
 

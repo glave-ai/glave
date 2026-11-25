@@ -13,7 +13,7 @@ use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
 use tokio::sync::OnceCell;
 use uuid::{Builder, Uuid};
 
-use super::sandbox::{Around, Prepared, moved_stores};
+use super::sandbox::{Around, Prepared, moved_stores, x_cookie};
 
 /// The most computers one machine holds at once.
 const MAX_COMPUTERS: usize = 64;
@@ -87,6 +87,7 @@ impl Opened {
                 .iter()
                 .cloned()
                 .chain(moved_stores(&self.environment))
+                .chain(x_cookie(&self.environment).await)
                 .collect();
             let around = Around {
                 hidden: &hidden,

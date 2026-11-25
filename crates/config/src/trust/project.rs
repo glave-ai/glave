@@ -81,7 +81,8 @@ impl Item {
 pub struct Project {
     /// The repository's root with symlinks resolved: the key trust is kept under.
     pub root: PathBuf,
-    /// The `origin` remote in `.git/config`, which lets a moved clone be recognised.
+    /// The `origin` remote in `.git/config`, kept with what is decided as a note of which
+    /// repository it was; never what finds a decision, since a folder writes its own.
     pub remote: Option<String>,
     /// The `.glave/config.toml`, when there is one.
     pub config: Option<ConfigFile>,

@@ -80,6 +80,7 @@ fn said(text: &str) -> MessageAdded {
         author: None,
         thought: None,
         key: None,
+        typed: None,
     }
 }
 
@@ -398,6 +399,7 @@ async fn opening_messages<L: EventLog>(log: &L, here: &Scope, id: ThreadId) -> V
         author: None,
         thought: None,
         key: None,
+        typed: None,
     };
     let events = vec![
         writer.next(20, &started()?)?,

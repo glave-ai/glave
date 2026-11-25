@@ -175,7 +175,7 @@ fn thinking_is_kept_with_what_it_takes_to_send_it_back() {
 
 #[test]
 fn tool_calls_assemble_with_their_ids() {
-    let (completion, _) = run(&full_response());
+    let (completion, deltas) = run(&full_response());
     let completion = completion.unwrap();
     assert_eq!(completion.stop, StopReason::ToolUse);
     let calls: Vec<_> = completion
@@ -195,6 +195,16 @@ fn tool_calls_assemble_with_their_ids() {
         completion.tool_calls[1].arguments,
         Arguments::Json(Map::new()),
         "no input streamed is an empty object"
+    );
+    let arguments: String = (deltas.into_iter())
+        .filter_map(|delta| match delta {
+            Delta::Arguments(piece) => Some(piece),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        arguments, r#"{"command": "ls"}"#,
+        "every piece of arguments, as it came, so what came can be counted"
     );
 }
 

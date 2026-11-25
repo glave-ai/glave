@@ -4,7 +4,7 @@
 #[cfg(test)]
 mod over_http {
     use glave_event::{Arguments, Part, StopReason};
-    use glave_ports::testing::fake_secret;
+    use glave_ports::testing::{fake_secret, unreached};
     use glave_ports::{
         Failure, Message, ModelProvider, ModelRequest, ProviderError, ToolChoice, block_on,
     };
@@ -242,18 +242,12 @@ mod over_http {
     }
 
     #[test]
-    fn an_unreachable_provider_is_a_transport_error() {
+    fn an_unreachable_provider_is_unreached_and_billed_nothing() {
         // Port 1: a privileged port nothing listens on, and never one of the ephemeral ports the
         // other tests' fake servers take. A port bound and released here could be taken by one
         // of them before the request, which then answers it.
         let (result, _) = ask(&provider("http://127.0.0.1:1", None));
-        match result {
-            Err(ProviderError::Transport(cause)) => assert!(
-                cause.to_ascii_lowercase().contains("refused"),
-                "names what happened, not just that a request failed: {cause}"
-            ),
-            other => panic!("expected a transport error, got {other:?}"),
-        }
+        unreached(result, "refused").unwrap();
     }
 
     #[test]
@@ -266,14 +260,7 @@ mod over_http {
             tokio::time::pause();
             provider.complete(&request(), &mut |_| {}).await
         });
-        let error = result.unwrap_err();
-        assert_eq!(error.failure(), Failure::Unreachable, "{error:?}");
-        assert!(
-            error
-                .to_string()
-                .ends_with("no connection to 127.0.0.1 within 10 seconds"),
-            "says what was waited for and how long: {error}"
-        );
+        unreached(result, "no connection to 127.0.0.1 within 10 seconds").unwrap();
     }
 
     #[test]

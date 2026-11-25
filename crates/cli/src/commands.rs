@@ -30,7 +30,7 @@ pub(crate) async fn find(root: &Path) -> anyhow::Result<Vec<Command>> {
     let FoundCommands {
         mut commands,
         mut warnings,
-    } = find_commands(&folders(root)?).await;
+    } = find_commands(&folders(root)?, &personal()?).await;
     commands.retain(|command| {
         let built_in = BUILT_IN.contains(&command.name.as_str());
         if built_in {

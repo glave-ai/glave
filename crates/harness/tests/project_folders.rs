@@ -292,9 +292,9 @@ fn another_person_s_thread_gets_nothing_the_project_brings() {
     });
 }
 
-/// A project that chooses its own model, judge and titles and sets up its own
-/// `web_fetch`, all at once, needing no trust in this test.
-struct Choosing;
+/// A project that chooses its own model, this judge (none: the harness's) and titles and sets
+/// up its own `web_fetch`, all at once, needing no trust in this test.
+struct Choosing(Option<Judge>);
 
 impl ProjectFolders for Choosing {
     fn for_folder<'a>(
@@ -311,7 +311,7 @@ impl ProjectFolders for Choosing {
             Brought {
                 settled: Settled {
                     model: Some("project-model".into()),
-                    judge: Some(Judge::Model("project-judge".into())),
+                    judge: self.0.clone(),
                     titles: Some(false),
                     ..Settled::default()
                 },
@@ -367,7 +367,9 @@ fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
             settings,
         );
         let harness = harness
-            .with_project_folders(Some(Arc::new(Choosing) as Arc<dyn ProjectFolders>))
+            .with_project_folders(Some(Arc::new(Choosing(Some(Judge::Model(
+                "project-judge".into(),
+            )))) as Arc<dyn ProjectFolders>))
             .with_web(Some(Arc::new(tool("web_fetch", "the harness's web"))));
         let place = Place::Folder(project_dir.to_string_lossy().into_owned());
         let mut thread = thread_in(&harness, place).await;
@@ -403,6 +405,66 @@ fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
         );
         assert!(harness.title_case(&chat).is_some(), "the harness's own");
     });
+}
+
+/// The models that judged a push in a project choosing only its `model`, with `default` the
+/// harness's default model, and whether the push ran.
+fn judged_in_a_project(name: &str, default: &str) -> Option<(Vec<String>, bool)> {
+    let base = crate::outside_sandbox::sandboxed(name)?;
+    let project_dir = folder(&format!("{name}-project"));
+    Some(block_on!(async {
+        let mut answers = crate::judge::cleared_push();
+        answers.push(answer(Some("Done."), vec![], StopReason::EndTurn));
+        let workspace = crate::outside_sandbox::walled(&base, false).await;
+        let mut settings = crate::outside_sandbox::judged();
+        settings.model = default.to_owned();
+        let (harness, seen) = harness_with(
+            workspace,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            settings,
+        );
+        let harness =
+            harness.with_project_folders(Some(Arc::new(Choosing(None)) as Arc<dyn ProjectFolders>));
+        let place = Place::Folder(project_dir.to_string_lossy().into_owned());
+        let mut thread = thread_in(&harness, place).await;
+        turn(&harness, &mut thread, "push it").await;
+        let judged = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| request.purpose == Purpose::Judge)
+            .map(|request| request.model.clone())
+            .collect();
+        let ran = !returned(&events(harness.log(), thread.id).await)
+            .iter()
+            .any(|output| output.contains("Not run"));
+        (judged, ran)
+    }))
+}
+
+#[test]
+fn a_project_s_model_never_judges_its_own_actions() {
+    // A repository sets `model` with no trust asked, so the judge stays the person's main
+    // model: only a trusted project's `judge_model` picks another.
+    let Some((judged, ran)) = judged_in_a_project("projects-own-judge", "test-model") else {
+        return;
+    };
+    assert_eq!(judged, ["test-model"]);
+    assert!(ran);
+}
+
+#[test]
+fn with_no_default_model_nothing_judges_and_the_person_is_asked() {
+    // Only the project names a model, so there is none of the person's or the server's to
+    // judge with: the push asks, and with no one there it does not run.
+    let Some((judged, ran)) = judged_in_a_project("projects-no-default", "") else {
+        return;
+    };
+    assert_eq!(judged, Vec::<String>::new());
+    assert!(!ran, "asked, with no one there");
 }
 
 #[test]

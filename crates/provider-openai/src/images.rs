@@ -7,7 +7,7 @@
 //! the image models glave defaults to are served by nothing else at OpenRouter.
 
 use glave_event::{ModelRef, Part, StopReason};
-use glave_ports::auth::not_json;
+use glave_ports::auth::{not_encoded, not_json};
 use glave_ports::{
     Completion, Failure, InlineFile, Made, MadeFile, MediaAsk, Message, ModelRequest,
     ProviderError, Route,
@@ -91,8 +91,8 @@ impl OpenAiCompatible {
         request: &ModelRequest,
         ask: &MediaAsk,
     ) -> Result<Made, ProviderError> {
-        let body = serde_json::to_vec(&images_request(request, ask)?)
-            .map_err(|e| ProviderError::Protocol(format!("could not encode the request: {e}")))?;
+        let body =
+            serde_json::to_vec(&images_request(request, ask)?).map_err(|e| not_encoded(&e))?;
         let url = format!("{}/images", self.base);
         let response = self.post(&url, body).await?;
         let answer = self.whole(response, &url, MOST_ANSWER).await?;

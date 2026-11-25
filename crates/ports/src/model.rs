@@ -303,6 +303,9 @@ pub struct ToolSpec {
 pub enum Delta {
     Text(String),
     Reasoning(String),
+    /// A piece of a tool call's arguments as they come: shown as the call, once it is whole,
+    /// but counted as it comes, since its provider bills it as output.
+    Arguments(String),
 }
 
 /// A finished answer.

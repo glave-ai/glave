@@ -36,7 +36,7 @@ pub use asking::{ASKING_TOOL, AskingTool};
 pub use faulty::FaultyLog;
 pub use git::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials};
 pub use http::{FakeHttp, Received, sent_in_part};
-pub use model::{Answer, ScriptedModel, Seen, SeenMade, SeenSearched};
+pub use model::{Answer, ScriptedModel, Seen, SeenMade, SeenSearched, unreached};
 pub use oauth::{FAKE_CLIENT, FakeAuthServer, Grant};
 pub use outbox::Outbox;
 pub use output::Captured;

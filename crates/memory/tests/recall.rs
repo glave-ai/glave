@@ -42,6 +42,7 @@ async fn past(kit: &Kit, scope: Scope, id: ThreadId, said: &str, output: (&str, 
         author: None,
         thought: None,
         key: None,
+        typed: None,
     };
     let done = ToolCallCompleted {
         call_id: CallId::new("call_1").unwrap(),
