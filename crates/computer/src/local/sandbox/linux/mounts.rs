@@ -27,6 +27,7 @@ use glave_ports::computer::{GIT_RUNS_CODE, PROTECTED, SandboxLevel};
 
 use super::super::in_tmp::listeners;
 use super::super::secrets::home_secrets;
+use super::super::shut::Shut;
 use crate::local::sandbox::{folders_leading_to, kept_read_only, own_git_folder};
 
 /// Under the user's runtime folder (`$XDG_RUNTIME_DIR`): Podman's sign-ins.
@@ -118,6 +119,8 @@ pub(super) struct Layout {
     pub(super) moved_sessions: Vec<PathBuf>,
     /// For a worktree: the repository's shared git folder, where its commits go.
     pub(super) git_common: Option<PathBuf>,
+    /// The person's folders someone else's commands never read, and what stays readable there.
+    pub(super) shut: Shut,
 }
 
 /// One mount, in the order bubblewrap applies them: later ones lie over earlier ones.
@@ -135,6 +138,12 @@ pub(super) enum Mount {
     /// made in and which is read-only once they are: what is written there after the command
     /// starts stays hidden, where a stand-in hides only what was there.
     Emptied(PathBuf),
+    /// A link made again at `at`, leading to `to` as the person's leads, inside a folder
+    /// emptied for someone else's commands.
+    Link {
+        at: PathBuf,
+        to: PathBuf,
+    },
 }
 
 impl Mount {
@@ -145,7 +154,8 @@ impl Mount {
             | Self::ReadOnly(path)
             | Self::HiddenFile(path)
             | Self::HiddenFolder(path)
-            | Self::Emptied(path) => path.as_path(),
+            | Self::Emptied(path)
+            | Self::Link { at: path, .. } => path.as_path(),
             Self::Tmp(_) => Path::new("/tmp"),
         }
     }
@@ -218,6 +228,10 @@ pub(super) fn plan(
         .into_iter()
         .collect();
     mounts.push(Mount::ReadOnly(layout.base.clone()));
+    // The person's folders, emptied for someone else's commands, but for what stays readable
+    // there: before the workspace's own mounts, so the workspace's win where they meet.
+    mounts.extend(layout.shut.folders.iter().cloned().map(Mount::Emptied));
+    mounts.extend(layout.shut.open.iter().filter_map(|path| reopened(path)));
     mounts.push(Mount::Writable(temp.to_owned()));
     if matches!(layout.tmp, Tmp::Own) {
         mounts.push(Mount::Tmp(temp.to_owned()));
@@ -269,6 +283,21 @@ pub(super) fn plan(
     // path the later still wins.
     mounts.sort_by_key(|mount| mount.path().components().count());
     Ok((mounts, held))
+}
+
+/// `path`, readable again inside a folder emptied for someone else's commands: bound as it is,
+/// or, a link, made again as a link, since bubblewrap binds what a link leads to and the link
+/// would be gone. Nothing for what is not there. Blocking.
+fn reopened(path: &Path) -> Option<Mount> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    if meta.file_type().is_symlink() {
+        let to = std::fs::read_link(path).ok()?;
+        return Some(Mount::Link {
+            at: path.to_owned(),
+            to,
+        });
+    }
+    Some(Mount::ReadOnly(path.to_owned()))
 }
 
 /// What a protected path is now.
@@ -515,7 +544,8 @@ fn outermost(places: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
 }
 
 /// The real paths of the home folder's credential folders and files, and of whatever else the
-/// computer hides, that exist, except one that holds the workspace. Blocking.
+/// computer hides, that exist, except one that holds the workspace or that a folder hidden whole
+/// from someone else's commands hides already. Blocking.
 pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
     let in_home = layout
         .home
@@ -531,9 +561,10 @@ pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
     in_home
         .chain(in_runtime)
         .chain(layout.also_hidden.iter().cloned())
+        .chain(layout.shut.hidden.iter().cloned())
         .chain(var_tmp)
         .filter_map(|secret| std::fs::canonicalize(secret).ok())
-        .filter(|real| !layout.root.starts_with(real))
+        .filter(|real| !layout.root.starts_with(real) && !layout.shut.hides(real))
         .collect()
 }
 
@@ -593,6 +624,7 @@ mod tests {
             daemons,
             moved_sessions: moved,
             git_common: None,
+            shut: Shut::default(),
         };
         let (mounts, _held) = plan(&layout, &dir.join("temp"), &StandIns::default()).unwrap();
         mounts

@@ -14,6 +14,7 @@ mod macos;
 mod profile;
 mod run_temp;
 mod secrets;
+mod shut;
 #[cfg(test)]
 pub(super) mod tests;
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -39,6 +40,7 @@ use glave_ports::computer::{ComputerError, RunsFor, Sandbox, git_settings};
 
 use run_temp::RunTemp;
 pub(crate) use secrets::{moved_stores, x_cookie};
+use shut::Shut;
 
 /// The first argument that makes glave the Linux sandbox's helper (see [`sandbox_helper`]).
 pub(crate) const SANDBOX_HELPER_ARG: &str = "__glave-sandbox";
@@ -79,17 +81,34 @@ pub(crate) struct Prepared {
     temps: Temps,
     /// glave's sandbox cache folder, when there is glave's own folder.
     cache: Option<PathBuf>,
+    /// Whether its commands run for someone other than the person whose computer it is, whose
+    /// git reads glave's settings in place of the person's (`shut::GIT_SETTINGS`).
+    someone_else: bool,
     enforcer: platform::Enforcer,
 }
 
 /// What of glave's own folder, which they may not otherwise read, sandboxed commands still
-/// reach.
+/// reach; and what of the person's someone else's commands never do.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Reached<'a> {
     /// glave's sandbox cache folder, readable and writable.
     pub(crate) cache: Option<&'a Path>,
     /// glave's folder on commands' `PATH`, readable, never writable.
     pub(crate) glave_on_path: Option<&'a Path>,
+    /// The person's folders hidden from someone else's commands, and what stays readable there.
+    pub(crate) shut: &'a Shut,
+}
+
+/// What of this machine the sandbox hides or keeps reachable, beside the workspace.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Around<'a> {
+    /// What this computer hides beside the home folder's credential stores.
+    pub(crate) hidden: &'a [PathBuf],
+    /// glave's own folder on commands' `PATH`, readable, never writable, though it sits in
+    /// glave's folder.
+    pub(crate) glave_on_path: Option<&'a Path>,
+    /// Where this computer makes projects' folders, hidden from someone else's commands.
+    pub(crate) projects: Option<&'a Path>,
 }
 
 /// Where each command's own temp folder is made, and what its name starts with; and where
@@ -137,27 +156,27 @@ pub const SANDBOX_HELPER_FAILED: &str = "glave sandbox: ";
 impl Prepared {
     /// Prepares `sandbox` for every command run in `root`. `git_common`, for a worktree, is
     /// its repository's shared git folder, writable too. `helper` is a program that runs
-    /// [`sandbox_helper`], which Linux needs where bubblewrap cannot start. `hidden` is what
-    /// this computer hides beside the home folder's credential stores. `glave_on_path`, glave's
-    /// own folder on commands' `PATH`, stays readable, never writable, though it sits in
-    /// glave's folder.
+    /// [`sandbox_helper`], which Linux needs where bubblewrap cannot start. `around` is what
+    /// else of this machine it hides or keeps reachable.
     pub(crate) async fn new(
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
         helper: Option<&Path>,
-        hidden: &[PathBuf],
-        glave_on_path: Option<&Path>,
+        around: Around<'_>,
     ) -> Result<Self, ComputerError> {
         let cache = match sandbox.runs_for {
             RunsFor::Owner => cache_home(sandbox.glave_home.as_deref()).await,
             // Each command's own, in its temp folder (`caches`): none kept to share.
             RunsFor::SomeoneElse => None,
         };
+        let shut = Shut::for_sandbox(sandbox, root, git_common, around.projects).await?;
         let reached = Reached {
             cache: cache.as_deref(),
-            glave_on_path,
+            glave_on_path: around.glave_on_path,
+            shut: &shut,
         };
+        let hidden = around.hidden;
         let (enforcer, temps) =
             platform::Enforcer::prepare(sandbox, root, git_common, helper, reached, hidden).await?;
         // What a glave killed outright left: it could not remove its own.
@@ -166,6 +185,7 @@ impl Prepared {
         Ok(Self {
             temps,
             cache,
+            someone_else: sandbox.runs_for == RunsFor::SomeoneElse,
             enforcer,
         })
     }
@@ -179,17 +199,35 @@ impl Prepared {
             .unwrap_or_else(|| launch.temp.path().join("caches"))
     }
 
+    /// The git settings `launch`'s command reads in place of the person's own
+    /// (`GIT_CONFIG_GLOBAL`), for someone else's: in its own temp folder.
+    pub(crate) fn git_settings(&self, launch: &Launch) -> Option<PathBuf> {
+        self.someone_else
+            .then(|| launch.temp.path().join(GIT_SETTINGS_FILE))
+    }
+
     /// How to start the next command, from the workspace as it is now, in a temp folder of
-    /// its own.
+    /// its own, which holds glave's git settings for someone else's.
     pub(crate) async fn launch(&self) -> Result<Launch, ComputerError> {
         let temp = RunTemp::new(&self.temps.parent, self.temps.prefix)
             .await
             .map_err(|error| {
                 ComputerError::Failed(format!("could not make the command's temp folder: {error}"))
             })?;
+        if self.someone_else {
+            let settings = temp.path().join(GIT_SETTINGS_FILE);
+            tokio::fs::write(&settings, shut::GIT_SETTINGS)
+                .await
+                .map_err(|error| {
+                    ComputerError::Failed(format!("could not write git's settings: {error}"))
+                })?;
+        }
         self.enforcer.launch(temp).await
     }
 }
+
+/// The name of the file of git's settings for someone else's commands, in each one's temp folder.
+const GIT_SETTINGS_FILE: &str = "gitconfig";
 
 /// The folder in glave's own where sandboxed commands keep package caches between runs.
 pub(crate) const CACHE_FOLDER: &str = "sandbox-cache";

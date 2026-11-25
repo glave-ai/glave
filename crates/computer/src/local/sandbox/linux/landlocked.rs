@@ -5,7 +5,7 @@
 //!
 //! Reads are granted everywhere except secret locations and other terminals' devices by
 //! granting every neighbour on the way down to them instead of their parent (folders stay
-//! listable). Writes go to the run's temp folder and `/tmp`, never the project through them
+//! listable, but for the person's own folders where someone else's commands run). Writes go to the run's temp folder and `/tmp`, never the project through them
 //! (a project inside `/tmp` then costs new files directly in `/tmp`). With the network off,
 //! TCP is refused too where the kernel can (ABI 4), on top of seccomp; signals and abstract
 //! Unix sockets stay inside the sandbox where it can (ABI 6).
@@ -42,6 +42,9 @@ pub(crate) struct Plan {
     pub(super) unreadable: Vec<PathBuf>,
     /// ...except these again.
     pub(super) rereadable: Vec<PathBuf>,
+    /// Listable everywhere but these, except what is readable again in them: the person's
+    /// folders hidden from someone else's commands, whose names are theirs too.
+    pub(super) unlistable: Vec<PathBuf>,
 }
 
 /// Whether this kernel has Landlock, at least ABI 3.
@@ -102,7 +105,20 @@ fn named(path: &Path) -> rustix::io::Result<OwnedFd> {
 fn rules(plan: &Plan) -> std::io::Result<Vec<(PathBuf, BitFlags<AccessFs>)>> {
     let read = AccessFs::from_read(NEWEST);
     let write = AccessFs::from_write(NEWEST);
-    let mut rules = vec![(PathBuf::from("/"), BitFlags::from(AccessFs::ReadDir))];
+    let mut rules = Vec::new();
+    // Listed again only where something is unlistable: one rule for `/` otherwise.
+    let relistable: &[PathBuf] = if plan.unlistable.is_empty() {
+        &[]
+    } else {
+        &plan.rereadable
+    };
+    grant(
+        Path::new("/"),
+        BitFlags::from(AccessFs::ReadDir),
+        &plan.unlistable,
+        relistable,
+        &mut rules,
+    )?;
     grant(
         Path::new("/"),
         read & !AccessFs::ReadDir,

@@ -13,7 +13,7 @@ use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
 use tokio::sync::OnceCell;
 use uuid::{Builder, Uuid};
 
-use super::sandbox::{Prepared, moved_stores, x_cookie};
+use super::sandbox::{Around, Prepared, moved_stores, x_cookie};
 
 /// The most computers one machine holds at once.
 const MAX_COMPUTERS: usize = 64;
@@ -34,6 +34,8 @@ pub(crate) struct Opened {
     pub(crate) hidden: Arc<[PathBuf]>,
     /// glave's own folder on its commands' `PATH`, which its sandbox keeps readable.
     pub(crate) glave_on_path: Option<PathBuf>,
+    /// Where its computer makes projects' folders, which someone else's commands never read.
+    pub(crate) projects: Option<PathBuf>,
     /// The sandbox its commands last ran in.
     pub(crate) prepared: Kept,
     /// Where its commands start, owned by it.
@@ -87,13 +89,17 @@ impl Opened {
                 .chain(moved_stores(&self.environment))
                 .chain(x_cookie(&self.environment).await)
                 .collect();
+            let around = Around {
+                hidden: &hidden,
+                glave_on_path: self.glave_on_path.as_deref(),
+                projects: self.projects.as_deref(),
+            };
             let prepared = Prepared::new(
                 sandbox,
                 &self.root,
                 self.git_common.as_deref(),
                 helper,
-                &hidden,
-                self.glave_on_path.as_deref(),
+                around,
             );
             prepared.await.map(Arc::new)
         });
