@@ -15,10 +15,12 @@ use glave_ports::{
 use tokio::sync::Semaphore;
 
 /// A provider that answers each call with the next scripted result, or a plain answer when the
-/// script is empty, saying `says` as it begins when set.
+/// script is empty, saying `says` as it begins when set, then `calls_with` as a tool call's
+/// arguments.
 pub(crate) struct Fake {
     pub provider: String,
     pub says: Option<String>,
+    pub calls_with: Option<String>,
     pub script: Mutex<VecDeque<Result<Completion, ProviderError>>>,
     pub seen: Mutex<Vec<ModelRequest>>,
     /// When set, every call waits for a permit before answering.
@@ -32,6 +34,7 @@ impl Fake {
         Arc::new(Self {
             provider: provider.into(),
             says: None,
+            calls_with: None,
             script: Mutex::new(VecDeque::new()),
             seen: Mutex::new(Vec::new()),
             gate: None,
@@ -49,6 +52,7 @@ impl Fake {
         Arc::new(Self {
             provider: provider.into(),
             says: None,
+            calls_with: None,
             script: Mutex::new(VecDeque::new()),
             seen: Mutex::new(Vec::new()),
             gate: Some(gate),
@@ -96,6 +100,9 @@ impl Model for Fake {
             self.seen.lock().unwrap().push(request.clone());
             if let Some(says) = &self.says {
                 on_delta(Delta::Text(says.clone()));
+            }
+            if let Some(arguments) = &self.calls_with {
+                on_delta(Delta::Arguments(arguments.clone()));
             }
             if let Some(gate) = &self.gate {
                 gate.acquire().await.unwrap().forget();

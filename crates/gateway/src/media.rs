@@ -9,11 +9,6 @@ use serde_json::{Map, Value};
 
 use crate::target::Target;
 
-/// The most one image sent in reads, in tokens, as a call's worst case counts it: GPT Image reads
-/// every image in at high fidelity, 6,240 tokens for a 1536x1024 one beside its tiles' own
-/// (OpenAI's image guide, 2026-11-12), Nano Banana Pro 560.
-pub(crate) const IMAGE_IN_TOKENS: u64 = 8_192;
-
 /// What a target serving a media tool does, as the server's settings say.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tier {

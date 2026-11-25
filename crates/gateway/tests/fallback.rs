@@ -121,6 +121,7 @@ fn a_failure_that_may_pass_moves_to_the_next_target() {
         },
         ProviderError::Timeout { seconds: 300 },
         ProviderError::Transport("reset".into()),
+        ProviderError::Unreached("connection refused".into()),
     ] {
         let first = Fake::failing("first", error.clone());
         let second = Fake::new("second");

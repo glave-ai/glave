@@ -75,9 +75,23 @@ fn a_provider_may_write_dollars_with_an_exponent() {
     ] {
         assert_eq!(Money::reported_dollars(text), Some(usd(nanos)), "{text}");
     }
-    for bad in ["1e", "e3", "1e3.5", "1e2000000000", "+2", "two"] {
+    for bad in [
+        "1e",
+        "e3",
+        "1e3.5",
+        "1e2000000000",
+        "+2",
+        "two",
+        "-0.5",
+        "-4e-7",
+    ] {
         assert_eq!(Money::reported_dollars(bad), None, "{bad:?}");
     }
+    assert_eq!(
+        Money::reported_dollars("-0"),
+        Some(usd(0)),
+        "nothing is not below it"
+    );
 }
 
 #[test]

@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use glave_event::{CostKind, Currency, Money};
+use glave_event::{CostKind, Currency, Money, TokenCounts};
 use glave_ports::{
     Completion, Delta, EndUser, EndUsers, EventLog, Failure, Made, MediaAsk, ModelProvider,
     ModelRequest, ProviderError, Purpose, Route, SearchAsk, SearchResults, Served, Unpaid,
@@ -13,7 +13,7 @@ use tracing::Instrument as _;
 use crate::credits::{Charging, Credits, Paying};
 use crate::estimate::Needs;
 use crate::filtering::{Filtering, Keeping};
-use crate::media::{self, IMAGE_IN_TOKENS};
+use crate::media;
 use crate::plan::{candidates, prepare};
 use crate::price::Price;
 use crate::routes::{RouteError, Routes};
@@ -198,7 +198,8 @@ impl Gateway {
         paying: Option<&Paying<'_>>,
         call: &mut Call<'_>,
     ) -> Result<Made, ProviderError> {
-        let (sent, stripped) = prepare(request, sent_with, target, needs);
+        let paid = paying.is_some();
+        let (sent, stripped) = prepare(request, sent_with, (target, paid), needs);
         let effort = sent.effort.clone();
         let span = telemetry::model_call(request.purpose.id(), &target.name);
         let sent = match call {
@@ -227,7 +228,10 @@ impl Gateway {
                  files,
                  mut completion,
              }| {
-                if completion.cost.is_none() {
+                // An answer that reports nothing it used is not priced at nothing: credits count it
+                // otherwise ([`Paying::settle`]), and its receipt says no cost.
+                let reported_none = completion.usage.counts() == TokenCounts::default();
+                if completion.cost.is_none() && !reported_none {
                     completion.cost = target
                         .price
                         .as_ref()
@@ -269,7 +273,7 @@ impl Gateway {
             return Err(ProviderError::Unpaid(Unpaid::Unpriced { model }));
         };
         let worst = worst(target, request, needs, price);
-        let input = needs.fit_tokens();
+        let input = needs.read_tokens();
         let kind = if request.purpose.is_media() {
             CostKind::Media
         } else {
@@ -328,25 +332,22 @@ impl ModelProvider for Gateway {
     }
 }
 
-/// The most a call to `target` could cost at its `price`, in dollars: the input, estimated
-/// cautiously, each image a media call sends in among it, and the longest answer allowed, a
-/// media tier's own most.
+/// The most a call to `target` could cost at its `price`, in dollars: the input, its files' too,
+/// estimated cautiously but never more than the target's window holds, and the longest answer
+/// allowed, a media tier's own most.
 fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>, price: &Price) -> Money {
     let output = (target.tier.as_ref().map(|tier| tier.output_tokens))
-        .or(target.output_for(request, needs.reserve_tokens()))
-        // A turn's cap not sent to a model nothing is known of still bounds what is held.
-        .or(request.max_output_tokens)
+        .or(target.output_for(request, needs.reserve_tokens(), true))
         .or(target.can.max_output_tokens)
         .unwrap_or(DEFAULT_OUTPUT_TOKENS);
-    let images = if request.purpose.is_media() {
-        u64::try_from(request.files.len()).map_or(u64::MAX, |n| n.saturating_mul(IMAGE_IN_TOKENS))
-    } else {
-        0
-    };
-    let counts = glave_event::TokenCounts {
-        input: needs.reserve_tokens().saturating_add(images),
+    let input = needs.held_tokens();
+    let counts = TokenCounts {
+        input: target
+            .can
+            .context_tokens
+            .map_or(input, |window| input.min(window)),
         output: u64::from(output),
-        ..glave_event::TokenCounts::default()
+        ..TokenCounts::default()
     };
     Money {
         nanos: price.nanos(&counts),

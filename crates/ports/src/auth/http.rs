@@ -53,19 +53,21 @@ pub fn credential_header(
     Ok((name, value))
 }
 
-/// What a failed request means: no connection within [`CONNECT_TIMEOUT`], a silence past
-/// `idle`, or a broken connection. A connection that never opened sent nothing, so it is the
-/// provider unreached, not silent.
+/// What a failed request means: no connection within [`CONNECT_TIMEOUT`] or none at all, a
+/// silence past `idle`, or a broken connection. A connection that never opened sent nothing,
+/// so it is the provider unreached, neither silent nor billed.
 pub fn request_failed(error: reqwest::Error, idle: Duration) -> ProviderError {
     if error.is_connect() && error.is_timeout() {
         let host = error
             .url()
             .and_then(reqwest::Url::host_str)
             .unwrap_or("the provider");
-        ProviderError::Transport(format!(
+        ProviderError::Unreached(format!(
             "no connection to {host} within {}",
             spoken(CONNECT_TIMEOUT)
         ))
+    } else if error.is_connect() {
+        ProviderError::Unreached(cause_of(error))
     } else if error.is_timeout() {
         ProviderError::Timeout {
             seconds: idle.as_secs(),

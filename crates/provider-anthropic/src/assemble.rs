@@ -182,6 +182,9 @@ impl Assembler {
             }
             (Block::ToolUse { json, .. }, BlockDelta::InputJsonDelta { partial_json }) => {
                 json.push_str(&partial_json);
+                if !partial_json.is_empty() {
+                    on_delta(Delta::Arguments(partial_json));
+                }
             }
             (Block::Other, _) | (_, BlockDelta::Other) => {}
             (block, delta) => {

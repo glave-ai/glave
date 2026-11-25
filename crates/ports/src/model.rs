@@ -303,6 +303,9 @@ pub struct ToolSpec {
 pub enum Delta {
     Text(String),
     Reasoning(String),
+    /// A piece of a tool call's arguments as they come: shown as the call, once it is whole,
+    /// but counted as it comes, since its provider bills it as output.
+    Arguments(String),
 }
 
 /// A finished answer.
@@ -389,6 +392,10 @@ pub enum ProviderError {
     /// The provider could not be reached, or the connection broke.
     #[error("could not reach the model provider: {0}")]
     Transport(String),
+    /// No connection to the provider opened (its name not found, the connection refused or
+    /// never made): nothing was sent, so nothing was billed.
+    #[error("could not reach the model provider: {0}")]
+    Unreached(String),
     /// The provider's response did not follow its own protocol.
     #[error("the model provider sent a malformed response: {0}")]
     Protocol(String),

@@ -116,9 +116,10 @@ impl Assembler {
                     partial
                         .name
                         .push_str(function.name.as_deref().unwrap_or(""));
-                    partial
-                        .arguments
-                        .push_str(function.arguments.as_deref().unwrap_or(""));
+                    if let Some(arguments) = function.arguments.filter(|a| !a.is_empty()) {
+                        partial.arguments.push_str(&arguments);
+                        on_delta(Delta::Arguments(arguments));
+                    }
                 }
             }
         }

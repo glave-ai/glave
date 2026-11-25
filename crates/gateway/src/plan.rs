@@ -169,13 +169,13 @@ fn accepts(target: &Target, opaque: &Opaque) -> bool {
 
 /// `request` as `target` is sent it: under the target's model name, without opaque reasoning
 /// the target cannot accept, at the reasoning level [`Target::effort_for`] gives, for no longer
-/// an answer than [`Target::output_for`] allows, and asking what `route` does when the target
-/// is a router, saying it works for `end_user` where it works for someone. True when reasoning
-/// was stripped. Borrowed when nothing changes.
+/// an answer than [`Target::output_for`] allows (`paid` from credits or not), and asking what
+/// `route` does when the target is a router, saying it works for `end_user` where it works for
+/// someone. True when reasoning was stripped. Borrowed when nothing changes.
 pub(crate) fn prepare<'r>(
     request: &'r ModelRequest,
     (route, end_user): (Option<&Route>, Option<&EndUser>),
-    target: &Target,
+    (target, paid): (&Target, bool),
     needs: &Needs<'_>,
 ) -> (Cow<'r, ModelRequest>, bool) {
     let foreign = needs.reasoning.is_some()
@@ -184,7 +184,7 @@ pub(crate) fn prepare<'r>(
             _ => false,
         });
     let effort = target.effort_for(request.effort.as_deref());
-    let output = target.output_for(request, needs.reserve_tokens());
+    let output = target.output_for(request, needs.reserve_tokens(), paid);
     let unchanged = request.model == target.model
         && effort == request.effort.as_deref()
         && output == request.max_output_tokens;

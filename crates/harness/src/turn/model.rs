@@ -134,7 +134,7 @@ where
 
     /// Streams the answer to `request`, forwarding it live and watching its text for a loop:
     /// `None` when it repeated itself and was stopped; with how its reasoning went, and how many
-    /// bytes of it came, text and reasoning.
+    /// bytes of it came, text, reasoning and tool calls' arguments.
     async fn watched(
         &self,
         request: &ModelRequest,
@@ -145,7 +145,7 @@ where
         let repeating = AtomicBool::new(false);
         let mut came: u64 = 0;
         let mut forward = |delta: Delta| {
-            let (Delta::Text(text) | Delta::Reasoning(text)) = &delta;
+            let (Delta::Text(text) | Delta::Reasoning(text) | Delta::Arguments(text)) = &delta;
             came = came.saturating_add(u64::try_from(text.len()).unwrap_or(u64::MAX));
             if let Delta::Text(text) = &delta
                 && looping.see(text)

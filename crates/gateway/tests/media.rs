@@ -10,7 +10,7 @@ use glave_gateway::{Credits, Gateway, Routes};
 use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
 use glave_ports::{EventLog as _, MediaAsk, ModelProvider, Payer, ProviderError, Purpose, Scope};
 
-use crate::support::{Fake, block_on, dollars, org, person, price, request};
+use crate::support::{Fake, answer, block_on, dollars, org, person, price, request};
 
 #[test]
 fn a_media_call_goes_only_to_its_own_route_and_comes_back_with_what_it_made() {
@@ -166,6 +166,41 @@ fn a_media_call_left_unanswered_is_charged_its_hold_and_one_refused_nothing() {
         balance(&credits),
         1_000 - HELD,
         "no failed generation is billed"
+    );
+}
+
+#[test]
+fn a_media_answer_that_says_nothing_of_what_it_used_is_charged_its_hold() {
+    let credits = funded(1_000);
+    let fake = Fake::new("images");
+    fake.script
+        .lock()
+        .unwrap()
+        .push_back(Ok(answer("images", "painter", 0, 0)));
+    block_on!(painting(&fake, &credits).make(&paid(), &MediaAsk::default())).unwrap();
+    assert_eq!(balance(&credits), 1_000 - HELD, "never nothing");
+}
+
+#[test]
+fn a_media_call_that_never_reached_its_provider_is_charged_nothing_and_its_fallback_once() {
+    let credits = funded(1_000);
+    let unreached = Fake::failing("down", ProviderError::Unreached("refused".into()));
+    let painters = vec![
+        unreached.target("painter").with_price(price(1_000_000)),
+        Fake::new("up")
+            .target("painter")
+            .with_price(price(1_000_000)),
+    ];
+    let routes = Routes::new(vec![Fake::new("chat").target("m")])
+        .unwrap()
+        .with_route(Purpose::ImageGenerate, painters)
+        .unwrap();
+    let gateway = Gateway::new(routes).with_credits(Arc::clone(&credits));
+    block_on!(gateway.make(&paid(), &MediaAsk::default())).unwrap();
+    assert_eq!(
+        balance(&credits),
+        1_000 - 110,
+        "the fake's 110 tokens, once"
     );
 }
 

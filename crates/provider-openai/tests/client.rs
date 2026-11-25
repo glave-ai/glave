@@ -343,17 +343,20 @@ mod over_http {
     }
 
     #[test]
-    fn an_unreachable_provider_is_a_transport_error() {
+    fn an_unreachable_provider_is_unreached_and_billed_nothing() {
         // Port 1: a privileged port nothing listens on, and never one of the ephemeral ports the
         // other tests' fake servers take. A port bound and released here could be taken by one
         // of them before the request, which then answers it.
         let (result, _) = ask(&provider("http://127.0.0.1:1/v1", None));
         match result {
-            Err(ProviderError::Transport(cause)) => assert!(
-                cause.to_ascii_lowercase().contains("refused"),
-                "names what happened, not just that a request failed: {cause}"
-            ),
-            other => panic!("expected a transport error, got {other:?}"),
+            Err(error @ ProviderError::Unreached(_)) => {
+                assert!(
+                    error.to_string().to_ascii_lowercase().contains("refused"),
+                    "names what happened, not just that a request failed: {error}"
+                );
+                assert!(!error.unanswered(), "nothing was sent, so nothing billed");
+            }
+            other => panic!("expected the provider unreached, got {other:?}"),
         }
     }
 
@@ -372,6 +375,7 @@ mod over_http {
         });
         let error = result.unwrap_err();
         assert_eq!(error.failure(), Failure::Unreachable, "{error:?}");
+        assert!(!error.unanswered(), "nothing was sent, so nothing billed");
         assert!(
             error
                 .to_string()
