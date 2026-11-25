@@ -119,6 +119,11 @@ mod judging {
             "find . -name '*.o' -exec rm {} \\;",
             "find . -type d -name node_modules -exec rm -rf {} +",
             "find src -execdir mv {} {}.bak ';'",
+            "find . -type f -name '*.tmp' -delete",
+            "find . -maxdepth 1 -name '*.log' -exec rm {} +",
+            "find -- src -mindepth 1 -delete",
+            "xargs -a list.txt rm",
+            "find . -exec rm -rf {}",
             "git ls-files -z | xargs -0 rm",
             "xargs -I{} cp {} out/",
             "env -S 'cargo test'",
@@ -180,6 +185,19 @@ mod judging {
             "find . -exec rm -rf ~ \\;",
             "find . -exec sh -c 'rm -rf ~' \\;",
             "find \"$DIR\" -exec rm -rf {} +",
+            // With nothing tested first, find takes the folder it searches too.
+            "find . -delete",
+            "find -maxdepth 3 -delete",
+            "find . -exec rm -rf {} +",
+            "find . -depth -exec rm -r {} ';'",
+            "find -- ~ -delete",
+            "find -H -- /usr -name x -delete",
+            // The values xargs and env take are not the command.
+            "xargs -a list rm -rf",
+            "xargs --arg-file list rm -rf",
+            "xargs -J % rm -rf % ",
+            "env -P /bin -S 'rm -rf ~'",
+            "env -P/bin rm -rf ~",
         ] {
             assert_eq!(kind(script), Some(Kind::Deletes), "{script}");
         }
@@ -543,6 +561,33 @@ mod judging {
             "it deletes /home/ana/café, outside the project"
         );
         assert_eq!(verdict("cat 日本.txt"), Verdict::ReadOnly);
+    }
+
+    /// Scripts that run scripts, many times over (`find`'s every folder runs `find` on every
+    /// folder, eight deep, or a long folder stood in for `{}` again and again), are read only so
+    /// far: past that the command is unreadable, and asks, with little read and little held.
+    #[test]
+    fn a_line_that_multiplies_what_it_runs_is_unreadable_not_read() {
+        let roots: Vec<String> = (0..40).map(|n| format!("d{n}")).collect();
+        let find = format!("find {} -exec ", roots.join(" "));
+        let nested = format!("{}rm -rf {{}}{}", find.repeat(8), " ';'".repeat(8));
+        let unended = format!("{}rm -rf {{}}", find.repeat(8));
+        let clauses = format!(
+            "find {} {}",
+            roots.join(" "),
+            "-exec true {} ';' ".repeat(400)
+        );
+        let long = format!(
+            "find {} -name x -exec echo {}",
+            "a".repeat(5000),
+            "{}".repeat(5000)
+        );
+        let long = format!("{long} ';'");
+        for script in [nested, clauses, long] {
+            assert_eq!(kind(&script), Some(Kind::Unreadable), "{:.80}", script);
+        }
+        // With nothing to end it, find runs no command at all.
+        assert_eq!(verdict(&unended), Verdict::Unknown);
     }
 
     const RISKY: &[&str] = &[

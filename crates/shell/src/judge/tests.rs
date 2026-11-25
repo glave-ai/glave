@@ -23,9 +23,10 @@ const REASONS: &[(&str, &str)] = &[
         "it deletes what xargs reads, which glave cannot tell in advance",
     ),
     ("find / -delete", "it deletes /"),
+    ("find . -delete", "it deletes /work/app"),
     (
-        "find ~ -delete",
-        "it deletes /home/ana, outside the project",
+        "find ~/notes -name x -delete",
+        "it deletes /home/ana/notes, outside the project",
     ),
     (
         "rm -rf ~/notes",

@@ -32,7 +32,15 @@ fn wrapped(words: &[Word]) -> Option<&[Word]> {
         "env" => {
             let mut at = flags(
                 words,
-                &["-u", "-C", "-S", "--split-string", "--unset", "--chdir"],
+                &[
+                    "-u",
+                    "-C",
+                    "-P",
+                    "-S",
+                    "--split-string",
+                    "--unset",
+                    "--chdir",
+                ],
             );
             while words
                 .get(at)
@@ -45,7 +53,30 @@ fn wrapped(words: &[Word]) -> Option<&[Word]> {
         }
         "timeout" => flags(words, &["-s", "-k", "--signal", "--kill-after"]).saturating_add(1),
         "nice" | "ionice" => flags(words, &["-n", "-c"]),
-        "stdbuf" | "xargs" => flags(words, &["-I", "-n", "-P", "-L", "-d", "-E", "-s"]),
+        "stdbuf" => flags(words, &["-i", "-o", "-e"]),
+        // GNU's and BSD's options that take a value (`-a` a file to read, BSD's `-J` and `-R`).
+        "xargs" => flags(
+            words,
+            &[
+                "-a",
+                "-d",
+                "-E",
+                "-I",
+                "-J",
+                "-L",
+                "-n",
+                "-P",
+                "-R",
+                "-s",
+                "-S",
+                "--arg-file",
+                "--delimiter",
+                "--max-args",
+                "--max-chars",
+                "--max-procs",
+                "--process-slot-var",
+            ],
+        ),
         "nohup" | "time" | "command" | "builtin" | "exec" => 1,
         _ => return None,
     };
@@ -111,13 +142,13 @@ fn split_at(words: &[Word]) -> Option<(String, usize)> {
             }
             continue;
         }
-        // Short options, one or several to a word: `-S` takes the rest as its string, `-u` and
-        // `-C` a value.
+        // Short options, one or several to a word: `-S` takes the rest as its string, `-u`,
+        // `-C` and BSD's `-P` a value.
         for (index, option) in text.char_indices().skip(1) {
             let rest = text.get(index.saturating_add(1)..).unwrap_or_default();
             match option {
                 'S' => return given(rest),
-                'u' | 'C' => {
+                'u' | 'C' | 'P' => {
                     if rest.is_empty() {
                         at = at.saturating_add(1);
                     }
