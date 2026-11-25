@@ -31,8 +31,8 @@ use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 use webauthn_rs::prelude::{
     AuthenticationResult, DiscoverableAuthentication, DiscoverableKey, Passkey,
-    PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential, RegisterPublicKeyCredential,
-    Url, Webauthn, WebauthnBuilder,
+    PasskeyRegistration, PublicKeyCredential, RegisterPublicKeyCredential, Url, Webauthn,
+    WebauthnBuilder, WebauthnError,
 };
 
 use self::sealed::{Kind, Request};
@@ -241,6 +241,7 @@ impl Browsers {
             .webauthn
             .start_passkey_registration(relying.handle, "glave", "glave", Some(exclude))
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
+        let registration: PasskeyRegistration = stripped(&registration, "/rs/exclude_credentials")?;
         let mut request = Request::new(Kind::Make, relying.handle, now, registration)?;
         request.code = code;
         request.carried = carried;
@@ -344,6 +345,17 @@ impl Browsers {
             self.sealer
                 .spend(relying.handle, (making.id, making.began), now)?;
         }
+        // The passkeys the request named for the browser to make none again, as kept now.
+        let again = self
+            .state()
+            .passkeys
+            .iter()
+            .filter(|kept| relying.made(kept))
+            .any(|kept| kept.credential.cred_id() == passkey.cred_id());
+        if again {
+            let excluded = WebauthnError::CredentialExcludedFromRequest;
+            return Err(BrowserError::Passkey(excluded.to_string()));
+        }
         if let Some(code) = making.code {
             spend_setup(&mut self.state(), &code, now)?;
         }
@@ -381,12 +393,8 @@ impl Browsers {
             .webauthn
             .start_passkey_authentication(&passkeys)
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
-        let request = Request::new(
-            Kind::Use,
-            relying.handle,
-            self.clock.now(),
-            unnamed(&authentication)?,
-        )?;
+        let state: DiscoverableAuthentication = stripped(&authentication, "/ast/credentials")?;
+        let request = Request::new(Kind::Use, relying.handle, self.clock.now(), state)?;
         ceremony(self.sealer.seal(&request)?, &options)
     }
 
@@ -506,18 +514,22 @@ enum Proved {
     Carried,
 }
 
-/// `authentication`'s state without the passkeys it names, its answer checked against the one
-/// it answered with as kept then: the state a request for any passkey keeps, so the request
-/// the browser holds stays small however many passkeys the person has.
-fn unnamed(
-    authentication: &PasskeyAuthentication,
-) -> Result<DiscoverableAuthentication, BrowserError> {
+/// A request's `state` without the passkeys it names at `named`, so the request the browser
+/// holds stays small however many passkeys the person has, up to 32 with ids of up to 1,023
+/// bytes each. Its answer is checked against the person's passkeys as they are kept then: a
+/// sign-in's against the one it answered with, as a request for any passkey's is (the state
+/// it becomes); a new passkey's against those made already, which the request named for the
+/// browser to make none again.
+fn stripped<T: serde::de::DeserializeOwned>(
+    state: &impl serde::Serialize,
+    named: &str,
+) -> Result<T, BrowserError> {
     let refused = |error: serde_json::Error| BrowserError::Passkey(error.to_string());
-    let mut state = serde_json::to_value(authentication).map_err(refused)?;
-    let named = state
-        .pointer_mut("/ast/credentials")
-        .ok_or_else(|| BrowserError::Passkey("a sign-in's state names no passkeys".into()))?;
-    *named = serde_json::Value::Array(Vec::new());
+    let mut state = serde_json::to_value(state).map_err(refused)?;
+    let passkeys = state.pointer_mut(named).ok_or_else(|| {
+        BrowserError::Passkey(format!("a passkey request's state has no {named}"))
+    })?;
+    *passkeys = serde_json::Value::Array(Vec::new());
     serde_json::from_value(state).map_err(refused)
 }
 

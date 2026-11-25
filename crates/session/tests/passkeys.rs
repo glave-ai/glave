@@ -342,3 +342,55 @@ fn a_server_here_makes_a_passkey_at_localhost_that_signs_another_browser_in() {
         served.close().await;
     });
 }
+
+/// The longest a passkey request the browser holds grows to fits a request from someone not
+/// signed in: making the 32nd passkey, the most kept, through a setup link, the 31 before it
+/// each with a credential id of 256 bytes, all named in the request so the browser makes none
+/// again, and signing in after with any of them.
+#[test]
+fn a_passkey_request_with_the_most_passkeys_long_ids_fits_a_request_from_anyone() {
+    block_on!(async {
+        let dir = folder("passkeys-longest");
+        let token = LocalToken::new([8; 32]);
+        let served = serve(&dir, true, &token).await;
+        let long = || Authenticator::with_credential_length(ORIGIN, 256).unwrap();
+        let mut first = long();
+        let session = set_up(&served, &token, &mut first).await;
+        let mut person = elsewhere(&served, Some(session));
+        for _ in 1..31 {
+            let options = asked(&mut person, &Request::PasskeyAddOptions {}).await;
+            let added = Request::PasskeyAdd {
+                ceremony: options["ceremony"].as_str().unwrap().to_owned(),
+                credential: long().create(&options["options"]).unwrap(),
+                name: Some("k".repeat(64)),
+            };
+            assert!(asked(&mut person, &added).await["passkey"].is_object());
+        }
+        let mut here = Web::new(&served, Some(token.reveal().to_owned()));
+        let setup = asked(&mut here, &Request::SigninSetup {}).await;
+        let code = glave_event::Secret::new(setup["code"].as_str().unwrap());
+        let mut anyone = elsewhere(&served, None);
+        let create = Request::PasskeyCreateOptions {
+            code,
+            link: LinkKind::Setup,
+        };
+        let options = asked(&mut anyone, &create).await;
+        let excluded = options["options"]["publicKey"]["excludeCredentials"].as_array();
+        assert_eq!(excluded.map(Vec::len), Some(31), "{options}");
+        let mut last = long();
+        let created = Request::PasskeyCreate {
+            ceremony: options["ceremony"].as_str().unwrap().to_owned(),
+            credential: last.create(&options["options"]).unwrap(),
+            name: Some("k".repeat(64)),
+            person_name: None,
+        };
+        // Glave takes at most 16 KiB from someone not signed in (`MAX_OPEN_BODY`).
+        let sent = serde_json::to_vec(&created).unwrap().len();
+        assert!(sent < 12 * 1024, "{sent} bytes, too near 16 KiB");
+        let made = asked(&mut anyone, &created).await;
+        assert!(made["session"].is_string(), "{made}");
+        let again = sign_in(&served, &mut last).await;
+        assert!(again["session"].is_string(), "{again}");
+        served.close().await;
+    });
+}

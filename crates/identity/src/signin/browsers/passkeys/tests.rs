@@ -237,6 +237,70 @@ fn setup_codes_and_requests_expire_and_codes_that_are_not_one_block_no_one() {
     });
 }
 
+/// A sign-in is answered once, and never with a passkey removed since it began.
+#[test]
+fn a_sign_in_is_answered_once_and_never_by_a_passkey_removed_since_it_began() {
+    block_on!(async {
+        let clock = ManualClock::at_second(START);
+        let browsers = open(store().log(), &clock).await;
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        set_up(&browsers, &mut phone).await;
+        let asked = browsers.get_options().unwrap();
+        let answer = phone.get(&asked.options).unwrap();
+        browsers.get(&asked.id, &answer).await.unwrap();
+        // Signed again, its counter past the last: only the request being spent refuses it.
+        let again = phone.get(&asked.options).unwrap();
+        assert!(matches!(
+            browsers.get(&asked.id, &again).await,
+            Err(BrowserError::Ceremony)
+        ));
+        let mut laptop = Authenticator::new(ORIGIN).unwrap();
+        let (removed, _) = set_up(&browsers, &mut laptop).await;
+        let asked = browsers.get_options().unwrap();
+        let answer = laptop.get(&asked.options).unwrap();
+        browsers.remove(&removed.id).await.unwrap();
+        assert!(matches!(
+            browsers.get(&asked.id, &answer).await,
+            Err(BrowserError::Unknown(_))
+        ));
+    });
+}
+
+/// A request to make a passkey is answered only as what proved it: a setup code's through
+/// `create`, one the person signed in began through `add`, and neither the other way; and
+/// never for a passkey made already.
+#[test]
+fn a_request_to_make_a_passkey_is_answered_only_as_what_proved_it() {
+    block_on!(async {
+        let clock = ManualClock::at_second(START);
+        let browsers = open(store().log(), &clock).await;
+        let code = browsers.setup().unwrap();
+        let by_code = browsers.create_options(Proof::Code(code.expose())).unwrap();
+        let mut phone = Authenticator::new(ORIGIN).unwrap();
+        let made = phone.create(&by_code.options).unwrap();
+        assert!(matches!(
+            browsers.add(&by_code.id, &made, None).await,
+            Err(BrowserError::Ceremony)
+        ));
+        let signed_in = browsers.create_options(Proof::SignedIn).unwrap();
+        let mut laptop = Authenticator::new(ORIGIN).unwrap();
+        let added = laptop.create(&signed_in.options).unwrap();
+        assert!(matches!(
+            browsers.create(&signed_in.id, &added, None).await,
+            Err(BrowserError::Ceremony)
+        ));
+        assert!(browsers.create(&by_code.id, &made, None).await.is_ok());
+        assert!(browsers.add(&signed_in.id, &added, None).await.is_ok());
+        // A passkey made already is never made again, though its request names none.
+        let again = browsers.create_options(Proof::SignedIn).unwrap();
+        let made_again = phone.create(&again.options).unwrap();
+        assert!(matches!(
+            browsers.add(&again.id, &made_again, None).await,
+            Err(BrowserError::Passkey(_))
+        ));
+    });
+}
+
 #[test]
 fn a_server_reached_nowhere_makes_no_passkeys_and_only_once_one_exists_signs_in() {
     block_on!(async {

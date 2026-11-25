@@ -23,7 +23,7 @@ const ATTESTED: u8 = 0x40;
 pub struct Authenticator {
     origin: String,
     key: EcdsaKeyPair,
-    id: [u8; 16],
+    id: Vec<u8>,
     /// The user handle of the passkey it made, in base64url: none until it made one.
     handle: Option<String>,
     counter: u32,
@@ -33,15 +33,23 @@ pub struct Authenticator {
 impl Authenticator {
     /// An authenticator for the page at `origin`, such as `https://glave.test`, with a new key.
     pub fn new(origin: &str) -> Result<Self, Unspecified> {
+        Self::with_credential_length(origin, 16)
+    }
+
+    /// An authenticator for the page at `origin` whose passkey's credential id is `length`
+    /// bytes, as long as a security key's may be (WebAuthn allows 1,023).
+    pub fn with_credential_length(origin: &str, length: u16) -> Result<Self, Unspecified> {
         let random = SystemRandom::new();
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &random)?;
         let key = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref())?;
         let named = digest(&SHA256, pkcs8.as_ref());
-        let id = named
+        let id: Vec<u8> = named
             .as_ref()
-            .get(..16)
-            .and_then(|start| <[u8; 16]>::try_from(start).ok())
-            .ok_or(Unspecified)?;
+            .iter()
+            .copied()
+            .cycle()
+            .take(usize::from(length))
+            .collect();
         Ok(Self {
             origin: origin.to_owned(),
             key,
@@ -54,7 +62,7 @@ impl Authenticator {
 
     /// The credential id of its passkey, in base64url.
     pub fn credential(&self) -> String {
-        URL_SAFE_NO_PAD.encode(self.id)
+        URL_SAFE_NO_PAD.encode(&self.id)
     }
 
     /// The user handle its passkey was made for, in base64url, once it made one.
@@ -88,7 +96,8 @@ impl Authenticator {
         let mut data = self.data(options, PRESENT | VERIFIED | ATTESTED);
         // The authenticator's model (none), and the credential: its id and key.
         data.extend_from_slice(&[0; 16]);
-        data.extend_from_slice(&[0, 16]);
+        let length = u16::try_from(self.id.len()).map_err(|_| Unspecified)?;
+        data.extend_from_slice(&length.to_be_bytes());
         data.extend_from_slice(&self.id);
         data.extend_from_slice(&key);
         let mut attestation = vec![0xa3];
@@ -99,8 +108,8 @@ impl Authenticator {
         attestation.extend_from_slice(&text("authData"));
         attestation.extend_from_slice(&bytes(&data)?);
         Ok(json!({
-            "id": URL_SAFE_NO_PAD.encode(self.id),
-            "rawId": URL_SAFE_NO_PAD.encode(self.id),
+            "id": URL_SAFE_NO_PAD.encode(&self.id),
+            "rawId": URL_SAFE_NO_PAD.encode(&self.id),
             "type": "public-key",
             "response": {
                 "attestationObject": URL_SAFE_NO_PAD.encode(attestation),
@@ -121,8 +130,8 @@ impl Authenticator {
         signed.extend_from_slice(digest(&SHA256, &client).as_ref());
         let signature = self.key.sign(&self.random, &signed)?;
         Ok(json!({
-            "id": URL_SAFE_NO_PAD.encode(self.id),
-            "rawId": URL_SAFE_NO_PAD.encode(self.id),
+            "id": URL_SAFE_NO_PAD.encode(&self.id),
+            "rawId": URL_SAFE_NO_PAD.encode(&self.id),
             "type": "public-key",
             "response": {
                 "authenticatorData": URL_SAFE_NO_PAD.encode(data),
