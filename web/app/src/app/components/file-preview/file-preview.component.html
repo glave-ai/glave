@@ -30,10 +30,17 @@
     >
       {{ copy.download }}
     </button>
-    @if (shared()) {
+    @if (linked()) {
+      <button glzButton data-testid="file-preview-share-link" (click)="shareLink()">
+        {{ copy.share }}
+      </button>
+    } @else if (shared()) {
       <button glzButton data-testid="file-preview-share" (click)="share()">
         {{ copy.share }}
       </button>
     }
   </div>
 </section>
+@if (sharedOf(); as of) {
+  <app-share-dialog [of]="of" [name]="file().name" [(open)]="sharing" (changed)="linkChanged()" />
+}

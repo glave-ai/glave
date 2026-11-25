@@ -17,6 +17,18 @@
         {{ copy.open }}
       </button>
     }
+    @if (shareOf()) {
+      <button
+        glzButton
+        size="sm"
+        class="share"
+        data-testid="made-file-share"
+        [attr.aria-label]="shareLabel()"
+        (click)="share()"
+      >
+        {{ copy.share }}
+      </button>
+    }
     @if (kept()) {
       <button
         glzIconButton
@@ -32,3 +44,6 @@
     }
   </span>
 </div>
+@if (sharedOf(); as of) {
+  <app-share-dialog [of]="of" [name]="file().name" [(open)]="sharing" (changed)="shared()" />
+}

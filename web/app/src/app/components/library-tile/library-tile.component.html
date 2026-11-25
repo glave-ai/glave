@@ -12,6 +12,9 @@
 <span class="name" dir="auto" data-testid="library-name">{{ shown().item.name }}</span>
 <span class="meta">
   <span data-testid="library-when">{{ shown().when }}</span>
+  @if (shown().item.shared; as said) {
+    <glz-badge data-testid="library-shared" [title]="said">{{ copy.shared }}</glz-badge>
+  }
   @if (shown().chat; as chat) {
     <a class="chat" dir="auto" data-testid="library-chat" [routerLink]="chat.link">{{
       chat.title

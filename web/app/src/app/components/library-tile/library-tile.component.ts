@@ -10,6 +10,7 @@ import {
   signal,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { GlzBadgeComponent } from '@glave/glaze';
 
 import type { ShownItem } from '../../lib/library';
 import { FilesService, drawn } from '../../services/files.service';
@@ -18,14 +19,15 @@ import { FilesService, drawn } from '../../services/files.service';
 const AHEAD = '200px';
 
 /**
- * One item of the Library's grid: its picture, which opens it, its name, when it was made and
- * the chat it came from, a link there while that chat is. Its picture is read through the server
+ * One item of the Library's grid: its picture, which opens it, its name, when it was made, the
+ * chat it came from, a link there while that chat is, and Shared where it is, the server's
+ * sentence of with whom as its title. Its picture is read through the server
  * only while the tile is in view or near it, and let go of once it scrolls away, so a Library of
  * hundreds reads only what the person comes to see.
  */
 @Component({
   selector: 'app-library-tile',
-  imports: [RouterLink],
+  imports: [GlzBadgeComponent, RouterLink],
   templateUrl: './library-tile.component.html',
   styleUrl: './library-tile.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -34,6 +36,10 @@ export class LibraryTileComponent {
   readonly shown = input.required<ShownItem>();
   /** Emitted when the person opens the item. */
   readonly opened = output();
+
+  protected readonly copy = {
+    shared: $localize`:@@libraryTile.shared:Shared`,
+  } as const;
 
   private readonly files = inject(FilesService);
   /** Whether the tile is in view or near it: always, where the browser can't say. */
