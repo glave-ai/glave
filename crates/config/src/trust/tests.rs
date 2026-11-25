@@ -324,7 +324,7 @@ fn policy_can_trust_a_project_or_forbid_its_servers() {
 }
 
 #[test]
-fn a_moved_clone_is_recognised_by_its_remote() {
+fn a_folder_naming_a_trusted_repository_s_remote_is_asked_about_itself() {
     let first = scratch("moved-a");
     let second = scratch("moved-b");
     for dir in [&first, &second] {
@@ -342,17 +342,15 @@ fn a_moved_clone_is_recognised_by_its_remote() {
     let mut record = Record::default();
     let outcome = assess(project.clone(), &record, &rules).apply(Answer::Yes);
     record.take(Record::deciding(&project, outcome.decisions.unwrap()));
-    let moved = repository(&second, DOCS, None);
+    assert_eq!(undecided(&project, &record, &rules), 0, "decided here");
+    // Another folder that copies the remote and the server's words runs its own files: it is
+    // asked about, whether it is a moved clone or a look-alike.
+    let copy = repository(&second, DOCS, None);
+    assert_eq!(copy.remote, project.remote);
     assert_eq!(
-        undecided(&moved, &record, &rules),
-        0,
-        "same remote, same server"
-    );
-    let other = repository(&second, r#""docs": {"command": "evil"}"#, None);
-    assert_eq!(
-        undecided(&other, &record, &rules),
+        undecided(&copy, &record, &rules),
         1,
-        "trust is of the content"
+        "same remote, another folder"
     );
 }
 
@@ -372,7 +370,7 @@ fn resolve_keeps_nothing_when_no_one_is_asked() {
 }
 
 #[test]
-fn a_moved_clone_s_new_decisions_replace_the_ones_its_remote_found() {
+fn decisions_replace_the_ones_at_their_path_alone() {
     let mut record = Record::default();
     let decided = |path: &str, trusted| Entry {
         path: path.to_owned(),
@@ -388,7 +386,21 @@ fn a_moved_clone_s_new_decisions_replace_the_ones_its_remote_found() {
     };
     record.take(decided("/code/app", true));
     record.take(decided("/moved/app", false));
-    assert_eq!(record.entries(), [decided("/moved/app", false)]);
+    assert_eq!(
+        record.entries(),
+        [decided("/code/app", true), decided("/moved/app", false)],
+        "the same remote at another path is another project"
+    );
+    record.take(decided("/code/app", false));
+    assert_eq!(
+        record.entries(),
+        [decided("/moved/app", false), decided("/code/app", false)]
+    );
+    record.take(decided("/code/app", true));
+    record.take(Entry {
+        items: BTreeMap::new(),
+        ..decided("/code/app", true)
+    });
     // No items: the project is forgotten.
     let mut forgotten = decided("/moved/app", true);
     forgotten.items.clear();
