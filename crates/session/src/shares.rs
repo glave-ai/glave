@@ -29,6 +29,9 @@ use crate::words::Sentence;
 /// it, sharing is refused, saying so.
 const MOST_LINKS: usize = 100_000;
 
+/// The most live links one person holds, so no one fills the store's room alone.
+const MOST_EACH: usize = 1_000;
+
 /// Where shared files are served: each at a name of its own under the share domain
 /// (`[serve] shares`), and where reports of a shared page go (`[serve] report`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,9 +55,12 @@ impl ShareDomain {
         }
     }
 
-    /// The id of the share a request's `Host` names, when it names one under this domain: one
-    /// label of a link's id, then the domain, with its port where it names one, else any.
-    pub(crate) fn id_in<'a>(&self, host: &'a str) -> Option<&'a str> {
+    /// What a request's `Host` names of this domain: `None` where it is not the domain nor a
+    /// name under it; else the id of a share, where it is one label written as a link's id
+    /// directly under the domain, or an empty id, which no share has, for any other name there,
+    /// the bare domain among them. `localhost` alone, which glave's own pages may share, claims
+    /// only the names under it.
+    pub(crate) fn claims<'a>(&self, host: &'a str) -> Option<&'a str> {
         let host = host.trim_end_matches('.');
         let authority = self.origin.authority();
         let named = if authority.contains(':') {
@@ -65,8 +71,13 @@ impl ShareDomain {
                 _ => host,
             }
         };
-        let (id, rest) = named.split_once('.')?;
-        (rest.eq_ignore_ascii_case(authority) && is_link_id(id)).then_some(id)
+        let lower = named.to_ascii_lowercase();
+        if lower == authority {
+            return (self.origin.host() != "localhost").then_some("");
+        }
+        let under = lower.strip_suffix(authority)?.strip_suffix('.')?;
+        let id = named.get(..under.len()).filter(|id| is_link_id(id));
+        Some(id.unwrap_or_default())
     }
 }
 
@@ -208,17 +219,21 @@ where
         let shareable = self.shareable(caller, &setting.of).await?;
         let scope = shareable.scope;
         let shares = self.shares_in(&scope).await?;
-        let current = shares
-            .into_values()
-            .find(|(_, set)| set.of == shareable.from);
+        // Two requests racing may each have made a share of the file: the first is kept, and
+        // any other stopped with it, so one Only you always stops every one.
+        let mut live = (shares.into_values()).filter(|(_, set)| set.of == shareable.from);
+        let current = live.next();
+        let extra: Vec<ShareSet> = live.map(|(_, set)| set).collect();
+        let from = shareable.from.clone();
         let Some(audience) = setting.audience else {
-            if let Some((_, set)) = current {
-                self.stop_share(&scope, &set).await?;
-            }
+            self.stop_shares(&scope, |of| *of == from).await?;
             return Ok(Reply::Done {});
         };
+        for set in &extra {
+            self.stop_share(&scope, set).await?;
+        }
         let set = match current {
-            None => self.new_share(shareable, audience).await?,
+            None => self.new_share(caller, shareable, audience).await?,
             Some((_, before)) if setting.update && before.blob.sha256 != shareable.blob.sha256 => {
                 let set = self
                     .held_copy(&shareable, before.share, before.link.clone(), audience)
@@ -243,26 +258,74 @@ where
     /// a link that opens nothing, then its copy held and the share recorded.
     async fn new_share(
         &self,
+        caller: &Caller,
         shareable: Shareable,
         audience: Audience,
     ) -> Result<ShareSet, ApiError> {
-        let listed = self.links_held().await?;
-        if listed >= MOST_LINKS {
+        let theirs = self.libraries(caller).await?;
+        let theirs: Vec<Located> = theirs.iter().map(|scope| scope.located()).collect();
+        let (listed, each) = self.links_held(&theirs).await?;
+        if listed >= MOST_LINKS || each >= MOST_EACH {
+            let most = if each >= MOST_EACH {
+                MOST_EACH
+            } else {
+                MOST_LINKS
+            };
             return Err(ApiError::new(
                 code::LIMIT,
-                Sentence::TooManyShares {
-                    most: MOST_LINKS as u64,
-                },
+                Sentence::TooManyShares { most: most as u64 },
             ));
         }
         let harness = &self.inner.harness;
         let share = ShareId::new(harness.clock().now(), harness.entropy().bytes()?)?;
         let link = new_link_id()?;
-        self.place_link(&link_key(&link), shareable.scope.located())
+        let key = link_key(&link);
+        self.place_link(&key, shareable.scope.located()).await?;
+        let made = async {
+            let set = self.held_copy(&shareable, share, link, audience).await?;
+            self.record_share(&shareable.scope, &set).await?;
+            Ok::<_, ApiError>(set)
+        };
+        match made.await {
+            Ok(set) => Ok(set),
+            Err(error) => {
+                // Unlisted again, so a share that failed counts against nothing.
+                if self.unplace_link(&key).await.is_err() {
+                    tracing::warn!("a link a failed share listed stays listed, opening nothing");
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Stops every live share in `scope` whose file `stops` picks: a chat deleted, an item
+    /// taken out of the Library, or Only you.
+    pub(crate) async fn stop_shares(
+        &self,
+        scope: &Scope,
+        stops: impl Fn(&SharedFrom) -> bool,
+    ) -> Result<(), ApiError> {
+        let shares = self.shares_in(scope).await?;
+        for (_, set) in shares.into_values().filter(|(_, set)| stops(&set.of)) {
+            self.stop_share(scope, &set).await?;
+        }
+        Ok(())
+    }
+
+    /// Answers `thread/delete`: deletes it, then stops the shares of every file it made.
+    pub(crate) async fn delete_thread(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+    ) -> Result<Reply, ApiError> {
+        let reply = self
+            .change(caller, thread, glave_harness::Change::Delete)
             .await?;
-        let set = self.held_copy(&shareable, share, link, audience).await?;
-        self.record_share(&shareable.scope, &set).await?;
-        Ok(set)
+        let scope = self.scope_of(thread)?;
+        let made_here =
+            |of: &SharedFrom| matches!(of, SharedFrom::File { thread: at, .. } if *at == thread);
+        self.stop_shares(&scope, made_here).await?;
+        Ok(reply)
     }
 
     /// `share` of `shareable` as it is now, its copy and preview held under a new holder.
@@ -384,7 +447,17 @@ where
         };
         // glave's own: serving a link reads the one share it names, for whoever has it.
         let scope = Scope::glaves_own(org, project);
-        let shares = self.shares_in(&scope).await?;
+        // A project removed, or one whose records can no longer be opened (erased), holds no
+        // live share: its links open nothing, as one never made.
+        let at = Located { org, project };
+        let readable = match self.removed(at).await {
+            Ok(removed) => (!removed).then_some(()),
+            Err(_) => None,
+        };
+        let shares = match readable {
+            Some(()) => self.shares_in(&scope).await.unwrap_or_default(),
+            None => BTreeMap::new(),
+        };
         let found = shares.into_values().find(|(_, set)| set.link == id);
         Ok(found.map(|(_, set)| (scope, set)))
     }

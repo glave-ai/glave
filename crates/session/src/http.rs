@@ -417,11 +417,17 @@ where
     }
 }
 
-/// The id of the share whose own name a request with `headers` came to, where the server
-/// shares files at all.
+/// What a request with `headers` came to of the server's share domain, where it shares files at
+/// all: `None` where it came to no name of it, else the share's id at its own name, or an empty
+/// id, which opens nothing, at any other name there.
 fn shared_id<P, L, B>(server: &Server<P, L, B>, headers: &HeaderMap) -> Option<String> {
     let host = headers.get(header::HOST)?.to_str().ok()?;
-    server.inner.shares.as_ref()?.id_in(host).map(str::to_owned)
+    server
+        .inner
+        .shares
+        .as_ref()?
+        .claims(host)
+        .map(str::to_owned)
 }
 
 /// Whether `method` reads a page rather than calling the API.

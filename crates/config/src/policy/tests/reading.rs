@@ -706,6 +706,8 @@ fn the_share_domain_is_apart_from_glave_s_own_name() {
     for refused in [
         "https://glave.example.com",
         "https://share.glave.example.com",
+        "https://share.example.com",
+        "https://example.com",
         "share.example.net",
         "https://share.example.net/files",
     ] {
