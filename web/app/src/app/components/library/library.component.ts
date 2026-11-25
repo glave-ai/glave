@@ -15,6 +15,7 @@ import {
   GlzFigureComponent,
   GlzMenuSelectComponent,
 } from '@glave/glaze';
+import type { ShareGetParams } from '@glave/client';
 import { Image } from 'lucide';
 
 import {
@@ -29,8 +30,10 @@ import { hasProjects } from '../../lib/nav';
 import { FilesService, drawn } from '../../services/files.service';
 import { LibraryService } from '../../services/library.service';
 import { ProjectsService } from '../../services/projects.service';
+import { ServerService } from '../../services/server.service';
 import { LibraryTileComponent } from '../library-tile/library-tile.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
+import { ShareDialogComponent } from '../share-dialog/share-dialog.component';
 
 /** What stands where the grid would be: nothing, an empty Library, or nothing the filters keep. */
 type Empty = 'none' | 'empty' | 'unmatched';
@@ -38,7 +41,7 @@ type Empty = 'none' | 'empty' | 'unmatched';
 /**
  * The Library page: what glave made for the person, newest first, as a grid, filtered by kind
  * and, when they have a project beside their Chats, by project; one item opened large, with
- * Download, Delete and Go to chat.
+ * Download, Delete, Share where the server shares files, and Go to chat.
  */
 @Component({
   selector: 'app-library',
@@ -52,6 +55,7 @@ type Empty = 'none' | 'empty' | 'unmatched';
     GlzMenuSelectComponent,
     LibraryTileComponent,
     PageHeaderComponent,
+    ShareDialogComponent,
   ],
   templateUrl: './library.component.html',
   styleUrl: './library.component.scss',
@@ -67,6 +71,7 @@ export class LibraryComponent {
     unmatched: $localize`:@@library.unmatched:Nothing here matches these filters.`,
     delete: $localize`:@@library.delete:Delete`,
     goToChat: $localize`:@@library.goToChat:Go to chat`,
+    share: $localize`:@@library.share:Share`,
     deleteHeading: $localize`:@@library.deleteHeading:Delete this picture from your Library?`,
     deleteMessage: $localize`:@@library.deleteMessage:The chat it came from keeps its copy.`,
   } as const;
@@ -75,7 +80,10 @@ export class LibraryComponent {
   private readonly projects = inject(ProjectsService);
   private readonly files = inject(FilesService);
   private readonly locale = inject(LOCALE_ID);
+  private readonly server = inject(ServerService);
   protected readonly problem = this.library.error;
+  /** Whether the server shares files, so an item opened offers Share. */
+  protected readonly sharing = this.server.sharing;
   /** The kind and the project kept in view. */
   protected readonly kind = signal<string | null>(EVERY);
   protected readonly project = signal<string | null>(EVERY);
@@ -110,6 +118,15 @@ export class LibraryComponent {
   protected readonly opened = signal<ShownItem | null>(null);
   protected readonly previewOpen = signal(false);
   protected readonly deleteOpen = signal(false);
+  protected readonly shareOpen = signal(false);
+  /** The item opened, as sharing names it, while its Share dialog is open. */
+  protected readonly shareOf = computed<ShareGetParams | null>(() => {
+    const item = this.opened()?.item;
+    return this.shareOpen() && item !== undefined
+      ? { kind: 'item', project: item.project, asset: item.asset }
+      : null;
+  });
+  protected readonly shareName = computed(() => this.opened()?.item.name ?? '');
   private readonly picture = drawn(() => {
     const item = this.opened()?.item;
     return item === undefined
@@ -126,6 +143,15 @@ export class LibraryComponent {
   protected open(item: ShownItem): void {
     this.opened.set(item);
     this.previewOpen.set(true);
+  }
+
+  protected share(): void {
+    this.shareOpen.set(true);
+  }
+
+  /** Reads the Library again once a share changed, so its item says it is shared. */
+  protected shared(): void {
+    void this.library.refresh();
   }
 
   protected askDelete(): void {

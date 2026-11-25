@@ -227,6 +227,7 @@ where
                 author: None,
                 thought: thinking.thought(&completion.parts),
                 key: None,
+                typed: None,
             };
             self.stage(thread, &mut events, &message)?;
         }

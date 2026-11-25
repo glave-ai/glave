@@ -12,10 +12,13 @@ import {
 import type { MadeFile } from '@glave/client';
 import { GlzButtonComponent, GlzMarkdownComponent } from '@glave/glaze';
 
-import { whyNot } from '../../lib/made';
+import { shareOf, whyNot } from '../../lib/made';
 import { FilesService } from '../../services/files.service';
+import { MadeFilesService } from '../../services/made-files.service';
+import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 import { ThreadService } from '../../services/thread.service';
+import { ShareDialogComponent } from '../share-dialog/share-dialog.component';
 
 /**
  * A file the thread made, opened in a tab of the chat's panel (the sheet that fills a phone's
@@ -23,12 +26,13 @@ import { ThreadService } from '../../services/thread.service';
  * reply is, with the server's sentence when it leaves the rest out, and Download across the top
  * beside a computer's panel and Download and Share at the thumb on a phone (Share where the
  * browser can share the file itself, the file read as it opens, so the tap that shares it goes
- * straight to the Share sheet, as iOS asks). A PDF never opens here: the browser's own viewer
+ * straight to the Share sheet, as iOS asks; where the server shares files at a link, Share opens
+ * that instead, so one button never means two things). A PDF never opens here: the browser's own viewer
  * draws it in a tab of its own. Why it can't be shown is said in the server's words.
  */
 @Component({
   selector: 'app-file-preview',
-  imports: [GlzButtonComponent, GlzMarkdownComponent],
+  imports: [GlzButtonComponent, GlzMarkdownComponent, ShareDialogComponent],
   templateUrl: './file-preview.component.html',
   styleUrl: './file-preview.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -40,6 +44,8 @@ export class FilePreviewComponent {
   private readonly session = inject(SessionService);
   private readonly threads = inject(ThreadService);
   private readonly document = inject(DOCUMENT);
+  private readonly server = inject(ServerService);
+  private readonly made = inject(MadeFilesService, { optional: true });
 
   protected readonly copy = {
     download: $localize`:@@filePreview.download:Download`,
@@ -52,6 +58,14 @@ export class FilePreviewComponent {
   protected readonly cut = signal<string | null>(null);
   /** Why the file can't be shown, shared or saved; `null` when nothing went wrong. */
   protected readonly failed = signal<string | null>(null);
+  /** Whether Share gives a link: where the server shares files, rather than the file itself. */
+  protected readonly linked = this.server.sharing;
+  /** Whether the Share dialog is open. */
+  protected readonly sharing = signal(false);
+  /** The file as sharing names it, while its Share dialog is open. */
+  protected readonly sharedOf = computed(() =>
+    this.sharing() ? shareOf(this.threads.thread(), this.file()) : null,
+  );
   /** The file itself, read for the Share sheet where the browser shares files; `null` until. */
   protected readonly shared = signal<File | null>(null);
   /** Whether this browser can share the file itself, as a phone's Share sheet does. */
@@ -122,6 +136,15 @@ export class FilePreviewComponent {
     } catch (error: unknown) {
       this.failed.set(whyNot(error));
     }
+  }
+
+  protected shareLink(): void {
+    this.sharing.set(true);
+  }
+
+  /** Reads the files again once the share changed, so the card says who it is shared with. */
+  protected linkChanged(): void {
+    void this.made?.refresh();
   }
 
   /**

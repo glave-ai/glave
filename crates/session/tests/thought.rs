@@ -61,6 +61,7 @@ fn a_message_recorded_before_its_thought_was_kept_is_served_with_its_headline() 
             author: None,
             thought: None,
             key: None,
+            typed: None,
         };
         let recorded = encode(header, &old).unwrap();
         store

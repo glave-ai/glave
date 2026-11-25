@@ -5,6 +5,7 @@ import {
   type MadeFile,
   type MadeLeft,
   type RawEvent,
+  type ShareGetParams,
   type TurnFiles,
 } from '@glave/client';
 
@@ -64,7 +65,7 @@ export function kindName(kind: AssetKind): string {
  */
 export function madeLine(file: MadeFile, locale: string): string {
   const size = file.parts ?? sizeOf(file.bytes, locale);
-  return [kindName(file.kind), size, file.unread ?? file.kept].join(' · ');
+  return [kindName(file.kind), size, file.unread ?? file.shared ?? file.kept].join(' · ');
 }
 
 /**
@@ -164,6 +165,13 @@ export function whyNot(error: unknown): string {
   return error instanceof ApiError || error instanceof UnreadableFile
     ? sentence(error.message)
     : unreached();
+}
+
+/** `file` of `thread` as sharing names it: only once it was kept, so it can be shared. */
+export function shareOf(thread: string | null, file: MadeFile): ShareGetParams | null {
+  return thread === null || file.sha256 == null
+    ? null
+    : { kind: 'file', thread, sha256: file.sha256 };
 }
 
 /** The name a file is saved as, from where a turn made it: `out/Trip budget.xlsx`'s last part. */

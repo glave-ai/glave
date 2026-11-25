@@ -38,6 +38,7 @@ fn a_turn_that_names_a_command_sends_its_text() {
         argument_hint: None,
         body: "Review PR $1 for bugs.".into(),
         file: PathBuf::from("review.md"),
+        own: true,
     }];
     block_on!(async {
         let (server, _) = setup.build(&dir).await;

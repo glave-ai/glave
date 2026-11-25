@@ -106,4 +106,17 @@ describe('LibraryTileComponent', () => {
     const { root } = await render(null);
     expect(root.querySelector('[data-testid="library-chat"]')).toBeNull();
   });
+
+  it('says Shared where it is, the server’s sentence of with whom as its title', async () => {
+    objectUrls();
+    const { root, fixture } = await render('c1');
+    expect(root.querySelector('[data-testid="library-shared"]')).toBeNull();
+    const item = { ...picture('fox', 'p1', 'c1'), shared: 'Shared with anyone who has the link' };
+    fixture.componentRef.setInput('shown', shown(item, NOW, READER));
+    await settle(fixture);
+    const badge = root.querySelector('[data-testid="library-shared"]');
+    expect(badge?.textContent).toBe('Shared');
+    expect(badge?.getAttribute('title')).toBe('Shared with anyone who has the link');
+    await expectAccessible(root);
+  });
 });

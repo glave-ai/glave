@@ -48,6 +48,10 @@ describe('made', () => {
 
   it('says a file’s kind, its parts in the server’s words, and where the server keeps it', () => {
     expect(madeLine(DECK, 'en')).toBe('Slides · 8 slides · Kept with this chat');
+    // Who it is shared with stands where it is kept.
+    expect(madeLine({ ...DECK, shared: 'Shared with 2 people' }, 'en')).toBe(
+      'Slides · 8 slides · Shared with 2 people',
+    );
     expect(madeLine({ ...DECK, kept: 'Saved to your Library' }, 'en')).toBe(
       'Slides · 8 slides · Saved to your Library',
     );

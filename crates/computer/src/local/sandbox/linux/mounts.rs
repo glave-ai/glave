@@ -18,11 +18,12 @@
 //! every namespace's mount on it, leaving that command to reach what listens there next.
 
 use std::collections::HashMap;
+use std::io::Write as _;
 use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use glave_ports::computer::{PROTECTED, SandboxLevel};
+use glave_ports::computer::{GIT_RUNS_CODE, PROTECTED, SandboxLevel};
 
 use super::super::in_tmp::listeners;
 use super::super::secrets::home_secrets;
@@ -52,12 +53,23 @@ const DAEMONS: &[&str] = &[
     "/tmp/.X11-unix",
 ];
 
-/// Inside a git folder: what runs code later, and the folders of other worktrees and of
-/// submodules, whose own hooks and config would.
-const GIT_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "worktrees", "modules"];
+/// Inside a git folder, beside what runs code later ([`GIT_RUNS_CODE`]): the folders of other
+/// worktrees and of submodules, whose own hooks and config would.
+const NESTED_GIT: &[&str] = &["worktrees", "modules"];
 
-/// Inside a worktree's own git folder: what runs code later, and its submodules' folders.
-const WORKTREE_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "modules"];
+/// Inside a worktree's own git folder, beside what runs code later: its submodules' folders.
+const WORKTREE_NESTED_GIT: &[&str] = &["modules"];
+
+/// The file naming the folder git takes a repository's config and hooks from, relative to the
+/// git folder it is in. git reads it wherever it is there and fails on one it cannot read, so
+/// one not there yet gets no empty folder as its stand-in but a file glave writes, naming its
+/// own git folder ([`SAME_FOLDER`]), kept there for good: every workspace of a repository
+/// protects its shared folder's, and removing one a command's mount lies on would take the
+/// mount from that command.
+const COMMONDIR: &str = "commondir";
+
+/// What a stand-in `commondir` holds: the git folder it is in.
+const SAME_FOLDER: &str = ".\n";
 
 /// `/tmp` as a command sees it.
 #[derive(Debug)]
@@ -310,12 +322,12 @@ impl Protect<'_> {
             State::Folder => {
                 // Its own mount point, so it cannot be moved aside for a planted one.
                 self.mounts.push(Mount::Writable(git.clone()));
-                self.inside(&git, GIT_PROTECTED)?;
+                self.inside(&git, NESTED_GIT)?;
             }
             State::File => self.mounts.push(Mount::ReadOnly(git)),
             State::StandIn => self.stand_in(git),
         }
-        for path in PROTECTED.iter().filter(|path| !path.starts_with(".git/")) {
+        for path in PROTECTED {
             self.protect(layout.root.join(path))?;
         }
         for folder in folders_leading_to(&layout.root, kept).filter(|folder| folder.is_dir()) {
@@ -327,17 +339,20 @@ impl Protect<'_> {
         }
         if let Some(common) = &layout.git_common {
             self.mounts.push(Mount::Writable(common.clone()));
-            self.inside(common, GIT_PROTECTED)?;
+            self.inside(common, NESTED_GIT)?;
             if let Some(own) = own_git_folder(&layout.root, common) {
                 self.mounts.push(Mount::Writable(own.clone()));
-                self.inside(&own, WORKTREE_PROTECTED)?;
+                self.inside(&own, WORKTREE_NESTED_GIT)?;
             }
         }
         Ok(())
     }
 
-    fn inside(&mut self, folder: &Path, names: &[&str]) -> Result<(), String> {
-        for name in names {
+    /// The git folder `folder`'s paths that run code, and `nested`, its folders of other git
+    /// folders.
+    fn inside(&mut self, folder: &Path, nested: &[&str]) -> Result<(), String> {
+        stand_in_commondir(&folder.join(COMMONDIR))?;
+        for name in GIT_RUNS_CODE.iter().chain(nested) {
             self.protect(folder.join(name))?;
         }
         Ok(())
@@ -371,6 +386,36 @@ impl Protect<'_> {
             Ok(meta) if meta.is_dir() => Ok(State::Folder),
             Ok(_) => Ok(State::File),
         }
+    }
+}
+
+/// Writes `commondir` at `path`, naming its own git folder ([`SAME_FOLDER`]), unless one is
+/// there already: the repository's own, or one another sandbox wrote. Whole at once: written
+/// beside it first, then linked into place, so no git ever reads it empty. Never removed
+/// ([`COMMONDIR`]). Blocking.
+fn stand_in_commondir(path: &Path) -> Result<(), String> {
+    if std::fs::symlink_metadata(path).is_ok() {
+        return Ok(());
+    }
+    let thread = format!("{:?}", std::thread::current().id());
+    let digits: String = thread.chars().filter(char::is_ascii_digit).collect();
+    let beside = path.with_file_name(format!(
+        ".{COMMONDIR}.glave-{}-{digits}",
+        std::process::id()
+    ));
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&beside)
+        .and_then(|mut file| file.write_all(SAME_FOLDER.as_bytes()))
+        .and_then(|()| std::fs::hard_link(&beside, path));
+    let _ = std::fs::remove_file(&beside);
+    match written {
+        Err(error) if error.kind() != std::io::ErrorKind::AlreadyExists => Err(format!(
+            "the sandbox cannot protect {}: {error}",
+            path.display()
+        )),
+        _ => Ok(()),
     }
 }
 

@@ -13,6 +13,7 @@ use thiserror::Error;
 
 use crate::approval::Approver;
 use crate::cancel::Cancel;
+use crate::commands::Sent;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::turn::{Live, Prompt};
 
@@ -152,8 +153,8 @@ where
             && let Some(queued) = waiting.pop_front()
         {
             // A server's prompt that could not be had is given back with why, as a hook's stop is.
-            let text = match self.expand(thread, &queued.text, cancel).await {
-                Ok(text) => text,
+            let sent = match self.expand(thread, &queued.text, cancel).await {
+                Ok(sent) => sent,
                 Err(why) => {
                     live(Live::Unread {
                         id: queued.id,
@@ -165,14 +166,14 @@ where
             let blocked = if thread.delegated() {
                 Ok(None)
             } else {
-                self.on_prompt(thread, &text, cancel).await
+                self.on_prompt(thread, &sent.text, cancel).await
             };
             match blocked {
                 Ok(Some(reason)) => live(Live::Unread {
                     id: queued.id,
                     reason: Some(reason),
                 }),
-                Ok(None) => passed.push((queued, text)),
+                Ok(None) => passed.push((queued, sent)),
                 Err(error) => {
                     waiting.push_front(queued);
                     hooks = Err(error);
@@ -190,14 +191,16 @@ where
             unread(left, live);
             return recorded;
         }
-        for (queued, text) in passed {
+        for (queued, sent) in passed {
             thread.messages.push(Message::User {
-                parts: said(&text, &queued.files),
+                parts: said(&sent.text, &queued.files),
             });
             if !thread.delegated() {
-                thread.asked.push(text.clone());
+                // What they typed, when what it sent is someone else's words.
+                let asked = sent.typed(&queued.text).unwrap_or(&sent.text);
+                thread.asked.push(asked.to_owned());
             }
-            thread.request = Some(text);
+            thread.request = Some(sent.text);
         }
         Ok(())
     }
@@ -207,16 +210,17 @@ where
     async fn record_read(
         &self,
         thread: &mut Thread,
-        passed: &[(Queued, String)],
+        passed: &[(Queued, Sent)],
     ) -> Result<(), HarnessError> {
         let mut events = Vec::with_capacity(passed.len());
-        for (queued, text) in passed {
+        for (queued, sent) in passed {
             let message = MessageAdded {
                 role: Role::User,
-                parts: said(text, &queued.files),
+                parts: said(&sent.text, &queued.files),
                 author: Self::other_than_for(thread, queued.caller.person),
                 thought: None,
                 key: queued.key.clone(),
+                typed: sent.typed(&queued.text).map(str::to_owned),
             };
             self.stage_as(thread, &mut events, &message, queued.id)?;
         }
@@ -271,6 +275,7 @@ where
                 key: next.key.as_deref(),
                 // A message sent while a turn ran is someone's, never a schedule's run.
                 scheduled: None,
+                typed: None,
             };
             let ran = self.run_prompt(thread, prompt, cancel, live).await;
             match ran {
