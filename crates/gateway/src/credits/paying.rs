@@ -78,20 +78,27 @@ impl<'a> Paying<'a> {
     }
 
     /// Counts what the call cost, `cost` when its provider says it in dollars, else `counts`
-    /// at its price, in the hold's place, and writes it to the store. Counts that are
-    /// `estimated` (a stream that ended early) or say nothing was used are never counted below
-    /// what [`Self::unmetered`] says.
+    /// at its price, in the hold's place, and writes it to the store. Counts that say nothing
+    /// was used are counted as [`Self::unmetered`] says; counts that are `estimated` (a stream
+    /// that ended early) with no less output than came.
     pub(crate) async fn settle(
         self,
         cost: Option<Money>,
         (counts, estimated): (TokenCounts, bool),
     ) {
         let cost = cost.and_then(in_dollars).unwrap_or_else(|| {
-            let priced = self.price.nanos(&counts);
-            if estimated || counts == TokenCounts::default() {
-                priced.max(self.unmetered())
+            if counts == TokenCounts::default() {
+                self.unmetered()
+            } else if estimated {
+                // What it says it read, at its cache's prices, and no less of its answer than
+                // came.
+                let counts = TokenCounts {
+                    output: counts.output.max(self.came()),
+                    ..counts
+                };
+                self.price.nanos(&counts)
             } else {
-                priced
+                self.price.nanos(&counts)
             }
         });
         self.counted(cost).await;
@@ -132,13 +139,17 @@ impl<'a> Paying<'a> {
     fn so_far(&self) -> Nanos {
         let counts = TokenCounts {
             input: self.input,
-            output: self
-                .seen
-                .load(Ordering::Relaxed)
-                .div_ceil(FIT_BYTES_PER_TOKEN),
+            output: self.came(),
             ..TokenCounts::default()
         };
         self.price.nanos(&counts)
+    }
+
+    /// The tokens of its answer that came so far.
+    fn came(&self) -> u64 {
+        self.seen
+            .load(Ordering::Relaxed)
+            .div_ceil(FIT_BYTES_PER_TOKEN)
     }
 }
 

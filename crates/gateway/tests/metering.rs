@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use glave_event::{TokenCounts, Usage};
+use glave_event::{Cost, Money, TokenCounts, Usage};
 use glave_gateway::{Credits, Gateway, Routes, Target};
 use glave_ports::testing::FaultyLog;
 use glave_ports::{
@@ -75,8 +75,10 @@ fn an_answer_that_says_nothing_of_what_it_used_is_charged_what_it_read_and_what_
 fn usage_estimated_from_a_stream_that_ended_early_is_charged_no_less_than_what_came() {
     let credits = funded(1_000);
     let mut early = answer("p", "m", 0, 0);
+    // A hundred read, ninety of them from the cache, which the test price makes free.
     let counts = TokenCounts {
-        input: 1,
+        input: 100,
+        cache_read: 90,
         output: 1,
         ..TokenCounts::default()
     };
@@ -84,9 +86,22 @@ fn usage_estimated_from_a_stream_that_ended_early_is_charged_no_less_than_what_c
     ask(&over(priced(&answering(Ok(early))), &credits)).unwrap();
     assert_eq!(
         balance(&credits),
-        1_000 - READ - CAME,
-        "not the 2 it counted"
+        1_000 - 10 - CAME,
+        "what it read at its cache's prices, and the 3 tokens that came, not the 1 it counted"
     );
+}
+
+#[test]
+fn a_reported_cost_below_nothing_is_not_believed_and_the_call_is_charged_at_its_price() {
+    let credits = funded(1_000);
+    let mut refund = answer("p", "m", 100, 10);
+    // What a provider reports, read as every reported cost is.
+    refund.cost = Money::reported_dollars("-0.0000005").map(|amount| Cost {
+        amount,
+        price_list: "p:reported".into(),
+    });
+    ask(&over(priced(&answering(Ok(refund))), &credits)).unwrap();
+    assert_eq!(balance(&credits), 1_000 - 110, "110 tokens at their price");
 }
 
 #[test]

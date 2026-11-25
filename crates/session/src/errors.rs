@@ -11,7 +11,7 @@ use glave_identity::signin::{BrowserError, SignInError};
 use glave_ports::computer::ComputerError;
 use glave_ports::memories::MemoryError;
 use glave_ports::stream::StreamError;
-use glave_ports::{EntropyError, LogError, ProjectError, ProviderError, Unpaid};
+use glave_ports::{EntropyError, Failure, LogError, ProjectError, ProviderError, Unpaid};
 
 use crate::accounts::AccountsError;
 use crate::protocol::{ApiError, ErrorData, Told, code};
@@ -166,7 +166,13 @@ fn provider_said(failed: &ProviderError) -> Vec<Sentence> {
         ProviderError::Credentials(reason) => Sentence::ProviderCredentials {
             reason: reason.clone(),
         },
-        ProviderError::Transport(reason) => Sentence::ProviderUnreachable {
+        // A provider never reached is said as one whose connection broke, not as no model
+        // serving.
+        ProviderError::Transport(reason)
+        | ProviderError::Unserved {
+            failure: Failure::Unreachable,
+            reason,
+        } => Sentence::ProviderUnreachable {
             reason: reason.clone(),
         },
         ProviderError::Protocol(reason) => Sentence::ProviderMalformed {
@@ -426,8 +432,6 @@ mod tests {
 
     #[test]
     fn a_providers_failure_reads_as_it_did_its_words_kept_as_they_came() {
-        use glave_ports::Failure;
-
         let http = || ProviderError::Http {
             status: 429,
             body: "slow down".into(),
@@ -474,6 +478,26 @@ mod tests {
         let mut written = broke_off.message.clone();
         written.translate(crate::words::Language::Accented);
         assert!(written.contains("slow down"), "{written}");
+    }
+
+    #[test]
+    fn a_provider_never_reached_is_said_as_unreached_not_as_no_model_serving() {
+        let unreached = ProviderError::Unserved {
+            failure: Failure::Unreachable,
+            reason: "Connection refused (os error 61)".into(),
+        };
+        let error = ApiError::from(&HarnessError::Provider(unreached));
+        assert_eq!(
+            &*error.message,
+            "could not reach the model provider: Connection refused (os error 61)"
+        );
+        let mut written = error.message.clone();
+        written.translate(crate::words::Language::Accented);
+        assert!(
+            written.starts_with('['),
+            "the server's own words: {written}"
+        );
+        assert!(written.contains("Connection refused"), "{written}");
     }
 
     #[test]

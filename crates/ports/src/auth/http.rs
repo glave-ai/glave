@@ -90,12 +90,12 @@ async fn error_body(mut response: reqwest::Response) -> Vec<u8> {
     body
 }
 
-/// The provider never reached, for `reason`: nothing was sent, so the next target may serve
-/// and nothing was billed.
+/// The provider never reached, for `reason`, the cause alone: nothing was sent, so the next
+/// target may serve and nothing was billed.
 fn unreached(reason: &str) -> ProviderError {
     ProviderError::Unserved {
         failure: Failure::Unreachable,
-        reason: format!("could not reach the model provider: {reason}"),
+        reason: reason.to_owned(),
     }
 }
 
