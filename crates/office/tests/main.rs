@@ -9,5 +9,6 @@ mod edited;
 mod forms;
 mod pdfs;
 mod previews;
+mod wide;
 mod workbooks;
 mod written;

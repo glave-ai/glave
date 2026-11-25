@@ -134,31 +134,3 @@ fn mistakes_are_said_so_they_can_be_put_right() {
     );
     assert_eq!(doc(&[]).unwrap(), USAGE);
 }
-
-/// Two cells far apart make a tiny file that calamine would hold whole, every cell between
-/// them, which is hundreds of gigabytes: it is refused, in plain words, before any is held.
-#[test]
-fn a_sheet_spanning_too_many_cells_is_refused_before_it_is_read() {
-    let dir = TempDir::new("office-wide").unwrap();
-    let path = dir.join("wide.xlsx");
-    let mut book = rust_xlsxwriter::Workbook::new();
-    let sheet = book.add_worksheet();
-    sheet.write(0, 0, "first").unwrap();
-    sheet.write(1_048_575, 16_383, "last").unwrap();
-    book.save(&path).unwrap();
-    let path = path.to_string_lossy();
-    for words in [["read", &*path], ["csv", &*path], ["sql", &*path]] {
-        let refused = doc(&words).unwrap_err().to_string();
-        assert_eq!(
-            refused,
-            "the sheet \"Sheet1\" spans 1048576 rows by 16384 columns from its first cell to its \
-             last, more than the 10000000 cells glave reads of a sheet. Open it in a spreadsheet \
-             app and copy the part you need to a sheet or a file of its own",
-            "{words:?}"
-        );
-    }
-    // A preview reads the cells as a stream, holding only the first rows.
-    let bytes = std::fs::read(&*path).unwrap();
-    let preview = glave_office::preview(&bytes, "application/octet-stream").unwrap();
-    assert!(preview.markdown.contains("first"), "{}", preview.markdown);
-}
