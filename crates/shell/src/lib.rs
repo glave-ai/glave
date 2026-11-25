@@ -7,6 +7,7 @@
 //! determined program can always say the same thing another way; the sandbox is the boundary.
 
 mod credentials;
+mod find;
 mod forge;
 mod judge;
 mod parse;

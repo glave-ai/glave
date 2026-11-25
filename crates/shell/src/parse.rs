@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 
 use tree_sitter::{Node, Parser};
 
+use crate::find;
 use crate::paths::{basename, resolve};
+use crate::rules::{split_string, unwrapped};
 
 /// How deep `bash -c` scripts may nest before the script counts as unreadable.
 const MOST_NESTING: usize = 8;
@@ -43,6 +45,24 @@ impl Word {
     pub(crate) fn text(&self) -> &str {
         match self {
             Self::Literal(text) | Self::Dynamic(text) => text,
+        }
+    }
+
+    /// What the word gives a program that reads it as a script of its own: a literal as it
+    /// is, a dynamic word's source without its outer quotes.
+    pub(crate) fn unquoted(&self) -> &str {
+        match self {
+            Self::Literal(text) => text,
+            Self::Dynamic(text) => strip_quotes(text),
+        }
+    }
+
+    /// The word as a script writes it to mean the same: a literal in single quotes, a dynamic
+    /// word as its source.
+    pub(crate) fn quoted(&self) -> String {
+        match self {
+            Self::Literal(text) => format!("'{}'", text.replace('\'', "'\\''")),
+            Self::Dynamic(text) => text.clone(),
         }
     }
 }
@@ -278,10 +298,16 @@ impl Walk<'_> {
         } else {
             None
         };
-        if let Some(script) = script {
+        // `env -S '…'` and `find … -exec … ;` run commands of their own, read as scripts too.
+        let scripts = script
+            .map(|script| strip_quotes(script).to_owned())
+            .into_iter()
+            .chain(split_string(words))
+            .chain(find::scripts(unwrapped(words)));
+        for script in scripts {
             self.parsed.plain = false;
             let saved = self.cwd.clone();
-            self.script(strip_quotes(script), depth.saturating_add(1));
+            self.script(&script, depth.saturating_add(1));
             self.cwd = saved;
         }
     }

@@ -19,6 +19,12 @@ const REASONS: &[(&str, &str)] = &[
     ),
     ("rm -rf /usr", "it deletes /usr"),
     (
+        "ls | xargs rm -rf",
+        "it deletes what xargs reads, which glave cannot tell in advance",
+    ),
+    ("find / -delete", "it deletes /"),
+    ("find ~ -delete", "it deletes /home/ana, outside the project"),
+    (
         "rm -rf ~/notes",
         "it deletes /home/ana/notes, outside the project",
     ),
