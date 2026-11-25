@@ -27,6 +27,7 @@ proptest! {
     fn any_message_round_trips_byte_for_byte(
         text in "\\PC{0,300}",
         assistant in any::<bool>(),
+        typed in proptest::option::of("/\\PC{0,40}"),
         seq in 1_u64..u64::MAX / 2,
         millis in 0_u16..1000,
     ) {
@@ -36,6 +37,7 @@ proptest! {
             author: None,
             thought: None,
             key: None,
+            typed,
         };
         let json = encode(header(seq, millis), &message).unwrap().to_json().unwrap();
         let event = decode(RawEvent::from_json(&json).unwrap()).unwrap();

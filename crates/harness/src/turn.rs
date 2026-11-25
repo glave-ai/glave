@@ -126,12 +126,13 @@ where
     ) -> Result<TurnResult, HarnessError> {
         self.bring(thread).await?;
         let toolset: ToolSet = self.tools(thread).await;
-        let text = self
+        let sent = self
             .expand(thread, prompt.text, cancel)
             .await
             .map_err(HarnessError::PromptFailed)?;
         let prompt = Prompt {
-            text: &text,
+            text: &sent.text,
+            typed: sent.typed(prompt.text),
             ..prompt
         };
         self.run_with(thread, prompt, toolset, cancel, live).await
@@ -355,6 +356,7 @@ where
             author: Some(Principal::glave()),
             thought: None,
             key: None,
+            typed: None,
         };
         self.stage(thread, &mut events, &message)?;
         self.commit(thread, events).await?;

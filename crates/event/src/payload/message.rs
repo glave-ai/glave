@@ -27,6 +27,12 @@ pub struct MessageAdded {
     /// key, on any server, finds it here and starts nothing (`specs/invariants.md`, 4).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
+    /// What the person typed, when it named a project's command or a server's prompt
+    /// (`/review 12`) whose text the parts hold instead: what they asked, for the judge, is
+    /// what they typed, never someone else's words. A command of their own leaves it out: its
+    /// text is theirs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub typed: Option<String>,
 }
 
 /// The model's reasoning in a line: its headline, and how long the model reasoned.
@@ -49,14 +55,43 @@ pub enum Role {
     Assistant,
 }
 
+/// `message.added` at version 1, before it kept what the person typed: a command's text was
+/// all it held.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MessageAddedV1 {
+    role: Role,
+    parts: Vec<Part>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    author: Option<Principal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    thought: Option<Thought>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key: Option<String>,
+}
+
+impl From<MessageAddedV1> for MessageAdded {
+    fn from(old: MessageAddedV1) -> Self {
+        Self {
+            role: old.role,
+            parts: old.parts,
+            author: old.author,
+            thought: old.thought,
+            key: old.key,
+            typed: None,
+        }
+    }
+}
+
 impl Payload for MessageAdded {
     const TYPE: &'static str = TYPE;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<MessageAdded>> {
     match version {
-        1 => Some(parse(data)),
+        1 => Some(parse::<MessageAddedV1>(data).map(MessageAdded::from)),
+        2 => Some(parse(data)),
         _ => None,
     }
 }
