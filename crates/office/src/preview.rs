@@ -11,6 +11,7 @@ use calamine::{Data, Reader, Xlsx};
 use crate::command::office;
 use crate::error::OfficeError;
 use crate::package::Kind;
+use crate::reach::within_reach;
 use crate::read::{chosen, open, shown};
 use crate::{data, document, presentation, table};
 
@@ -147,6 +148,7 @@ fn sheets(bytes: &[u8]) -> Result<(String, bool), OfficeError> {
     let mut text = Vec::new();
     let mut cut = false;
     for sheet in chosen(&listed, None)?.into_iter().take(SHEETS) {
+        within_reach(&mut book, &sheet.name)?;
         let values = book
             .worksheet_range(&sheet.name)
             .map_err(|error| OfficeError::Sheet(sheet.name.clone(), error.to_string()))?;

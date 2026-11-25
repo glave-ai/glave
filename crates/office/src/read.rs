@@ -11,6 +11,7 @@ use calamine::{Data, Range, Reader, Sheet, SheetType, SheetVisible, Sheets};
 use crate::cells::{cell_name, column_name, listed};
 use crate::command::Answer;
 use crate::error::OfficeError;
+use crate::reach::within_reach;
 use crate::table::escaped;
 
 /// The rows shown of each sheet when no rows are asked for: enough to see what a sheet holds,
@@ -33,7 +34,7 @@ pub(crate) struct Reading {
 /// A cell's row and column, counted from 0 as calamine counts them.
 type At = (u32, u32);
 
-type Book = Sheets<Cursor<Vec<u8>>>;
+pub(crate) type Book = Sheets<Cursor<Vec<u8>>>;
 
 pub(crate) fn open(bytes: Vec<u8>) -> Result<Book, OfficeError> {
     calamine::open_workbook_auto_from_rs(Cursor::new(bytes))
@@ -61,6 +62,7 @@ pub(crate) fn read(bytes: Vec<u8>, name: &str, reading: &Reading) -> Result<Stri
         }
     }
     for sheet in chosen {
+        within_reach(&mut book, &sheet.name)?;
         let values = book
             .worksheet_range(&sheet.name)
             .map_err(|error| OfficeError::Sheet(sheet.name.clone(), error.to_string()))?;
@@ -89,6 +91,7 @@ pub(crate) fn csv(bytes: Vec<u8>, sheet: Option<&str>) -> Result<Answer, OfficeE
         .first()
         .map(|chosen| chosen.name.clone())
         .ok_or(OfficeError::NoSheets)?;
+    within_reach(&mut book, &name)?;
     let values = book
         .worksheet_range(&name)
         .map_err(|error| OfficeError::Sheet(name.clone(), error.to_string()))?;

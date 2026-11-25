@@ -33,6 +33,7 @@ mod parts;
 mod pdf;
 mod presentation;
 mod preview;
+mod reach;
 mod read;
 mod table;
 mod write;

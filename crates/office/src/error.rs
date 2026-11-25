@@ -54,6 +54,18 @@ pub enum OfficeError {
     NoSuchSheet { wanted: String, sheets: Vec<String> },
     #[error("could not read the sheet {0:?}: {1}")]
     Sheet(String, String),
+    /// A sheet whose cells, from the first used to the last, are more than glave holds.
+    #[error(
+        "the sheet {sheet:?} spans {rows} rows by {columns} columns from its first cell to its \
+         last, more than the {most} cells glave reads of a sheet. Open it in a spreadsheet app \
+         and copy the part you need to a sheet or a file of its own"
+    )]
+    TooWide {
+        sheet: String,
+        rows: u64,
+        columns: u64,
+        most: u64,
+    },
     /// A workbook to write was described wrongly: what is wrong, and where.
     #[error("the workbook's description is not right: {0}")]
     Description(String),

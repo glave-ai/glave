@@ -10,6 +10,7 @@ use super::table::{Table, table_name, value};
 use super::{csv, json};
 use crate::command::{bytes, named};
 use crate::error::OfficeError;
+use crate::reach::within_reach;
 use crate::read;
 
 /// What `glave doc sql` loads: CSV, TSV, JSON, and every kind of workbook `read` reads.
@@ -112,6 +113,7 @@ impl Source {
         let chosen = read::chosen(&sheets, sheet)?;
         let mut tables = Vec::new();
         for sheet in &chosen {
+            within_reach(&mut book, &sheet.name)?;
             let range = book
                 .worksheet_range(&sheet.name)
                 .map_err(|error| OfficeError::Sheet(sheet.name.clone(), error.to_string()))?;
