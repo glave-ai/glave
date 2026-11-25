@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use glave_event::{CostKind, Currency, Money};
+use glave_event::{CostKind, Currency, Money, TokenCounts};
 use glave_ports::{
     Completion, Delta, EndUser, EndUsers, EventLog, Failure, Made, MediaAsk, ModelProvider,
     ModelRequest, ProviderError, Purpose, Route, SearchAsk, SearchResults, Served, Unpaid,
@@ -13,7 +13,7 @@ use tracing::Instrument as _;
 use crate::credits::{Charging, Credits, Paying};
 use crate::estimate::Needs;
 use crate::filtering::{Filtering, Keeping};
-use crate::media::{self, IMAGE_IN_TOKENS};
+use crate::media;
 use crate::plan::{candidates, prepare};
 use crate::price::Price;
 use crate::routes::{RouteError, Routes};
@@ -156,11 +156,12 @@ impl Gateway {
             let sent = (request, (route.as_ref(), end_user.as_ref()));
             let sent = Self::send_to(target, sent, &needs, paying.as_ref(), &mut call).await;
             match sent {
-                Ok(made) => {
+                Ok((made, reported)) => {
                     if let Some(paying) = paying {
-                        let completion = &made.completion;
-                        let cost = completion.cost.as_ref().map(|cost| cost.amount);
-                        paying.settle(cost, &completion.usage.counts()).await;
+                        let usage = &made.completion.usage;
+                        paying
+                            .settle(reported, (usage.counts(), usage.estimated()))
+                            .await;
                     }
                     return Ok(made);
                 }
@@ -189,15 +190,15 @@ impl Gateway {
 impl Gateway {
     /// Sends `request` to `target`, as its route's purpose and the target take it, with what
     /// `sent_with`'s route asks of a router and the person it names, noting what comes for
-    /// `paying`, and says who served it; its cost is its target's price when its provider
-    /// reports none.
+    /// `paying`, and says who served it, beside the cost its provider reported; its cost is its
+    /// target's price when its provider reports none.
     async fn send_to(
         target: &Target,
         (request, sent_with): (&ModelRequest, (Option<&Route>, Option<&EndUser>)),
         needs: &Needs<'_>,
         paying: Option<&Paying<'_>>,
         call: &mut Call<'_>,
-    ) -> Result<Made, ProviderError> {
+    ) -> Result<(Made, Option<Money>), ProviderError> {
         let (sent, stripped) = prepare(request, sent_with, target, needs);
         let effort = sent.effort.clone();
         let span = telemetry::model_call(request.purpose.id(), &target.name);
@@ -227,7 +228,11 @@ impl Gateway {
                  files,
                  mut completion,
              }| {
-                if completion.cost.is_none() {
+                let reported = completion.cost.as_ref().map(|cost| cost.amount);
+                // An answer that reports nothing it used is not priced at nothing: credits count it
+                // otherwise ([`Paying::settle`]), and its receipt says no cost.
+                let reported_none = completion.usage.counts() == TokenCounts::default();
+                if completion.cost.is_none() && !reported_none {
                     completion.cost = target
                         .price
                         .as_ref()
@@ -240,10 +245,10 @@ impl Gateway {
                     effort,
                     reasoning_stripped: stripped,
                 });
-                Made { files, completion }
+                (Made { files, completion }, reported)
             },
         );
-        let ended = sent.as_ref().map(|made| &made.completion);
+        let ended = sent.as_ref().map(|(made, _)| &made.completion);
         telemetry::model_ended(&span, request.purpose.id(), &target.name, ended);
         sent
     }
@@ -269,7 +274,9 @@ impl Gateway {
             return Err(ProviderError::Unpaid(Unpaid::Unpriced { model }));
         };
         let worst = worst(target, request, needs, price);
-        let input = needs.fit_tokens();
+        // Never more read than its window holds.
+        let window = target.can.context_tokens.unwrap_or(u64::MAX);
+        let input = needs.read_tokens().min(window);
         let kind = if request.purpose.is_media() {
             CostKind::Media
         } else {
@@ -328,9 +335,9 @@ impl ModelProvider for Gateway {
     }
 }
 
-/// The most a call to `target` could cost at its `price`, in dollars: the input, estimated
-/// cautiously, each image a media call sends in among it, and the longest answer allowed, a
-/// media tier's own most.
+/// The most a call to `target` could cost at its `price`, in dollars: the input, its files' too,
+/// estimated cautiously but never more than the target's window holds, and the longest answer
+/// allowed, a media tier's own most.
 fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>, price: &Price) -> Money {
     let output = (target.tier.as_ref().map(|tier| tier.output_tokens))
         .or(target.output_for(request, needs.reserve_tokens()))
@@ -338,15 +345,14 @@ fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>, price: &Pri
         .or(request.max_output_tokens)
         .or(target.can.max_output_tokens)
         .unwrap_or(DEFAULT_OUTPUT_TOKENS);
-    let images = if request.purpose.is_media() {
-        u64::try_from(request.files.len()).map_or(u64::MAX, |n| n.saturating_mul(IMAGE_IN_TOKENS))
-    } else {
-        0
-    };
-    let counts = glave_event::TokenCounts {
-        input: needs.reserve_tokens().saturating_add(images),
+    let input = needs.held_tokens(request.purpose.is_media());
+    let counts = TokenCounts {
+        input: target
+            .can
+            .context_tokens
+            .map_or(input, |window| input.min(window)),
         output: u64::from(output),
-        ..glave_event::TokenCounts::default()
+        ..TokenCounts::default()
     };
     Money {
         nanos: price.nanos(&counts),

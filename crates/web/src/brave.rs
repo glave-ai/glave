@@ -129,7 +129,7 @@ fn transport(error: reqwest::Error) -> ProviderError {
     if error.is_connect() {
         return ProviderError::Unserved {
             failure: Failure::Unreachable,
-            reason: format!("could not reach web search: {}", error.without_url()),
+            reason: error.without_url().to_string(),
         };
     }
     if error.is_timeout() {

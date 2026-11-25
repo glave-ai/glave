@@ -1,12 +1,13 @@
 //! One call paying from its organization's credits: its worst case held before it is sent,
 //! then what it cost counted in the hold's place. A call cancelled once sent is counted at what
-//! it read and what came of its answer's text, at its price, as its provider charges for them;
-//! one that broke off after its answer began, the same; one that failed before any came, at
-//! nothing. What came of a call to a tool is not counted until the answer ends: a gap. A media
-//! call is billed whole whether or not its answer is read, so one dropped once sent, or ended
-//! with no answer (silence past the provider's timeout, a broken connection, an answer that
-//! can't be read), is counted at its hold; one its provider refused with an error, at nothing,
-//! as no failed generation is billed.
+//! it read and what came of its answer, text, reasoning and tool calls' arguments, at its price,
+//! as its provider charges for them; one that broke off or went unanswered once sent (silence,
+//! a broken connection, an answer that can't be read), the same, since its provider billed what
+//! it read; one its provider refused, or that never reached it, at nothing. An answer that says
+//! nothing of what it used is counted the same way, never at nothing. A media call is billed
+//! whole whether or not its answer is read, so one dropped once sent, ended with no answer, or
+//! answered saying nothing of what it used, is counted at its hold; one its provider refused
+//! with an error, or that never reached it, at nothing, as no failed generation is billed.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -71,31 +72,55 @@ impl<'a> Paying<'a> {
 
     /// Takes note of `delta`, part of the answer as it comes.
     pub(crate) fn saw(&self, delta: &Delta) {
-        let (Delta::Text(text) | Delta::Reasoning(text)) = delta;
+        let (Delta::Text(text) | Delta::Reasoning(text) | Delta::Arguments(text)) = delta;
         let bytes = u64::try_from(text.len()).unwrap_or(u64::MAX);
         self.seen.fetch_add(bytes, Ordering::Relaxed);
     }
 
     /// Counts what the call cost, `cost` when its provider says it in dollars, else `counts`
-    /// at its price, in the hold's place, and writes it to the store.
-    pub(crate) async fn settle(self, cost: Option<Money>, counts: &TokenCounts) {
-        let cost = cost
-            .and_then(in_dollars)
-            .unwrap_or_else(|| self.price.nanos(counts));
+    /// at its price, in the hold's place, and writes it to the store. Counts that say nothing
+    /// was used are counted as [`Self::unmetered`] says; counts that are `estimated` (a stream
+    /// that ended early) with no less output than came.
+    pub(crate) async fn settle(
+        self,
+        cost: Option<Money>,
+        (counts, estimated): (TokenCounts, bool),
+    ) {
+        let cost = cost.and_then(in_dollars).unwrap_or_else(|| {
+            if counts == TokenCounts::default() {
+                self.unmetered()
+            } else if estimated {
+                // What it says it read, at its cache's prices, and no less of its answer than
+                // came.
+                let counts = TokenCounts {
+                    output: counts.output.max(self.came()),
+                    ..counts
+                };
+                self.price.nanos(&counts)
+            } else {
+                self.price.nanos(&counts)
+            }
+        });
         self.counted(cost).await;
     }
 
+    /// What a call that was sent is counted at when what it used is unknown: a media call or a
+    /// search, its hold; any other, what it read and what came of its answer.
+    fn unmetered(&self) -> Nanos {
+        if self.billed_whole() {
+            self.worst
+        } else {
+            self.so_far()
+        }
+    }
+
     /// Counts what a call that ended in `error` without an answer cost so far, in the hold's
-    /// place, and writes it to the store: nothing when none of its answer came; a media call,
-    /// its hold unless its provider answered with a refusal or it was never sent.
+    /// place, and writes it to the store: nothing when its provider refused it or it never
+    /// reached it, else as [`Self::unmetered`] says, its provider having billed what it read.
     pub(crate) async fn broke(self, error: &ProviderError) {
-        let cost = if self.billed_whole() {
-            if error.unanswered() {
-                self.worst
-            } else {
-                Nanos::ZERO
-            }
-        } else if self.seen.load(Ordering::Relaxed) == 0 {
+        let cost = if error.unanswered() {
+            self.unmetered()
+        } else if self.billed_whole() || self.seen.load(Ordering::Relaxed) == 0 {
             Nanos::ZERO
         } else {
             self.so_far()
@@ -114,24 +139,24 @@ impl<'a> Paying<'a> {
     fn so_far(&self) -> Nanos {
         let counts = TokenCounts {
             input: self.input,
-            output: self
-                .seen
-                .load(Ordering::Relaxed)
-                .div_ceil(FIT_BYTES_PER_TOKEN),
+            output: self.came(),
             ..TokenCounts::default()
         };
         self.price.nanos(&counts)
+    }
+
+    /// The tokens of its answer that came so far.
+    fn came(&self) -> u64 {
+        self.seen
+            .load(Ordering::Relaxed)
+            .div_ceil(FIT_BYTES_PER_TOKEN)
     }
 }
 
 impl Drop for Paying<'_> {
     fn drop(&mut self) {
         if !self.settled {
-            let cost = if self.billed_whole() {
-                self.worst
-            } else {
-                self.so_far()
-            };
+            let cost = self.unmetered();
             self.credits
                 .settle(self.payer, self.hold, (cost, self.kind.clone()));
         }

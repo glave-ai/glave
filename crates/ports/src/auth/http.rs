@@ -7,6 +7,7 @@ use std::time::Duration;
 use reqwest::header::{HeaderName, HeaderValue};
 
 use super::{ERROR_BODY_BYTES, Header};
+use crate::failure::Failure;
 use crate::host::shown;
 use crate::model::ProviderError;
 use crate::spoken;
@@ -53,19 +54,21 @@ pub fn credential_header(
     Ok((name, value))
 }
 
-/// What a failed request means: no connection within [`CONNECT_TIMEOUT`], a silence past
-/// `idle`, or a broken connection. A connection that never opened sent nothing, so it is the
-/// provider unreached, not silent.
+/// What a failed request means: no connection within [`CONNECT_TIMEOUT`] or none at all, a
+/// silence past `idle`, or a broken connection. A connection that never opened sent nothing,
+/// so it is the provider unreached, neither silent nor billed.
 pub fn request_failed(error: reqwest::Error, idle: Duration) -> ProviderError {
     if error.is_connect() && error.is_timeout() {
         let host = error
             .url()
             .and_then(reqwest::Url::host_str)
             .unwrap_or("the provider");
-        ProviderError::Transport(format!(
+        unreached(&format!(
             "no connection to {host} within {}",
             spoken(CONNECT_TIMEOUT)
         ))
+    } else if error.is_connect() {
+        unreached(&cause_of(error))
     } else if error.is_timeout() {
         ProviderError::Timeout {
             seconds: idle.as_secs(),
@@ -85,6 +88,23 @@ async fn error_body(mut response: reqwest::Response) -> Vec<u8> {
         body.extend_from_slice(&bytes);
     }
     body
+}
+
+/// The provider never reached, for `reason`, the cause alone: nothing was sent, so the next
+/// target may serve and nothing was billed.
+fn unreached(reason: &str) -> ProviderError {
+    ProviderError::Unserved {
+        failure: Failure::Unreachable,
+        reason: reason.to_owned(),
+    }
+}
+
+/// A request that could not be written out, for `error`: never sent, so nothing was billed.
+pub fn not_encoded(error: &serde_json::Error) -> ProviderError {
+    ProviderError::Unserved {
+        failure: Failure::Rejected,
+        reason: format!("could not encode the request: {error}"),
+    }
 }
 
 /// The answer from `url` that is not the JSON it should be: `url` as it may be shown.

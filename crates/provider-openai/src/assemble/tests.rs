@@ -45,7 +45,7 @@ fn text_streams_live_and_assembles() {
 
 #[test]
 fn tool_call_fragments_merge_by_index() {
-    let (completion, _) = run(
+    let (completion, deltas) = run(
         "openai",
         &[
             r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"bash","arguments":""}}]}}]}"#,
@@ -67,6 +67,16 @@ fn tool_call_fragments_merge_by_index() {
         panic!("arguments should parse");
     };
     assert_eq!(args.get("command"), Some(&Value::from("ls")));
+    let came: String = (deltas.into_iter())
+        .map(|delta| match delta {
+            Delta::Arguments(piece) => piece,
+            other => panic!("only arguments came: {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        came, r#"{"comm{"path":"a.md"}and":"ls"}"#,
+        "every piece of arguments, as it came, so what came can be counted"
+    );
 }
 
 #[test]
