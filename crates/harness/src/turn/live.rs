@@ -121,6 +121,9 @@ pub(crate) struct Prompt<'a> {
     pub(crate) key: Option<&'a str>,
     /// When the turn is a schedule's run, when that run was due and on whose clocks.
     pub(crate) scheduled: Option<&'a Due>,
+    /// What the person typed, when it named a command and `text` is what that sent: what
+    /// they asked is what they typed.
+    pub(crate) typed: Option<&'a str>,
 }
 
 impl<'a> Prompt<'a> {
@@ -134,6 +137,7 @@ impl<'a> Prompt<'a> {
             id: None,
             key: None,
             scheduled: None,
+            typed: None,
         }
     }
 }

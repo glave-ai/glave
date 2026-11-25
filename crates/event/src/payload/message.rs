@@ -27,6 +27,10 @@ pub struct MessageAdded {
     /// key, on any server, finds it here and starts nothing (`specs/invariants.md`, 4).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
+    /// What the person typed, when it named a command (`/review 12`) whose text the parts hold
+    /// instead: what they asked, for the judge, is what they typed, never what it expanded to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub typed: Option<String>,
 }
 
 /// The model's reasoning in a line: its headline, and how long the model reasoned.

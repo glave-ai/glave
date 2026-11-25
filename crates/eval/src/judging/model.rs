@@ -79,7 +79,6 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
                 None,
                 &JudgeCase {
                     asked: &asked,
-                    rules: None,
                     action: &action,
                     flagged: &reason,
                     untrusted,

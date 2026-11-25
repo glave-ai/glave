@@ -477,19 +477,14 @@ where
     }
 
     /// The model that judges `thread`'s flagged actions, or none when no judge does: its
-    /// project's choice, else the harness's. The main model is its project's, else the
-    /// default.
+    /// project's choice, else the harness's. The main model is the person's or the server's,
+    /// never the project's `model`, which a repository sets without being trusted: a project
+    /// picks its judge only with `judge_model`, which needs the person's trust.
     fn judge_for(&self, thread: &Thread) -> Option<String> {
         let settled = &thread.brought.settled;
-        let main = || {
-            settled
-                .model
-                .clone()
-                .unwrap_or_else(|| self.default_model())
-        };
         match settled.judge.as_ref().unwrap_or(&thread.defaults.judge) {
             Judge::Off => None,
-            Judge::Main => Some(main()),
+            Judge::Main => Some(self.default_model()),
             Judge::Model(model) => Some(model.clone()),
         }
     }
@@ -516,7 +511,6 @@ where
         }
         let case = JudgeCase {
             asked: &thread.asked,
-            rules: thread.instructions.as_deref(),
             action: &request.summary,
             flagged: &reason,
             untrusted: thread.untrusted,

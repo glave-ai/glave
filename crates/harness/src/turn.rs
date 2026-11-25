@@ -132,6 +132,7 @@ where
             .map_err(HarnessError::PromptFailed)?;
         let prompt = Prompt {
             text: &text,
+            typed: crate::commands::typed(prompt.text, &text),
             ..prompt
         };
         self.run_with(thread, prompt, toolset, cancel, live).await
@@ -355,6 +356,7 @@ where
             author: Some(Principal::glave()),
             thought: None,
             key: None,
+            typed: None,
         };
         self.stage(thread, &mut events, &message)?;
         self.commit(thread, events).await?;

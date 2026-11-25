@@ -292,9 +292,9 @@ fn another_person_s_thread_gets_nothing_the_project_brings() {
     });
 }
 
-/// A project that chooses its own model, judge and titles and sets up its own
-/// `web_fetch`, all at once, needing no trust in this test.
-struct Choosing;
+/// A project that chooses its own model, this judge (none: the harness's) and titles and sets
+/// up its own `web_fetch`, all at once, needing no trust in this test.
+struct Choosing(Option<Judge>);
 
 impl ProjectFolders for Choosing {
     fn for_folder<'a>(
@@ -311,7 +311,7 @@ impl ProjectFolders for Choosing {
             Brought {
                 settled: Settled {
                     model: Some("project-model".into()),
-                    judge: Some(Judge::Model("project-judge".into())),
+                    judge: self.0.clone(),
                     titles: Some(false),
                     ..Settled::default()
                 },
@@ -367,7 +367,9 @@ fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
             settings,
         );
         let harness = harness
-            .with_project_folders(Some(Arc::new(Choosing) as Arc<dyn ProjectFolders>))
+            .with_project_folders(Some(Arc::new(Choosing(Some(Judge::Model(
+                "project-judge".into(),
+            )))) as Arc<dyn ProjectFolders>))
             .with_web(Some(Arc::new(tool("web_fetch", "the harness's web"))));
         let place = Place::Folder(project_dir.to_string_lossy().into_owned());
         let mut thread = thread_in(&harness, place).await;
@@ -402,6 +404,51 @@ fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
             "the project's: no titles"
         );
         assert!(harness.title_case(&chat).is_some(), "the harness's own");
+    });
+}
+
+#[test]
+fn a_project_s_model_never_judges_its_own_actions() {
+    // A repository sets `model` with no trust asked, so the judge stays the person's main
+    // model: only a trusted project's `judge_model` picks another.
+    let Some(base) = crate::outside_sandbox::sandboxed("projects-own-judge") else {
+        return;
+    };
+    let project_dir = folder("projects-own-judge-project");
+    block_on!(async {
+        let push = vec![("bash", json!({"command": "git push origin main"}))];
+        let answers = vec![
+            answer(None, push, StopReason::ToolUse),
+            answer(
+                Some(r#"{"decision":"run","reason":"the person asked to push"}"#),
+                vec![],
+                StopReason::EndTurn,
+            ),
+            answer(Some("Pushed."), vec![], StopReason::EndTurn),
+        ];
+        let workspace = crate::outside_sandbox::walled(&base, false).await;
+        let settings = crate::outside_sandbox::judged();
+        let (harness, seen) = harness_with(
+            workspace,
+            answers,
+            NoOneToAsk,
+            InMemoryLog::new(),
+            1,
+            settings,
+        );
+        let harness =
+            harness.with_project_folders(Some(Arc::new(Choosing(None)) as Arc<dyn ProjectFolders>));
+        let place = Place::Folder(project_dir.to_string_lossy().into_owned());
+        let mut thread = thread_in(&harness, place).await;
+        turn(&harness, &mut thread, "push it").await;
+        let judged: Vec<String> = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| request.purpose == Purpose::Judge)
+            .map(|request| request.model.clone())
+            .collect();
+        assert_eq!(judged, ["test-model"]);
     });
 }
 

@@ -36,6 +36,7 @@ proptest! {
             author: None,
             thought: None,
             key: None,
+            typed: None,
         };
         let json = encode(header(seq, millis), &message).unwrap().to_json().unwrap();
         let event = decode(RawEvent::from_json(&json).unwrap()).unwrap();

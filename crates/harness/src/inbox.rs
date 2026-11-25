@@ -195,7 +195,8 @@ where
                 parts: said(&text, &queued.files),
             });
             if !thread.delegated() {
-                thread.asked.push(text.clone());
+                // What they typed, never what a command it named sent.
+                thread.asked.push(queued.text.clone());
             }
             thread.request = Some(text);
         }
@@ -217,6 +218,7 @@ where
                 author: Self::other_than_for(thread, queued.caller.person),
                 thought: None,
                 key: queued.key.clone(),
+                typed: crate::commands::typed(&queued.text, text).map(str::to_owned),
             };
             self.stage_as(thread, &mut events, &message, queued.id)?;
         }
@@ -271,6 +273,7 @@ where
                 key: next.key.as_deref(),
                 // A message sent while a turn ran is someone's, never a schedule's run.
                 scheduled: None,
+                typed: None,
             };
             let ran = self.run_prompt(thread, prompt, cancel, live).await;
             match ran {

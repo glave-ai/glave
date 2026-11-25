@@ -1,8 +1,9 @@
 //! Custom commands: a Markdown file whose name is the command, as Claude Code, Codex and
 //! OpenCode write them. Typing `/name some words` sends the file's body as the prompt, with
 //! `$ARGUMENTS` replaced by the words and `$1` to `$9` by each of them. A command is only text
-//! the person sends, so it runs nothing and needs no trust. Optional frontmatter may give a
-//! `description` and an `argument-hint`, for listings; other fields are ignored.
+//! the person sends, so it runs nothing and needs no trust. Its text is not the person's own
+//! words, though: what they asked, for the judge, is what they typed. Optional frontmatter may
+//! give a `description` and an `argument-hint`, for listings; other fields are ignored.
 //!
 //! A tool server's prompts are commands too, named as Claude Code names them:
 //! `/mcp__<server>__<prompt> words` sends the text the server gives for them.
@@ -132,6 +133,12 @@ where
     }
 }
 
+/// What the person typed, `prompt`, when it named a command and `sent` is what that sent
+/// instead: a command's text is the project's or a server's words, never the person's.
+pub(crate) fn typed<'a>(prompt: &'a str, sent: &str) -> Option<&'a str> {
+    (prompt != sent).then_some(prompt)
+}
+
 /// The tool server's prompt `prompt` invokes, with what follows its name, as Claude Code names
 /// them: `/mcp__docs__review 12` invokes `mcp__docs__review` with `12`. Which server offers it
 /// is for the servers to say.
@@ -141,17 +148,17 @@ pub(crate) fn served(prompt: &str) -> Option<(&str, &str)> {
     name.starts_with("mcp__").then_some((name, arguments))
 }
 
-/// The folders commands are looked for in, first found first: in each folder from `root` up
-/// to its repository's root, the project folders; then `personal`, the person's own. A name
-/// is kept by the first folder that has it, as skills are.
+/// The folders commands are looked for in, first found first: `personal`, the person's own;
+/// then, in each folder from `root` up to its repository's root, the project folders. A name
+/// is kept by the first folder that has it, so a repository's command never stands in for one
+/// of the person's: what `/name` sends is theirs.
 pub fn command_folders(root: &Path, personal: &[PathBuf]) -> Vec<PathBuf> {
-    let mut folders: Vec<PathBuf> = crate::instructions::project_dirs(root)
+    let project = crate::instructions::project_dirs(root)
         .iter()
         .rev()
         .flat_map(|dir| COMMAND_FOLDERS.map(|folder| dir.join(folder)))
-        .collect();
-    folders.extend_from_slice(personal);
-    folders
+        .collect::<Vec<_>>();
+    personal.iter().cloned().chain(project).collect()
 }
 
 /// Every command in `folders` (each `*.md` file directly in one), sorted by name. A file

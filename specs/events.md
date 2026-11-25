@@ -256,6 +256,7 @@ A principal is anyone or anything that can act, written as a reference:
 | | optional `auth` | how the caller who started the turn signed in: `method` (`local`, `oidc`, `saml` or `account`, a glave account's passkey or session; or `on_behalf`, signed in by no one, as glave acts for someone other than the person on its computer on its own: a schedule's run, a chat's `schedule` tool; an open kind, so a reader that does not know it reads it as another), and for `oidc` and `saml` the `issuer`, `subject` and `session`. Never a token or any other secret |
 | `message.added` v1 | optional `author` | who wrote the message. Absent: the thread's `for` for a user message, its `agent` for an assistant message |
 | `message.added` v1 | optional `key` | the idempotency key it was sent with. Absent: sent with none |
+| `message.added` v1 | optional `typed` | what the person typed when it named a command or a server's prompt (`/ship docs`), whose text `parts` holds: what they asked, for the judge. Absent: they typed what `parts` holds |
 | `approval.decided` v1 | optional `by` | who decided. Absent: the thread's `for`. `no_one_there` and `cancelled` are decided by `{"kind": "glave"}` |
 | `plan.updated` v1 | optional `by` | who edited it, when no `call_id` says the model set it. Absent: the thread's `for` |
 | `plan.approved` v1 | optional `by` | who approved it. Absent: the thread's `for` |
