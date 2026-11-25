@@ -77,12 +77,7 @@ pub(crate) fn deletes(
 /// The commands `find`'s words run on what they find, each as a script, once for each folder
 /// searched: `{}` is something found inside it.
 pub(crate) fn scripts(words: &[Word]) -> Vec<String> {
-    if words
-        .first()
-        .and_then(Word::literal)
-        .map(basename)
-        != Some("find")
-    {
+    if words.first().and_then(Word::literal).map(basename) != Some("find") {
         return Vec::new();
     }
     let (roots, expression) = roots(words);
@@ -137,11 +132,11 @@ mod tests {
 
     #[test]
     fn the_folders_searched_come_before_the_expression() {
-        let (roots, at) = roots(&literal(&["find", "-L", "src", "/tmp", "-name", "x"]));
-        assert_eq!(roots, literal(&["src", "/tmp"]));
+        let (named, at) = roots(&literal(&["find", "-L", "src", "/tmp", "-name", "x"]));
+        assert_eq!(named, literal(&["src", "/tmp"]));
         assert_eq!(at, 4);
-        let (roots, _) = roots(&literal(&["find", "-delete"]));
-        assert_eq!(roots, literal(&["."]));
+        let (named, _) = roots(&literal(&["find", "-delete"]));
+        assert_eq!(named, literal(&["."]));
     }
 
     #[test]

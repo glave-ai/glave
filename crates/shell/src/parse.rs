@@ -381,7 +381,7 @@ fn first_word(node: Node<'_>, source: &[u8]) -> Option<String> {
                 .map(|arg| word(arg, source)),
         )
         .collect();
-    crate::rules::unwrapped(&words)
+    unwrapped(&words)
         .first()
         .and_then(Word::literal)
         .map(|name| basename(name).to_owned())
