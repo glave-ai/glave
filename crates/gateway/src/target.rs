@@ -221,10 +221,9 @@ impl Target {
     /// asking for: no more than it asks, than the catalog says the model gives, nor than its
     /// window has room for after the input (at least [`LEAST_OUTPUT`]), since a server such as
     /// vLLM refuses a request whose input and answer could outgrow the window. With nothing
-    /// known of the model, a turn's own cap is not sent, as it may not fit, unless the call is
-    /// `paid` for from credits, whose hold counts that cap and so must bound the answer; a cap
-    /// another call chose (a title's, a judge's) is.
-    pub(crate) fn output_for(&self, request: &ModelRequest, input: u64, paid: bool) -> Option<u32> {
+    /// known of the model, a turn's own cap is not sent, as it may not fit; a cap another
+    /// call chose (a title's, a judge's) is.
+    pub(crate) fn output_for(&self, request: &ModelRequest, input: u64) -> Option<u32> {
         let asked = request.max_output_tokens?;
         let room = self.can.context_tokens.map(|window| {
             let left = window.saturating_sub(input).max(u64::from(LEAST_OUTPUT));
@@ -236,7 +235,7 @@ impl Target {
             .min()
         {
             Some(most) => Some(asked.min(most)),
-            None if !paid && matches!(request.purpose, Purpose::Main | Purpose::Subagent) => None,
+            None if matches!(request.purpose, Purpose::Main | Purpose::Subagent) => None,
             None => Some(asked),
         }
     }

@@ -77,19 +77,23 @@ impl<'a> Paying<'a> {
         self.seen.fetch_add(bytes, Ordering::Relaxed);
     }
 
-    /// Counts what the call cost, `cost` when its provider says it in dollars and it is not
-    /// below nothing, else `counts` at its price, in the hold's place, and writes it to the
-    /// store. An answer that reports nothing it used, no cost and no tokens, is counted as
-    /// [`Self::unmetered`] says.
-    pub(crate) async fn settle(self, cost: Option<Money>, counts: &TokenCounts) {
-        let reported = cost
-            .and_then(in_dollars)
-            .filter(|cost| *cost >= Nanos::ZERO);
-        let cost = match reported {
-            Some(cost) => cost,
-            None if *counts == TokenCounts::default() => self.unmetered(),
-            None => self.price.nanos(counts),
-        };
+    /// Counts what the call cost, `cost` when its provider says it in dollars, else `counts`
+    /// at its price, in the hold's place, and writes it to the store. Counts that are
+    /// `estimated` (a stream that ended early) or say nothing was used are never counted below
+    /// what [`Self::unmetered`] says.
+    pub(crate) async fn settle(
+        self,
+        cost: Option<Money>,
+        (counts, estimated): (TokenCounts, bool),
+    ) {
+        let cost = cost.and_then(in_dollars).unwrap_or_else(|| {
+            let priced = self.price.nanos(&counts);
+            if estimated || counts == TokenCounts::default() {
+                priced.max(self.unmetered())
+            } else {
+                priced
+            }
+        });
         self.counted(cost).await;
     }
 

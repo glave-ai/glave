@@ -3,7 +3,9 @@
 
 use std::time::Duration;
 
-use glave_ports::auth::{Auth, CONNECT_TIMEOUT, Outgoing, not_json, request_failed, send_signed};
+use glave_ports::auth::{
+    Auth, CONNECT_TIMEOUT, Outgoing, not_encoded, not_json, request_failed, send_signed,
+};
 use glave_ports::host::is_this_computer;
 use glave_ports::{Completion, Delta, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError};
 use reqwest::header::CONTENT_TYPE;
@@ -118,7 +120,7 @@ impl ModelProvider for OpenAiCompatible {
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> Result<Completion, ProviderError> {
         let body = serde_json::to_vec(&chat_request(request, &self.provider))
-            .map_err(|e| ProviderError::Protocol(format!("could not encode the request: {e}")))?;
+            .map_err(|e| not_encoded(&e))?;
         let response = self.post(&self.endpoint, body).await?;
         let mut assembler = Assembler::new(&self.provider, &request.model);
         match self.stream(response, &mut assembler, on_delta).await {

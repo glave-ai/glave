@@ -165,7 +165,13 @@ fn a_media_answer_that_says_nothing_of_what_it_used_is_charged_its_hold() {
 #[test]
 fn a_media_call_that_never_reached_its_provider_is_charged_nothing_and_its_fallback_once() {
     let credits = funded(1_000);
-    let unreached = Fake::failing("down", ProviderError::Unreached("refused".into()));
+    let unreached = Fake::failing(
+        "down",
+        ProviderError::Unserved {
+            failure: glave_ports::Failure::Unreachable,
+            reason: "connection refused".into(),
+        },
+    );
     let painters = vec![
         unreached.target("painter").with_price(price(1_000_000)),
         Fake::new("up")

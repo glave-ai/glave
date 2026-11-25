@@ -49,7 +49,7 @@ impl ProviderError {
         match self {
             Self::Http { status, body } => from_status(*status, &body.to_ascii_lowercase()),
             Self::Credentials(_) => Failure::Refused,
-            Self::Transport(_) | Self::Unreached(_) => Failure::Unreachable,
+            Self::Transport(_) => Failure::Unreachable,
             Self::Timeout { .. } => Failure::Silent,
             Self::NoOutput(_) => Failure::Unavailable,
             Self::AfterOutput(error) => error.failure(),
@@ -67,15 +67,15 @@ impl ProviderError {
 
     /// Whether the request may have reached its provider and found no answer that could be
     /// read: silence past the timeout, a broken connection, an answer not as it should be. Not
-    /// a refusal the provider answered with, nor one made before anything was sent, a
-    /// connection that never opened among them. Such a call's work may still have been done,
-    /// and billed.
+    /// a refusal the provider answered with, before its answer or inside it with no output,
+    /// nor one made before anything was sent, a connection that never opened among them. Such
+    /// a call's work may still have been done, and billed.
     pub fn unanswered(&self) -> bool {
         !matches!(
             self,
             Self::Http { .. }
+                | Self::NoOutput(_)
                 | Self::Credentials(_)
-                | Self::Unreached(_)
                 | Self::Unserved { .. }
                 | Self::Unpaid(_)
         )
@@ -202,11 +202,18 @@ mod tests {
     }
 
     #[test]
-    fn a_provider_never_reached_was_sent_nothing_and_one_that_went_silent_may_have_billed() {
-        let unreached = ProviderError::Unreached("connection refused".into());
-        assert_eq!(unreached.failure(), Failure::Unreachable);
+    fn a_provider_that_refused_or_was_never_reached_billed_nothing_and_a_silent_one_may_have() {
+        let unreached = ProviderError::Unserved {
+            failure: Failure::Unreachable,
+            reason: "connection refused".into(),
+        };
         assert!(unreached.is_transient(), "the next target may be up");
-        assert!(!unreached.unanswered(), "nothing was sent");
+        for refused in [
+            unreached,
+            ProviderError::NoOutput("finish reason error".into()),
+        ] {
+            assert!(!refused.unanswered(), "{refused}");
+        }
         for sent in [
             ProviderError::Transport("connection reset".into()),
             ProviderError::Timeout { seconds: 300 },

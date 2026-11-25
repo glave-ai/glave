@@ -17,7 +17,9 @@ use crate::tools::BoxFuture;
 pub use cache::{Fresh, Refreshing};
 pub use glave_event::Secret;
 #[cfg(feature = "http")]
-pub use http::{CONNECT_TIMEOUT, credential_header, not_json, request_failed, send_signed};
+pub use http::{
+    CONNECT_TIMEOUT, credential_header, not_encoded, not_json, request_failed, send_signed,
+};
 
 /// The header a fixed key goes in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -66,7 +66,7 @@ impl WebSearch {
             match &found {
                 Ok(found) => {
                     let cost = found.cost.or(Some(self.price));
-                    paying.settle(cost, &TokenCounts::default()).await;
+                    paying.settle(cost, (TokenCounts::default(), false)).await;
                 }
                 Err(error) => paying.broke(error).await,
             }

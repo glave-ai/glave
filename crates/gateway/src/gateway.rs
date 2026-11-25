@@ -156,11 +156,12 @@ impl Gateway {
             let sent = (request, (route.as_ref(), end_user.as_ref()));
             let sent = Self::send_to(target, sent, &needs, paying.as_ref(), &mut call).await;
             match sent {
-                Ok(made) => {
+                Ok((made, reported)) => {
                     if let Some(paying) = paying {
-                        let completion = &made.completion;
-                        let cost = completion.cost.as_ref().map(|cost| cost.amount);
-                        paying.settle(cost, &completion.usage.counts()).await;
+                        let usage = &made.completion.usage;
+                        paying
+                            .settle(reported, (usage.counts(), usage.estimated()))
+                            .await;
                     }
                     return Ok(made);
                 }
@@ -189,17 +190,16 @@ impl Gateway {
 impl Gateway {
     /// Sends `request` to `target`, as its route's purpose and the target take it, with what
     /// `sent_with`'s route asks of a router and the person it names, noting what comes for
-    /// `paying`, and says who served it; its cost is its target's price when its provider
-    /// reports none.
+    /// `paying`, and says who served it, beside the cost its provider reported; its cost is its
+    /// target's price when its provider reports none.
     async fn send_to(
         target: &Target,
         (request, sent_with): (&ModelRequest, (Option<&Route>, Option<&EndUser>)),
         needs: &Needs<'_>,
         paying: Option<&Paying<'_>>,
         call: &mut Call<'_>,
-    ) -> Result<Made, ProviderError> {
-        let paid = paying.is_some();
-        let (sent, stripped) = prepare(request, sent_with, (target, paid), needs);
+    ) -> Result<(Made, Option<Money>), ProviderError> {
+        let (sent, stripped) = prepare(request, sent_with, target, needs);
         let effort = sent.effort.clone();
         let span = telemetry::model_call(request.purpose.id(), &target.name);
         let sent = match call {
@@ -228,6 +228,7 @@ impl Gateway {
                  files,
                  mut completion,
              }| {
+                let reported = completion.cost.as_ref().map(|cost| cost.amount);
                 // An answer that reports nothing it used is not priced at nothing: credits count it
                 // otherwise ([`Paying::settle`]), and its receipt says no cost.
                 let reported_none = completion.usage.counts() == TokenCounts::default();
@@ -244,10 +245,10 @@ impl Gateway {
                     effort,
                     reasoning_stripped: stripped,
                 });
-                Made { files, completion }
+                (Made { files, completion }, reported)
             },
         );
-        let ended = sent.as_ref().map(|made| &made.completion);
+        let ended = sent.as_ref().map(|(made, _)| &made.completion);
         telemetry::model_ended(&span, request.purpose.id(), &target.name, ended);
         sent
     }
@@ -273,7 +274,9 @@ impl Gateway {
             return Err(ProviderError::Unpaid(Unpaid::Unpriced { model }));
         };
         let worst = worst(target, request, needs, price);
-        let input = needs.read_tokens();
+        // Never more read than its window holds.
+        let window = target.can.context_tokens.unwrap_or(u64::MAX);
+        let input = needs.read_tokens().min(window);
         let kind = if request.purpose.is_media() {
             CostKind::Media
         } else {
@@ -337,10 +340,12 @@ impl ModelProvider for Gateway {
 /// allowed, a media tier's own most.
 fn worst(target: &Target, request: &ModelRequest, needs: &Needs<'_>, price: &Price) -> Money {
     let output = (target.tier.as_ref().map(|tier| tier.output_tokens))
-        .or(target.output_for(request, needs.reserve_tokens(), true))
+        .or(target.output_for(request, needs.reserve_tokens()))
+        // A turn's cap not sent to a model nothing is known of still bounds what is held.
+        .or(request.max_output_tokens)
         .or(target.can.max_output_tokens)
         .unwrap_or(DEFAULT_OUTPUT_TOKENS);
-    let input = needs.held_tokens();
+    let input = needs.held_tokens(request.purpose.is_media());
     let counts = TokenCounts {
         input: target
             .can

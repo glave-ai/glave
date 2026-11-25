@@ -166,11 +166,9 @@ fn provider_said(failed: &ProviderError) -> Vec<Sentence> {
         ProviderError::Credentials(reason) => Sentence::ProviderCredentials {
             reason: reason.clone(),
         },
-        ProviderError::Transport(reason) | ProviderError::Unreached(reason) => {
-            Sentence::ProviderUnreachable {
-                reason: reason.clone(),
-            }
-        }
+        ProviderError::Transport(reason) => Sentence::ProviderUnreachable {
+            reason: reason.clone(),
+        },
         ProviderError::Protocol(reason) => Sentence::ProviderMalformed {
             reason: reason.clone(),
         },
