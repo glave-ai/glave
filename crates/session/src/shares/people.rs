@@ -37,11 +37,9 @@ const LINK_FOR: SignedDuration = SignedDuration::from_mins(10);
 /// How long a proof works on the browser that holds it.
 pub(crate) const PROOF_FOR: SignedDuration = SignedDuration::from_hours(30 * 24);
 
-/// The most projects' ledgers a server keeps read in memory; past them, it starts over.
+/// The most projects' ledgers a server keeps read in memory; past them, it starts over, and
+/// reads each again from its start when next asked.
 const MOST_LEDGERS: usize = 256;
-
-/// The most links sent, and proofs given, a ledger keeps in memory, the latest.
-const MOST_KEPT: usize = 4_096;
 
 /// `people` as a share lists them: each address read as glave reads every address, once, at
 /// most [`MOST_PEOPLE`]; refused for anything but addresses, or for none.
@@ -66,13 +64,18 @@ pub(crate) fn listed(people: &[String]) -> Result<Vec<String>, ApiError> {
 }
 
 /// A project's shares ledger as far as this server has read it: its live shares, each with the
-/// `seq` its list of people was last set at, and the links sent and proofs given, the latest.
+/// `seq` its list of people was last set at, and, for each, the links sent and proofs given
+/// since then. Nothing is trimmed but what can open nothing any more: everything of a share
+/// stopped, or given for a list of people it no longer has, and links past [`LINK_FOR`] and
+/// proofs past their `until` ([`Ledger::prune`]). So a link is never spent twice, and no
+/// recipient whose proof still works is asked again; what is kept is bounded by what can still
+/// open a live share.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Ledger {
     next: u64,
     pub(crate) live: BTreeMap<ShareId, (ShareSet, u64)>,
-    sent: Vec<(u64, At, ShareLinkSent)>,
-    opened: Vec<ShareOpened>,
+    sent: BTreeMap<ShareId, Vec<(u64, At, ShareLinkSent)>>,
+    opened: BTreeMap<ShareId, Vec<ShareOpened>>,
 }
 
 impl Ledger {
@@ -85,20 +88,28 @@ impl Ledger {
             Body::ShareSet(set) => {
                 let given = match self.live.get(&set.share) {
                     Some((before, given)) if before.audience == set.audience => *given,
-                    _ => seq,
+                    _ => {
+                        // A new list of people: what was given for the old one opens nothing.
+                        self.sent.remove(&set.share);
+                        self.opened.remove(&set.share);
+                        seq
+                    }
                 };
                 self.live.insert(set.share, (set, given));
             }
             Body::ShareStopped(stopped) => {
                 self.live.remove(&stopped.share);
+                self.sent.remove(&stopped.share);
+                self.opened.remove(&stopped.share);
             }
             Body::ShareLinkSent(sent) => {
-                self.sent.push((seq, at, sent));
-                trim(&mut self.sent);
+                self.sent
+                    .entry(sent.share)
+                    .or_default()
+                    .push((seq, at, sent));
             }
             Body::ShareOpened(opened) => {
-                self.opened.push(opened);
-                trim(&mut self.opened);
+                self.opened.entry(opened.share).or_default().push(opened);
             }
             _ => {}
         }
@@ -110,15 +121,37 @@ impl Ledger {
     }
 }
 
-/// Keeps the latest [`MOST_KEPT`] of `kept`.
-fn trim<T>(kept: &mut Vec<T>) {
-    if kept.len() > MOST_KEPT {
-        let over = kept.len() - MOST_KEPT;
-        kept.drain(..over);
+impl Ledger {
+    /// Lets go of what can open nothing at `now`: links past [`LINK_FOR`], used or not, and
+    /// proofs past their `until`. A link kept is never spent twice, as its proof names it.
+    fn prune(&mut self, now: jiff::Timestamp) {
+        self.sent.retain(|_, sent| {
+            sent.retain(|(_, at, _)| {
+                at.timestamp()
+                    .checked_add(LINK_FOR)
+                    .is_ok_and(|by| by > now)
+            });
+            !sent.is_empty()
+        });
+        self.opened.retain(|_, opened| {
+            opened.retain(|opened| opened.until.timestamp() > now);
+            !opened.is_empty()
+        });
+    }
+
+    fn sent(&self, share: ShareId) -> &[(u64, At, ShareLinkSent)] {
+        self.sent.get(&share).map_or(&[], Vec::as_slice)
+    }
+
+    fn opened(&self, share: ShareId) -> &[ShareOpened] {
+        self.opened.get(&share).map_or(&[], Vec::as_slice)
     }
 }
 
-/// What each server has read of projects' shares ledgers.
+/// What each server has read of projects' shares ledgers, by project. Who may read it is
+/// settled before it is: the owner's requests are let through for their project first, and a
+/// link's page reads only the project the shares' list names for that link; the cache itself
+/// checks nothing.
 pub(crate) type Ledgers = HashMap<Located, Ledger>;
 
 /// Whether `share` lists the address whose SHA-256 is `to`.
@@ -148,6 +181,7 @@ where
             }
         })
         .await?;
+        ledger.prune(self.inner.harness.clock().now());
         self.held_ledgers(|ledgers| {
             if ledgers.len() >= MOST_LEDGERS && !ledgers.contains_key(&at) {
                 ledgers.clear();
@@ -208,8 +242,8 @@ where
         else {
             return Ok(());
         };
-        let recent = (ledger.sent.iter().rev())
-            .find(|(_, _, sent)| sent.share == share.share && sent.to == to_kept)
+        let recent = (ledger.sent(share.share).iter().rev())
+            .find(|(_, _, sent)| sent.to == to_kept)
             .is_some_and(|(_, at, _)| just_now(at.timestamp(), now));
         if !lists(live, &to_kept) || recent {
             return Ok(());
@@ -252,12 +286,12 @@ where
         let ledger = self.share_ledger(scope).await?;
         let now = self.inner.harness.clock().now();
         let held = kept(token);
-        let found = (ledger.sent.iter())
-            .find(|(_, _, sent)| sent.share == share.share && same_kept(&sent.token, &held));
+        let found =
+            (ledger.sent(share.share).iter()).find(|(_, _, sent)| same_kept(&sent.token, &held));
         let Some((seq, at, sent)) = found else {
             return Ok(None);
         };
-        let used = (ledger.opened.iter()).any(|opened| opened.link == *seq);
+        let used = (ledger.opened(share.share).iter()).any(|opened| opened.link == *seq);
         let fresh = at
             .timestamp()
             .checked_add(LINK_FOR)
@@ -292,9 +326,8 @@ where
         let held = kept(proof);
         let now = self.inner.harness.clock().now();
         let given = ledger.given(share.share);
-        ledger.opened.iter().any(|opened| {
-            opened.share == share.share
-                && same_kept(&opened.proof, &held)
+        ledger.opened(share.share).iter().any(|opened| {
+            same_kept(&opened.proof, &held)
                 && opened.until.timestamp() > now
                 && Some(opened.given) == given
                 && lists(share, &opened.to)
