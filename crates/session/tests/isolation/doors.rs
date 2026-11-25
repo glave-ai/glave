@@ -37,7 +37,7 @@ const FILES: &str = "GET or HEAD of any other path: the web app's own files";
 const SHARED: &str = "GET or HEAD at a share's own name: its page, file and download";
 
 /// Each place a request is routed, by file and as written, and the way in it is.
-const DOORS: [(&str, &str, &str); 30] = [
+const DOORS: [(&str, &str, &str); 31] = [
     // A shared file at its link's own name under the share domain: its page, its file and its
     // download, to anyone with the link, nothing of glave's there and no sign-in read. Attacked
     // by `shares.rs` (`a_link_serves_its_share_alone_at_a_name_of_its_own_and_stops_at_once`).
@@ -48,7 +48,12 @@ const DOORS: [(&str, &str, &str); 30] = [
     ),
     (
         "http/shared.rs",
-        "if *method != Method::GET && *method != Method::HEAD {",
+        "let head = *method == Method::HEAD;",
+        SHARED,
+    ),
+    (
+        "http/shared.rs",
+        "if *method != Method::GET && !head {",
         SHARED,
     ),
     // The page a browser comes back to from a connection's sign-in. It carries no sign-in of

@@ -7,12 +7,11 @@
 //! the reason: never made, stopped, or its project erased.
 
 use glave_event::{AssetKind, ShareSet};
-use glave_harness::MAX_FILE;
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, read_all};
 use hyper::body::Bytes;
 use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
 use hyper::{Method, Response, StatusCode};
-use pulldown_cmark::{Event, Options, Parser};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
 use super::body::Answer;
 use crate::server::Server;
@@ -50,11 +49,9 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let language = (headers.get(header::ACCEPT_LANGUAGE))
-        .and_then(|value| value.to_str().ok())
-        .and_then(Language::accepted)
-        .unwrap_or(Language::English);
-    if *method != Method::GET && *method != Method::HEAD {
+    let language = language_of(headers);
+    let head = *method == Method::HEAD;
+    if *method != Method::GET && !head {
         let mut refused = answered(StatusCode::METHOD_NOT_ALLOWED, Answer::empty());
         refused
             .headers_mut()
@@ -82,8 +79,8 @@ where
     }
     match path {
         "/" => page(server, &scope, &share, language).await,
-        "/file" if shown(share.kind) => file(server, &scope, &share, false).await,
-        "/download" => file(server, &scope, &share, true).await,
+        "/file" if shown(share.kind) => file(server, &scope, &share, (false, head)).await,
+        "/download" => file(server, &scope, &share, (true, head)).await,
         _ => answered(StatusCode::NOT_FOUND, Answer::empty()),
     }
 }
@@ -163,16 +160,43 @@ where
 }
 
 /// `markdown` drawn as HTML: its headings, paragraphs, lists and tables, any HTML it holds shown
-/// as text, so nothing in a file glave read becomes markup of the page's.
+/// as text, so nothing in a file glave read becomes markup of the page's; a link to anything but
+/// a web page or an email address (`javascript:`, `data:`, a path on the share's own name) is
+/// kept as its text alone.
 fn drawn(markdown: &str) -> String {
     let options = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH;
-    let events = Parser::new_ext(markdown, options).map(|event| match event {
-        Event::Html(html) | Event::InlineHtml(html) => Event::Text(html),
-        other => other,
+    // Whether each link open now is kept, innermost last.
+    let mut links: Vec<bool> = Vec::new();
+    let events = Parser::new_ext(markdown, options).filter_map(|event| match event {
+        Event::Html(html) | Event::InlineHtml(html) => Some(Event::Text(html)),
+        Event::Start(Tag::Link { ref dest_url, .. }) => {
+            let kept = leads_out(dest_url);
+            links.push(kept);
+            kept.then_some(event)
+        }
+        Event::End(TagEnd::Link) => links.pop().unwrap_or(false).then_some(event),
+        other => Some(other),
     });
     let mut page = String::with_capacity(markdown.len());
     pulldown_cmark::html::push_html(&mut page, events);
     page
+}
+
+/// The first language of `headers`'s `Accept-Language` the server writes, else English.
+fn language_of(headers: &HeaderMap) -> Language {
+    (headers.get(header::ACCEPT_LANGUAGE))
+        .and_then(|value| value.to_str().ok())
+        .and_then(Language::accepted)
+        .unwrap_or(Language::English)
+}
+
+/// Whether a link to `url` leads to a web page or an email address: its scheme `http`, `https`
+/// or `mailto`, in any case.
+fn leads_out(url: &str) -> bool {
+    let url = url.trim_start().to_ascii_lowercase();
+    ["http://", "https://", "mailto:"]
+        .iter()
+        .any(|scheme| url.starts_with(scheme))
 }
 
 /// The page a link that opens nothing answers with.
@@ -191,14 +215,15 @@ async fn file<P, L, B>(
     server: &Server<P, L, B>,
     scope: &Scope,
     share: &ShareSet,
-    download: bool,
+    (download, head): (bool, bool),
 ) -> Response<Answer>
 where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let Some(bytes) = read(server, scope, &share.blob.sha256, MAX_FILE).await else {
+    let blobs = server.inner.harness.blobs();
+    let Ok(Some(found)) = blobs.get(scope, &share.blob.sha256).await else {
         return answered(StatusCode::NOT_FOUND, Answer::empty());
     };
     let policy = if !download && share.kind == AssetKind::Pdf {
@@ -211,7 +236,16 @@ where
     } else {
         share.blob.media_type.as_str()
     };
-    let mut response = typed(Bytes::from(bytes), media_type, policy);
+    let length = found.reference.bytes;
+    let body = if head {
+        Answer::empty()
+    } else {
+        Answer::file(found.bytes, length)
+    };
+    let mut response = sent(body, media_type, policy);
+    response
+        .headers_mut()
+        .insert(header::CONTENT_LENGTH, HeaderValue::from(length));
     if download && let Ok(disposition) = HeaderValue::from_str(&disposition(&share.file_name)) {
         response
             .headers_mut()
@@ -262,7 +296,12 @@ fn html(status: StatusCode, title: &str, body: &str, language: Language) -> Resp
 
 /// `bytes` as `media_type`, under `policy`, with what every answer here carries.
 fn typed(bytes: Bytes, media_type: &str, policy: &'static str) -> Response<Answer> {
-    let mut response = answered(StatusCode::OK, Answer::bytes(bytes));
+    sent(Answer::bytes(bytes), media_type, policy)
+}
+
+/// `body` as `media_type`, under `policy`, with what every answer here carries.
+fn sent(body: Answer, media_type: &str, policy: &'static str) -> Response<Answer> {
+    let mut response = answered(StatusCode::OK, body);
     let headers = response.headers_mut();
     if let Ok(media_type) = HeaderValue::from_str(media_type) {
         headers.insert(header::CONTENT_TYPE, media_type);
@@ -366,6 +405,25 @@ mod tests {
             page.contains("&lt;script&gt;") && !page.contains("<script>"),
             "{page}"
         );
+    }
+
+    #[test]
+    fn a_preview_links_only_to_web_pages_and_email_addresses() {
+        let page = drawn(
+            "[run](javascript:alert(1)) [Run](JavaScript:x) [data](data:text/html,x) \
+             [here](/download) [site](https://example.com) [mail](mailto:ada@example.com)",
+        );
+        assert!(!page.to_ascii_lowercase().contains("javascript"), "{page}");
+        assert!(
+            !page.contains("data:") && !page.contains("href=\"/download"),
+            "{page}"
+        );
+        assert!(
+            page.contains("run") && page.contains("here"),
+            "the text stays: {page}"
+        );
+        assert!(page.contains("href=\"https://example.com\""), "{page}");
+        assert!(page.contains("href=\"mailto:ada@example.com\""), "{page}");
     }
 
     #[test]

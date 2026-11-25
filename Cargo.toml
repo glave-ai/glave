@@ -177,6 +177,8 @@ proptest = "1"
 # A shared document's preview drawn as a page (glave-session, http/shared.rs): CommonMark with
 # tables, its HTML events shown as text.
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+# The Public Suffix List, built in: whether two names are one site (glave-config's share domain).
+psl = { version = "2", default-features = false, features = ["helpers"] }
 # The XML in Office files' parts, for `glave doc` (glave-office) to read Word and PowerPoint
 # and to check every part before it is packed. Already in the tree, under calamine.
 quick-xml = "0.42"
