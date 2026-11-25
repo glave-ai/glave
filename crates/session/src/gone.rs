@@ -152,6 +152,8 @@ where
         // Its schedules go first, so none fires in a project no longer listed: deleted by its
         // owner, its person. A failure after them leaves the project listed, to remove again.
         self.delete_schedules_in(at, None).await?;
+        // And its shares stop, so their links count against its owner no more.
+        self.stop_shares(&own_scope(at), |_| true).await?;
         // Glave's own: archiving the threads of a project its owner removes.
         let scope = own_scope(at);
         for thread in threads {
