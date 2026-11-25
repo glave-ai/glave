@@ -35,6 +35,7 @@ mod presentation;
 mod preview;
 mod reach;
 mod read;
+mod shared;
 mod table;
 mod write;
 mod xml;

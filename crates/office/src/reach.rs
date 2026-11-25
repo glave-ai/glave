@@ -3,16 +3,13 @@
 //! (A1 and XFD1048576) would take hundreds of gigabytes. An xlsx or xlsb sheet is read once, as
 //! a stream of the cells it holds, stopped as soon as they span more than is left, and only then
 //! made a range; the text its cells hold is counted too, as calamine copies a shared string
-//! into every cell that names it. calamine reads an xls or ods workbook whole when it opens it, xls within the
-//! format's 65,536 rows by 256 columns and ods within a cap of its own (100 million cells), and
-//! its sheets spend the budget all the same. The strings an xlsx or xlsb workbook shares among
-//! its cells are also read whole when it opens, so their part is measured first, unpacked
-//! ([`shared_strings`]).
-
-use std::io::{Cursor, Read as _};
+//! into every cell that names it. calamine reads an xls or ods workbook whole when it opens it,
+//! xls within the format's 65,536 rows by 256 columns and ods within a cap of its own (100
+//! million cells), and its sheets spend the budget all the same. The strings an xlsx or xlsb
+//! workbook shares are read whole when it opens too, so they are measured first
+//! (`shared.rs`).
 
 use calamine::{Cell, CellType, Data, DataRef, Range, Reader as _, Sheets};
-use zip::ZipArchive;
 
 use crate::error::OfficeError;
 use crate::read::Book;
@@ -20,12 +17,6 @@ use crate::read::Book;
 /// The most cells glave holds of a workbook, each sheet's from its first used cell to its
 /// last, values and formulas apart: a few hundred MB as calamine holds them.
 const MOST_CELLS: u64 = 10_000_000;
-
-/// The most bytes the strings an xlsx or xlsb workbook shares may take, unpacked.
-const MOST_SHARED_STRINGS: u64 = 128 * 1024 * 1024;
-
-/// Where an xlsx and an xlsb workbook keep the strings their cells share.
-const SHARED_STRINGS: [&str; 2] = ["xl/sharedStrings.xml", "xl/sharedStrings.bin"];
 
 /// The most bytes of text glave holds of a workbook's cells, values and formulas: a cell's own
 /// text, or a copy of a shared string for each cell that names it.
@@ -93,7 +84,8 @@ impl Span {
 
 /// The cells `next` gives that `kept` keeps, each with the bytes of text it holds, as a range,
 /// the cells they span and their text spent from `budget`: stopped, refusing `sheet`, as soon
-/// as either is more than is left.
+/// as either is more than is left, or the cells kept are, which a file naming one cell again
+/// and again makes more than they span.
 fn collected<S: CellType, T: CellType, E: ToString>(
     sheet: &str,
     budget: &mut Budget,
@@ -111,10 +103,11 @@ fn collected<S: CellType, T: CellType, E: ToString>(
         };
         budget.read(text)?;
         spanned = span.take(cell.get_position());
-        if spanned > budget.left {
-            budget.spend(sheet, spanned)?;
-        }
         cells.push(cell);
+        let kept = u64::try_from(cells.len()).unwrap_or(u64::MAX);
+        if spanned.max(kept) > budget.left {
+            budget.spend(sheet, spanned.max(kept))?;
+        }
     }
     budget.spend(sheet, spanned)?;
     Ok(Range::from_sparse(cells))
@@ -207,28 +200,4 @@ pub(crate) fn formulas(
         Err(OfficeError::Sheet(..)) => Ok(Range::default()),
         read => read,
     }
-}
-
-/// Refuses a workbook whose shared strings take more than [`MOST_SHARED_STRINGS`] unpacked,
-/// read as a stream before calamine holds them all. A file that is not a zip (xls) has none.
-pub(crate) fn shared_strings(bytes: &[u8]) -> Result<(), OfficeError> {
-    let Ok(mut zip) = ZipArchive::new(Cursor::new(bytes)) else {
-        return Ok(());
-    };
-    for name in SHARED_STRINGS {
-        let Ok(part) = zip.by_name(name) else {
-            continue;
-        };
-        let unpacked = std::io::copy(
-            &mut part.take(MOST_SHARED_STRINGS + 1),
-            &mut std::io::sink(),
-        )
-        .map_err(|error| OfficeError::NotAWorkbook(error.to_string()))?;
-        if unpacked > MOST_SHARED_STRINGS {
-            return Err(OfficeError::TooMuchText {
-                most: MOST_SHARED_STRINGS / (1024 * 1024),
-            });
-        }
-    }
-    Ok(())
 }

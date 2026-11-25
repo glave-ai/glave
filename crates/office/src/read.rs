@@ -11,7 +11,8 @@ use calamine::{Data, Range, Reader, Sheet, SheetType, SheetVisible, Sheets};
 use crate::cells::{cell_name, column_name, listed};
 use crate::command::Answer;
 use crate::error::OfficeError;
-use crate::reach::{Budget, formulas, shared_strings, values};
+use crate::reach::{Budget, formulas, values};
+use crate::shared::shared_strings;
 use crate::table::escaped;
 
 /// The rows shown of each sheet when no rows are asked for: enough to see what a sheet holds,

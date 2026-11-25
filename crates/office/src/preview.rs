@@ -11,8 +11,9 @@ use calamine::{Data, Reader, Xlsx};
 use crate::command::office;
 use crate::error::OfficeError;
 use crate::package::Kind;
-use crate::reach::{Budget, shared_strings, values};
+use crate::reach::{Budget, values};
 use crate::read::{chosen, open, shown};
+use crate::shared::shared_strings;
 use crate::{data, document, presentation, table};
 
 /// The rows shown of each sheet, or of a CSV file: a preview, not the whole file.

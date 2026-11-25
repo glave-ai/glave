@@ -69,6 +69,12 @@ pub enum OfficeError {
          in a spreadsheet app and copy the part you need to a file of its own"
     )]
     TooMuchText { most: u64 },
+    /// A workbook that says it shares more strings than glave holds: what it said.
+    #[error(
+        "the workbook says it shares {said} strings, more than the {most} glave reads. Open it \
+         in a spreadsheet app and copy the part you need to a file of its own"
+    )]
+    TooManyStrings { said: String, most: u64 },
     /// A workbook to write was described wrongly: what is wrong, and where.
     #[error("the workbook's description is not right: {0}")]
     Description(String),
