@@ -1,13 +1,17 @@
 //! What stops a share, and what never opens one (`specs/session.md`, "Sharing"): deleting the
 //! chat that made the file, taking the item out of the Library, or a project removed; two shares
-//! of one file made at once both stop with one Only you; and any other name under the share
-//! domain opens nothing of glave's.
+//! of one file made at once both stop with one Only you; someone taken out of the
+//! organization shares nothing there; and any other name under the share domain opens nothing
+//! of glave's.
 
-use glave_event::Audience;
+use glave_event::{Audience, Body, PersonRemoved, Principal, decode};
 use glave_identity::signin::{LocalToken, SignIn};
+use glave_ports::stream::Reserved;
+use glave_ports::{Caller, EventLog as _, Scope};
 use glave_session::protocol::{Reply, Request, ShareOf};
 use serde_json::json;
 
+use crate::schedule_firing::append;
 use crate::shares::{
     client_at, discover_at, fetch, get, id_of, item_of, previewing, set, shared_fox,
 };
@@ -16,7 +20,7 @@ use crate::support::web::{Served, serve_with};
 use crate::support::*;
 
 /// `server` served over HTTP to the person on this computer.
-async fn served(server: &Tested) -> Served {
+async fn served<L: glave_ports::EventLog + 'static>(server: &Tested<L>) -> Served {
     let local = LocalToken::new([7; 32]);
     serve_with(
         server.clone(),
@@ -202,6 +206,79 @@ fn a_removed_project_s_links_open_nothing_as_one_never_made() {
         assert!(matches!(removed, Ok(Reply::Done {})), "{removed:?}");
         let never = nothing(&listening).await;
         assert_eq!(opened(&listening, &link).await, (404, never));
+        listening.close().await;
+    });
+}
+
+#[test]
+fn someone_taken_out_of_the_organization_shares_nothing_there() {
+    let dir = folder("shares-removed");
+    block_on!(async {
+        let log = Shared::default();
+        let mut setup = Setup::new(Vec::new());
+        setup.identity_provider = true;
+        setup.model = Some(drawing(vec![
+            answer(None, Some(("image_generate", json!({"prompt": "a fox"})))),
+            answer(Some("Here."), None),
+        ]));
+        setup.shares = Some(crate::shares::domain());
+        // Her turns run on a computer of her own.
+        let homes = crate::homes::Here::new(&dir.join("people"));
+        setup.homes = Some(std::sync::Arc::new(homes) as std::sync::Arc<dyn glave_harness::Homes>);
+        let (server, _) = setup.build_on(&dir, log.clone()).await;
+        let ada = signed_in("ada");
+        let started = Request::ThreadStart {
+            project: None,
+            worktree: None,
+            background: false,
+            computer: None,
+            model: None,
+            permissions: None,
+            effort: None,
+        };
+        let Ok(Reply::Thread { thread }) = server.request_as(&ada, started).await else {
+            panic!("a thread");
+        };
+        let drawn = server.request_as(&ada, turn_start(thread.id, "draw a fox", None));
+        drawn.await.unwrap();
+        settle_for(&server, &ada).await;
+        let Ok(Reply::Library { items }) = server.request_as(&ada, Request::LibraryList {}).await
+        else {
+            panic!("her Library");
+        };
+        let setting = glave_session::protocol::ShareSetting {
+            of: item_of(&items[0]),
+            audience: Some(Audience::Anyone),
+            update: false,
+        };
+        let shared = server.request_as(&ada, Request::ShareSet { set: setting });
+        let Ok(Reply::Share { share }) = shared.await else {
+            panic!("her share");
+        };
+        let listening = served(&server).await;
+        assert_eq!(opened(&listening, &share.link).await.0, 200);
+
+        // Taken out on another server, before any server stops her shares: her link opens
+        // nothing already.
+        let people = Scope::of_organization(scope().org());
+        let ledger = Reserved::People.id();
+        let before = log.read(&people, ledger, None, usize::MAX).await.unwrap();
+        let removed = PersonRemoved {
+            person: id("ada"),
+            by: Principal::person(server.person().unwrap()),
+        };
+        append(&log, &people, ledger, before.len() as u64 + 1, &removed).await;
+        let never = nothing(&listening).await;
+        assert_eq!(opened(&listening, &share.link).await, (404, never));
+
+        // Taking her out stops them, as asked again it finishes what that server left.
+        let remove = Request::PersonRemove { person: id("ada") };
+        server.request_as(&Caller::default(), remove).await.unwrap();
+        let hers = Scope::glaves_own(scope().org(), items[0].project);
+        let ledger_read = log.read(&hers, Reserved::Shares.id(), None, usize::MAX);
+        let stopped = (ledger_read.await.unwrap().into_iter())
+            .any(|raw| matches!(decode(raw).unwrap().body, Body::ShareStopped(_)));
+        assert!(stopped, "her share stopped");
         listening.close().await;
     });
 }
