@@ -16,11 +16,13 @@ use glave_identity::signin::{Browsers, Ceremony, PasskeyInfo, Proof, Session};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, OrgId};
 use jiff::SignedDuration;
 
+use crate::joining::Making;
 use crate::naming::given_name;
 use crate::organizations::with_account;
 use crate::protocol::{ApiError, PasskeySummary, Reply, SignInWay, code};
 use crate::providers::local;
 use crate::server::Server;
+use crate::signups::Emailed;
 use crate::words::Sentence;
 
 /// How long a server, as it starts, indexes people's passkeys before it goes on starting, the
@@ -107,18 +109,27 @@ where
     ) -> Result<Reply, ApiError> {
         // Read first: a name it can't take leaves the passkey's request to answer again.
         let person_name = person_name.as_deref().map(given_name).transpose()?;
-        // An account a handed-over sign-up link makes has no address: its name is how it is
-        // known, so none leaves the request to answer again with one.
-        if person_name.is_none() && self.signing_unaddressed(ceremony) {
-            return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NameNeeded));
-        }
-        if let Some(joining) = self.joining(ceremony) {
-            return self.join(joining, credential, name, person_name).await;
-        }
-        if let Some(signing) = self.signing(ceremony) {
-            return self
-                .finish_link(signing, credential, name, person_name)
-                .await;
+        match self.making(ceremony) {
+            // An account a handed-over sign-up link makes has no address: its name is how it
+            // is known, so none leaves the request to answer again with one.
+            Some(Making::Link(signing))
+                if person_name.is_none()
+                    && signing.emailed == Emailed::Signup
+                    && signing.email.is_none() =>
+            {
+                return Err(ApiError::new(code::INVALID_PARAMS, Sentence::NameNeeded));
+            }
+            Some(Making::Invite(joining)) => {
+                let joining = (ceremony, joining);
+                return self.join(joining, credential, name, person_name).await;
+            }
+            Some(Making::Link(signing)) => {
+                let signing = (ceremony, signing);
+                return self
+                    .finish_link(signing, credential, name, person_name)
+                    .await;
+            }
+            None => {}
         }
         let browsers = self.browsers()?;
         let (_, session) = browsers.create(ceremony, credential, name).await?;

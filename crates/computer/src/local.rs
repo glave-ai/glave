@@ -261,6 +261,7 @@ impl LocalComputers {
             environment,
             hidden: Arc::clone(&self.hidden),
             glave_on_path: self.glave_on_path.clone(),
+            projects: self.projects.clone(),
             prepared: Kept::default(),
             processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
         };

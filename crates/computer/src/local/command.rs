@@ -355,6 +355,7 @@ fn bash(
     };
     let input = sandbox.is_some_and(|(launch, _, _)| launch.input.is_some());
     let caches = sandbox.map(|(launch, prepared, _)| prepared.caches(launch));
+    let git_settings = sandbox.and_then(|(launch, prepared, _)| prepared.git_settings(launch));
     let toolchains = opened
         .environment
         .iter()
@@ -408,6 +409,8 @@ fn bash(
                 })
                 .map(|path| ("PATH", path)),
         )
+        // Someone else's git reads glave's settings, never the person's (`sandbox/shut.rs`).
+        .envs(git_settings.map(|settings| ("GIT_CONFIG_GLOBAL", settings)))
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
         .env("PAGER", "cat")

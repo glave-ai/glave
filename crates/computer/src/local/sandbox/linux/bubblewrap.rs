@@ -134,6 +134,10 @@ pub(super) fn args(
                 args.extend(["--tmpfs".into(), path.into()]);
                 continue;
             }
+            Mount::Link { at, to } => {
+                args.extend(["--symlink".into(), to.into(), at.into()]);
+                continue;
+            }
         };
         args.extend([how.into(), from.into(), to.into()]);
     }

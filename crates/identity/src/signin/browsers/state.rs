@@ -21,8 +21,6 @@ pub(super) struct State {
     pub(super) codes: Vec<([u8; 32], Timestamp)>,
     /// Each setup link's code's digest, and when it was made.
     pub(super) setups: Vec<([u8; 32], Timestamp)>,
-    /// When each setup code that was not one was tried, lately.
-    pub(super) misses: Vec<Timestamp>,
     pub(super) sessions: Vec<Kept>,
     pub(super) passkeys: Vec<KeptPasskey>,
     /// The `seq` the ledger's next event takes.

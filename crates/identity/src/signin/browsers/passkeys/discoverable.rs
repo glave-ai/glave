@@ -1,23 +1,25 @@
 //! Signing in with a passkey without first knowing whose it is, as a server with glave
 //! accounts must (`specs/session.md`, "glave accounts for many people"): the request names no
 //! passkeys, the browser offers every one it holds for the relying party, and the passkey's
-//! user handle says whose it is. The request is answered within five minutes, on the server
-//! that began it, at most 16 waiting.
+//! user handle says whose it is. The browser holds the request, sealed (`sealed`), and it is
+//! answered within five minutes, once, on the server that began it.
 
-use std::sync::{Mutex, PoisonError};
+use std::sync::Arc;
 
 use glave_ports::host::PublicOrigin;
 use jiff::Timestamp;
+use serde::de::IgnoredAny;
 use uuid::Uuid;
 use webauthn_rs::prelude::{DiscoverableAuthentication, DiscoverableKey, PublicKeyCredential};
 
-use super::{CEREMONY_LIFETIME, Ceremony, MOST_CEREMONIES, Relying, ceremony, parse};
-use crate::signin::browsers::{BrowserError, Browsers, Session, new_id};
+use super::sealed::{Kind, Request, Sealer};
+use super::{Ceremony, Relying, ceremony};
+use crate::signin::browsers::{BrowserError, Browsers, Session};
 
-/// The requests to sign in with any passkey of the public origin, begun and not answered.
+/// Requests to sign in with any passkey of the public origin.
 pub(crate) struct Discoverer {
     relying: Relying,
-    waiting: Mutex<Vec<(Uuid, DiscoverableAuthentication, Timestamp)>>,
+    sealer: Arc<Sealer>,
 }
 
 /// A passkey's answer to a request to sign in with any: whose it says it is, and the request.
@@ -25,6 +27,9 @@ pub struct Discovered {
     handle: Uuid,
     answer: PublicKeyCredential,
     state: DiscoverableAuthentication,
+    /// The request's id and when it began, spent once a passkey answered it.
+    spent: (Uuid, Timestamp),
+    sealer: Arc<Sealer>,
 }
 
 impl Discovered {
@@ -40,11 +45,11 @@ impl Discovered {
 }
 
 impl Discoverer {
-    /// Requests for passkeys made at `origin`.
-    pub(crate) fn new(origin: &PublicOrigin) -> Result<Self, BrowserError> {
+    /// Requests for passkeys made at `origin`, sealed under `sealer`.
+    pub(crate) fn new(origin: &PublicOrigin, sealer: Arc<Sealer>) -> Result<Self, BrowserError> {
         Ok(Self {
             relying: Relying::public(origin, Uuid::nil())?,
-            waiting: Mutex::new(Vec::new()),
+            sealer,
         })
     }
 
@@ -57,43 +62,27 @@ impl Discoverer {
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
         // Asked for at once, as the sign-in page asks, not in the browser's autofill.
         options.mediation = None;
-        let id = new_id(now)?;
-        let mut waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
-        waiting.retain(|(_, _, began)| now.duration_since(*began) <= CEREMONY_LIFETIME);
-        if waiting.len() >= MOST_CEREMONIES {
-            waiting.remove(0);
-        }
-        waiting.push((id, state, now));
-        ceremony(id, &options)
+        let request = Request::new(Kind::Any, Uuid::nil(), now, state)?;
+        ceremony(self.sealer.seal(&request)?, &options)
     }
 
-    /// Whether the request `ceremony` is one of these, waiting.
-    pub(crate) fn waits(&self, ceremony: &str) -> bool {
-        let waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
-        waiting
-            .iter()
-            .any(|(id, _, _)| Some(*id) == parse(ceremony))
+    /// Whether the request `ceremony` is one of these, at `now`.
+    pub(crate) fn began(&self, ceremony: &str, now: Timestamp) -> bool {
+        self.sealer
+            .open::<IgnoredAny>(ceremony, Kind::Any, now)
+            .is_ok()
     }
 
-    /// Whose `credential`, answering the request `ceremony`, says it is: the request taken,
-    /// refused when none waits, or it waited too long.
+    /// Whose `credential`, answering the request `ceremony`, says it is: refused when the
+    /// request is not one of these, or it waited too long.
     pub(crate) fn identify(
         &self,
         ceremony: &str,
         credential: &serde_json::Value,
         now: Timestamp,
     ) -> Result<Discovered, BrowserError> {
-        let (_, state, began) = {
-            let mut waiting = self.waiting.lock().unwrap_or_else(PoisonError::into_inner);
-            let at = waiting
-                .iter()
-                .position(|(id, _, _)| Some(*id) == parse(ceremony))
-                .ok_or(BrowserError::Ceremony)?;
-            waiting.remove(at)
-        };
-        if now.duration_since(began) > CEREMONY_LIFETIME {
-            return Err(BrowserError::Ceremony);
-        }
+        let request: Request<DiscoverableAuthentication> =
+            self.sealer.open(ceremony, Kind::Any, now)?;
         let answer: PublicKeyCredential = serde_json::from_value(credential.clone())
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
         let (handle, _) = self
@@ -104,7 +93,9 @@ impl Discoverer {
         Ok(Discovered {
             handle,
             answer,
-            state,
+            state: request.state,
+            spent: (request.id, request.began),
+            sealer: Arc::clone(&self.sealer),
         })
     }
 
@@ -118,7 +109,7 @@ impl Discoverer {
 impl Browsers {
     /// Signs a browser in with the passkey `discovered` answered with: one of this person's in
     /// the store as it is now, else [`BrowserError::Unknown`] for the browser to tell its
-    /// passkey manager.
+    /// passkey manager. The request is spent once the passkey's signature is checked.
     pub async fn get_discovered(&self, discovered: Discovered) -> Result<Session, BrowserError> {
         let relying = self.relying()?;
         if discovered.handle != relying.handle {
@@ -135,6 +126,10 @@ impl Browsers {
                 &[DiscoverableKey::from(&kept)],
             )
             .map_err(|error| BrowserError::Passkey(error.to_string()))?;
+        let now = self.clock.now();
+        discovered
+            .sealer
+            .spend(discovered.handle, discovered.spent, now)?;
         self.used(id, kept, &result).await
     }
 }
