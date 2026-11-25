@@ -41,7 +41,7 @@ pub(crate) fn shared_strings(bytes: &[u8]) -> Result<(), OfficeError> {
             continue;
         }
         let part = BufReader::new(part.take(left.saturating_add(1)));
-        let unpacked = if name.ends_with(".xml") {
+        let unpacked = if name.ends_with("sharedstrings.xml") {
             measured(part)?
         } else {
             // An xlsb part says how many strings it holds only as it reads them.
