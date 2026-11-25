@@ -126,6 +126,12 @@ pub(super) enum Mount {
     /// made in and which is read-only once they are: what is written there after the command
     /// starts stays hidden, where a stand-in hides only what was there.
     Emptied(PathBuf),
+    /// A link made again at `at`, leading to `to` as the person's leads, inside a folder
+    /// emptied for someone else's commands.
+    Link {
+        at: PathBuf,
+        to: PathBuf,
+    },
 }
 
 impl Mount {
@@ -136,7 +142,8 @@ impl Mount {
             | Self::ReadOnly(path)
             | Self::HiddenFile(path)
             | Self::HiddenFolder(path)
-            | Self::Emptied(path) => path.as_path(),
+            | Self::Emptied(path)
+            | Self::Link { at: path, .. } => path.as_path(),
             Self::Tmp(_) => Path::new("/tmp"),
         }
     }
@@ -212,15 +219,7 @@ pub(super) fn plan(
     // The person's folders, emptied for someone else's commands, but for what stays readable
     // there: before the workspace's own mounts, so the workspace's win where they meet.
     mounts.extend(layout.shut.folders.iter().cloned().map(Mount::Emptied));
-    // What is there, not a link: bubblewrap binds what a link leads to where it leads.
-    let there = |path: &&PathBuf| {
-        std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.file_type().is_symlink())
-    };
-    mounts.extend(
-        (layout.shut.open.iter().filter(there))
-            .cloned()
-            .map(Mount::ReadOnly),
-    );
+    mounts.extend(layout.shut.open.iter().filter_map(|path| reopened(path)));
     mounts.push(Mount::Writable(temp.to_owned()));
     if matches!(layout.tmp, Tmp::Own) {
         mounts.push(Mount::Tmp(temp.to_owned()));
@@ -272,6 +271,21 @@ pub(super) fn plan(
     // path the later still wins.
     mounts.sort_by_key(|mount| mount.path().components().count());
     Ok((mounts, held))
+}
+
+/// `path`, readable again inside a folder emptied for someone else's commands: bound as it is,
+/// or, a link, made again as a link, since bubblewrap binds what a link leads to and the link
+/// would be gone. Nothing for what is not there. Blocking.
+fn reopened(path: &Path) -> Option<Mount> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    if meta.file_type().is_symlink() {
+        let to = std::fs::read_link(path).ok()?;
+        return Some(Mount::Link {
+            at: path.to_owned(),
+            to,
+        });
+    }
+    Some(Mount::ReadOnly(path.to_owned()))
 }
 
 /// What a protected path is now.
@@ -502,6 +516,7 @@ pub(super) fn hidden_places(layout: &Layout) -> Vec<PathBuf> {
     in_home
         .chain(in_runtime)
         .chain(layout.also_hidden.iter().cloned())
+        .chain(layout.shut.hidden.iter().cloned())
         .chain(var_tmp)
         .filter_map(|secret| std::fs::canonicalize(secret).ok())
         .filter(|real| !layout.root.starts_with(real) && !layout.shut.hides(real))

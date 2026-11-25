@@ -6,16 +6,23 @@
 //! sandbox reach stay theirs wherever they are; each platform's sandbox turns this into its own
 //! rules.
 
+mod settings;
+
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::{RunsFor, Sandbox};
+use glave_ports::computer::{ComputerError, RunsFor, Sandbox, git_settings};
 
 /// Under the home folder: where toolchains, their version managers and what they install live,
-/// and git's settings, which git refuses to run without once it may not read them. The
-/// credential stores among them stay hidden (`secrets.rs`).
+/// as narrowly as each still runs. Not Cargo's home whole (its `config.toml` can hold a
+/// registry's token, its `git` and `registry` the source of private crates), nor Go's (its
+/// module cache holds private modules): what they install to run alone. The credential stores
+/// among them stay hidden (`secrets.rs`), and so does each Node install's own `etc/npmrc`
+/// (`settings.rs`). A toolchain kept elsewhere in the home folder does not run for someone
+/// else.
 pub(super) const TOOLCHAINS: &[&str] = &[
     // Rust's.
-    ".cargo",
+    ".cargo/bin",
+    ".cargo/env",
     ".rustup",
     // What tools install for the person to run by name.
     ".local/bin",
@@ -38,27 +45,31 @@ pub(super) const TOOLCHAINS: &[&str] = &[
     ".sdkman",
     ".jenv",
     ".goenv",
-    "go",
+    "go/bin",
     ".dotnet",
     ".juliaup",
     ".ghcup",
     ".elan",
     ".opam",
     ".nix-profile",
-    // git's own settings.
-    ".gitconfig",
-    ".config/git",
 ];
 
+/// The most links followed from one path, as an operating system limits them.
+const MOST_LINKS: usize = 40;
+
 /// The person's folders hidden whole from someone else's commands, and what in them stays
-/// readable, all as real paths; nothing for the person's own commands.
+/// readable; nothing for the person's own commands.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Shut {
-    /// Hidden whole: the home folder, and the projects' folder where it is not in it.
+    /// Hidden whole, as real paths: the home folder, and the projects' folder where it is not
+    /// in it.
     pub(crate) folders: Vec<PathBuf>,
-    /// Readable again inside them: the toolchains there, and a worktree's shared git folder,
-    /// each as named, there or not, and where a link leads.
+    /// Readable again inside them: the toolchains there, git's settings and the files they
+    /// name, and a worktree's shared git folder; each as named, there or not, every link on the
+    /// way from it, and where it leads.
     pub(crate) open: Vec<PathBuf>,
+    /// Hidden again inside what is readable: each Node install's own `npmrc`.
+    pub(crate) hidden: Vec<PathBuf>,
 }
 
 impl Shut {
@@ -71,12 +82,33 @@ impl Shut {
         root: &Path,
         git_common: Option<&Path>,
         projects: Option<&Path>,
-    ) -> Self {
+    ) -> Result<Self, ComputerError> {
         if sandbox.runs_for == RunsFor::Owner {
-            return Self::default();
+            return Ok(Self::default());
         }
-        let home = real(sandbox.home.as_deref()).await;
-        let mut folders: Vec<PathBuf> = [home.clone(), real(projects).await]
+        let (home, root) = (sandbox.home.clone(), root.to_owned());
+        let (git_common, projects) = (
+            git_common.map(Path::to_path_buf),
+            projects.map(Path::to_path_buf),
+        );
+        tokio::task::spawn_blocking(move || {
+            Self::reading(home.as_deref(), &root, git_common, projects.as_deref())
+        })
+        .await
+        .map_err(|error| ComputerError::Failed(format!("could not prepare the sandbox: {error}")))
+    }
+
+    /// [`Shut::for_sandbox`] for someone else's commands. Blocking: it reads git's settings
+    /// and follows links.
+    fn reading(
+        home: Option<&Path>,
+        root: &Path,
+        git_common: Option<PathBuf>,
+        projects: Option<&Path>,
+    ) -> Self {
+        let home = home.and_then(|home| std::fs::canonicalize(home).ok());
+        let projects = projects.and_then(|projects| std::fs::canonicalize(projects).ok());
+        let mut folders: Vec<PathBuf> = [home.clone(), projects]
             .into_iter()
             .flatten()
             .filter(|folder| !folder.starts_with(root))
@@ -89,26 +121,28 @@ impl Shut {
                 .iter()
                 .any(|other| other != folder && folder.starts_with(other))
         });
-        let mut wanted: Vec<PathBuf> = home
-            .iter()
-            .flat_map(|home| TOOLCHAINS.iter().map(move |path| home.join(path)))
-            .collect();
-        wanted.extend(git_common.map(Path::to_path_buf));
-        // Each as named, there yet or not, so a tool that looks for it is told it is not there
-        // rather than refused (git stops at a settings file it may not look for), and where a
-        // link leads.
-        let mut open = Vec::new();
-        for path in wanted {
-            let real = real(Some(&path)).await;
-            for path in [Some(path), real].into_iter().flatten() {
-                if folders.iter().any(|folder| path.starts_with(folder)) {
-                    open.push(path);
-                }
-            }
+        let mut wanted: Vec<PathBuf> = git_common.into_iter().collect();
+        let mut hidden = Vec::new();
+        if let Some(home) = &home {
+            wanted.extend(TOOLCHAINS.iter().map(|path| home.join(path)));
+            wanted.extend(git_settings(home));
+            wanted.extend(settings::named_by_git(home));
+            hidden = settings::npmrcs(home);
         }
+        let inside = |path: &PathBuf| folders.iter().any(|folder| path.starts_with(folder));
+        let mut open: Vec<PathBuf> = wanted
+            .iter()
+            .flat_map(|path| hops(path))
+            .filter(inside)
+            .collect();
         open.sort();
         open.dedup();
-        Self { folders, open }
+        hidden.retain(inside);
+        Self {
+            folders,
+            open,
+            hidden,
+        }
     }
 
     /// Whether `path` is hidden by it: inside a folder it hides, and not inside what stays
@@ -120,71 +154,24 @@ impl Shut {
     }
 }
 
-/// `path` resolved, if it is there.
-async fn real(path: Option<&Path>) -> Option<PathBuf> {
-    tokio::fs::canonicalize(path?).await.ok()
+/// `path` as named, each link it leads through as named, and where it ends, resolved, if it is
+/// there: a tool reads each on the way. Blocking.
+fn hops(path: &Path) -> Vec<PathBuf> {
+    let mut hops = vec![path.to_owned()];
+    let mut at = path.to_owned();
+    for _ in 0..MOST_LINKS {
+        let Ok(target) = std::fs::read_link(&at) else {
+            break;
+        };
+        at = match at.parent() {
+            Some(parent) => parent.join(target),
+            None => target,
+        };
+        hops.push(at.clone());
+    }
+    hops.extend(std::fs::canonicalize(path).ok());
+    hops
 }
 
 #[cfg(test)]
-mod tests {
-    use glave_ports::block_on;
-    use glave_ports::computer::{SandboxLevel, SandboxNetwork};
-    use glave_ports::testing::TempDir;
-
-    use super::*;
-
-    fn sandbox(home: &Path, runs_for: RunsFor) -> Sandbox {
-        Sandbox {
-            level: SandboxLevel::Project,
-            network: SandboxNetwork::Off,
-            home: Some(home.to_owned()),
-            glave_home: Some(home.join(".glave")),
-            runs_for,
-        }
-    }
-
-    #[test]
-    fn someone_else_s_commands_lose_the_home_and_projects_folders_but_toolchains() {
-        let dir = TempDir::new("shut").unwrap();
-        let real = std::fs::canonicalize(dir.path()).unwrap();
-        let home = real.join("home");
-        for folder in [
-            "home/.cargo/bin",
-            "home/glave/app",
-            "home/notes",
-            "projects/other",
-        ] {
-            std::fs::create_dir_all(real.join(folder)).unwrap();
-        }
-        std::fs::write(home.join(".gitconfig"), "").unwrap();
-        let root = home.join("glave/app");
-        let projects = real.join("projects");
-        block_on!(async {
-            let owner = sandbox(&home, RunsFor::Owner);
-            let none = Shut::for_sandbox(&owner, &root, None, Some(&projects)).await;
-            assert_eq!(none, Shut::default(), "the person's own hide nothing more");
-
-            let someone = sandbox(&home, RunsFor::SomeoneElse);
-            let shut = Shut::for_sandbox(&someone, &root, None, Some(&projects)).await;
-            assert_eq!(shut.folders, vec![home.clone(), projects.clone()]);
-            for open in [".cargo", ".gitconfig", ".config/git"] {
-                assert!(shut.open.contains(&home.join(open)), "{open}");
-            }
-            assert!(shut.hides(&home.join("notes")));
-            assert!(shut.hides(&projects.join("other")));
-            assert!(!shut.hides(&home.join(".cargo/bin")));
-            assert!(!shut.hides(&real.join("elsewhere")));
-
-            let base = home.join("glave");
-            let in_home = Shut::for_sandbox(&someone, &root, None, Some(&base));
-            assert_eq!(
-                in_home.await.folders,
-                vec![home.clone()],
-                "one inside another"
-            );
-
-            let at_home = Shut::for_sandbox(&someone, &home, None, Some(&projects)).await;
-            assert_eq!(at_home.folders, vec![projects], "the workspace is its own");
-        });
-    }
-}
+mod tests;

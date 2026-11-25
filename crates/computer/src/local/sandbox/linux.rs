@@ -317,5 +317,6 @@ fn landlock_plan(layout: &Layout, temp: &Path) -> landlocked::Plan {
         rewritable: Vec::new(),
         unreadable,
         rereadable,
+        unlistable: layout.shut.folders.clone(),
     }
 }

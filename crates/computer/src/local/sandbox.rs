@@ -167,7 +167,7 @@ impl Prepared {
             // Each command's own, in its temp folder (`caches`): none kept to share.
             RunsFor::SomeoneElse => None,
         };
-        let shut = Shut::for_sandbox(sandbox, root, git_common, around.projects).await;
+        let shut = Shut::for_sandbox(sandbox, root, git_common, around.projects).await?;
         let reached = Reached {
             cache: cache.as_deref(),
             glave_on_path: around.glave_on_path,
