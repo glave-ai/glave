@@ -92,7 +92,9 @@ export class ShareDialogComponent {
   /** Whether choosing would change nothing: the same as the share now. */
   private readonly unchanged = computed(() => this.choice() === chosen(this.share()));
   /** Whether Share or Save does nothing now: busy, or nothing to change. */
-  protected readonly blocked = computed(() => this.busy() || this.unchanged());
+  protected readonly blocked = computed(() => this.busy() || !this.loaded() || this.unchanged());
+  /** Whether the share as it is now was read: until then, and if it can't be, nothing to choose. */
+  protected readonly loaded = signal(false);
   protected readonly applyLabel = computed(() => {
     if (this.busy()) {
       return this.copy.saving;
@@ -137,14 +139,23 @@ export class ShareDialogComponent {
     this.open.set(false);
   }
 
+  /**
+   * Reads the share as it is now, busy meanwhile, so no choice is made on what an answer still
+   * coming would replace; one that can't be read says why, and offers nothing to choose.
+   */
   private async read(of: ShareGetParams): Promise<void> {
     this.problem.set(null);
+    this.loaded.set(false);
+    this.busy.set(true);
     try {
       const share = held(await this.session.call('share/get', of));
       this.share.set(share);
       this.choice.set(chosen(share));
+      this.loaded.set(true);
     } catch (error: unknown) {
       this.problem.set(whyNot(error));
+    } finally {
+      this.busy.set(false);
     }
   }
 
