@@ -107,7 +107,7 @@ pub(crate) fn door(names: Option<&ListenerNames>, headers: &HeaderMap, peer: IpA
         return Door::Public;
     }
     let page_here = headers.get(header::ORIGIN).is_none_or(|page| {
-        page.to_str().ok().is_some_and(|page| {
+        page.to_str().is_ok_and(|page| {
             page.strip_prefix("http://")
                 .or_else(|| page.strip_prefix("https://"))
                 .is_some_and(here)
