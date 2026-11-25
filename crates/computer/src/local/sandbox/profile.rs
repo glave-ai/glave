@@ -60,6 +60,10 @@ pub(crate) struct Places {
     pub person_temp: Option<PathBuf>,
     /// The person's folders someone else's commands never read, and what stays readable there.
     pub shut: Shut,
+    /// Whether commands read preferences through `cfprefsd`, which reads the person's files
+    /// past every read rule: only the person's own, whose reads are everywhere but secrets
+    /// (Codex's own note on it says as much).
+    pub preferences: bool,
 }
 
 /// The parameter naming a command's own temp folder, made for it when it starts.
@@ -74,9 +78,13 @@ pub(crate) struct Profile {
 
 pub(crate) fn profile(places: &Places, level: SandboxLevel, network: SandboxNetwork) -> Profile {
     let mut profile = Profile {
-        text: format!("{BASE}\n{PREFERENCES}\n"),
+        text: format!("{BASE}\n"),
         params: Vec::new(),
     };
+    if places.preferences {
+        profile.text.push_str(PREFERENCES);
+        profile.text.push('\n');
+    }
     reads(&mut profile, places);
     writes(&mut profile, places, level);
     match network {
@@ -380,6 +388,7 @@ mod tests {
             shared_tmp: true,
             person_temp: None,
             shut: Shut::default(),
+            preferences: true,
         }
     }
 
@@ -564,11 +573,17 @@ mod tests {
     fn someone_else_s_commands_read_nothing_of_the_person_s_folders_but_toolchains() {
         let owner = profile(&places(), SandboxLevel::Project, SandboxNetwork::Off);
         assert!(!owner.text.contains("SHUT_"), "the person's own read them");
+        assert!(
+            owner.text.contains("cfprefsd"),
+            "the person's own read preferences"
+        );
         let mut someone = places();
+        someone.preferences = false;
         someone.root = PathBuf::from("/Users/me/.glave/scratch/t");
         someone.shut = Shut {
             folders: vec![PathBuf::from("/Users/me"), PathBuf::from("/srv/projects")],
             open: vec![PathBuf::from("/Users/me/.cargo")],
+            hidden: Vec::new(),
         };
         let profile = profile(&someone, SandboxLevel::Project, SandboxNetwork::Off);
         assert_eq!(param(&profile, "SHUT_0"), Some(Path::new("/Users/me")));
@@ -602,6 +617,10 @@ mod tests {
             profile
                 .text
                 .contains("(allow file-read-metadata (literal (param \"SHUT_UP_0\"))")
+        );
+        assert!(
+            !profile.text.contains("cfprefsd"),
+            "nor theirs, preferences"
         );
     }
 

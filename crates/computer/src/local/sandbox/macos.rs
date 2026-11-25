@@ -64,7 +64,8 @@ impl Enforcer {
             Some(home) => home_secrets().map(|secret| home.join(secret)).collect(),
             None => Vec::new(),
         };
-        let hidden = hidden(secrets.into_iter().chain(also_hidden.iter().cloned())).await;
+        let also = also_hidden.iter().chain(&reached.shut.hidden).cloned();
+        let hidden = hidden(secrets.into_iter().chain(also)).await;
         let glave_home = resolved(sandbox.glave_home.as_deref()).await;
         let kept = {
             let (root, glave_home) = (root.to_owned(), glave_home.clone());
@@ -86,6 +87,7 @@ impl Enforcer {
             shared_tmp: sandbox.runs_for == RunsFor::Owner,
             person_temp: Some(system_temp.clone()),
             shut: reached.shut.clone(),
+            preferences: sandbox.runs_for == RunsFor::Owner,
         };
         let profile = profile(&places, sandbox.level, sandbox.network);
         let mut args: Vec<OsString> = vec!["-p".into(), profile.text.into()];
