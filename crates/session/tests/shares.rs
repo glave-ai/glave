@@ -258,19 +258,31 @@ fn a_made_file_is_shared_as_it_was_until_moved_to_its_newer_version() {
     });
 }
 
+/// A client of `host`'s names, which it reaches at `address`.
+pub(crate) fn client_at(host: &str, address: std::net::SocketAddr) -> reqwest::Client {
+    reqwest::Client::builder()
+        .resolve(host, address)
+        .no_proxy()
+        .build()
+        .unwrap()
+}
+
+/// What `server/discover` posted to `host` answers, on the server at `address`: its status.
+pub(crate) async fn discover_at(address: std::net::SocketAddr, host: &str) -> u16 {
+    let api = format!("http://{host}:{}/", address.port());
+    let discover = json!({"jsonrpc": "2.0", "id": 1, "method": "server/discover"});
+    let posted = client_at(host, address).post(api).json(&discover);
+    posted.send().await.unwrap().status().as_u16()
+}
+
 /// A GET of `path` at `id`'s name under the share domain, on the server served at `address`.
 pub(crate) async fn fetch(
     address: std::net::SocketAddr,
     host: &str,
     path: &str,
 ) -> reqwest::Response {
-    let client = reqwest::Client::builder()
-        .resolve(host, address)
-        .no_proxy()
-        .build()
-        .unwrap();
     let url = format!("http://{host}:{}{path}", address.port());
-    client.get(url).send().await.unwrap()
+    client_at(host, address).get(url).send().await.unwrap()
 }
 
 #[test]
@@ -316,15 +328,7 @@ fn a_link_serves_its_share_alone_at_a_name_of_its_own_and_stops_at_once() {
         assert!(header_of(&download, "content-security-policy").contains("sandbox"));
 
         // A share's name answers nothing of glave's: no API.
-        let client = reqwest::Client::builder()
-            .resolve(&host, listening.address)
-            .no_proxy()
-            .build()
-            .unwrap();
-        let api = format!("http://{host}:{}/", listening.address.port());
-        let discover = json!({"jsonrpc": "2.0", "id": 1, "method": "server/discover"});
-        let posted = client.post(api).json(&discover).send().await.unwrap();
-        assert_eq!(posted.status(), 405);
+        assert_eq!(discover_at(listening.address, &host).await, 405);
         // Nor does glave's own address answer a share.
         let own = reqwest::get(format!("{}file", listening.url))
             .await

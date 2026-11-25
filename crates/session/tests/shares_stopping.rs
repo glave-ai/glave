@@ -8,7 +8,9 @@ use glave_identity::signin::{LocalToken, SignIn};
 use glave_session::protocol::{Reply, Request, ShareOf};
 use serde_json::json;
 
-use crate::shares::{fetch, get, id_of, item_of, previewing, set, shared_fox};
+use crate::shares::{
+    client_at, discover_at, fetch, get, id_of, item_of, previewing, set, shared_fox,
+};
 use crate::support::issuer::fixed_clock;
 use crate::support::web::{Served, serve_with};
 use crate::support::*;
@@ -140,23 +142,12 @@ fn no_other_name_under_the_share_domain_opens_anything_of_glave_s() {
             let page = fetch(listening.address, &host, "/").await;
             assert_eq!(page.status(), 404, "{host}");
             assert_eq!(page.text().await.unwrap(), never, "{host}");
-            let client = reqwest::Client::builder()
-                .resolve(&host, listening.address)
-                .no_proxy()
-                .build()
-                .unwrap();
-            let api = format!("http://{host}:{}/", listening.address.port());
-            let discover = json!({"jsonrpc": "2.0", "id": 1, "method": "server/discover"});
-            let posted = client.post(api).json(&discover).send().await.unwrap();
-            assert_ne!(posted.status(), 200, "no API at {host}");
+            let status = discover_at(listening.address, &host).await;
+            assert_ne!(status, 200, "no API at {host}");
         }
         // A HEAD reads the file's length, and none of its bytes.
         let host = format!("{id}.share.example.net");
-        let client = reqwest::Client::builder()
-            .resolve(&host, listening.address)
-            .no_proxy()
-            .build()
-            .unwrap();
+        let client = client_at(&host, listening.address);
         let url = format!("http://{host}:{}/file", listening.address.port());
         let head = client.head(url).send().await.unwrap();
         assert_eq!(head.status(), 200);
