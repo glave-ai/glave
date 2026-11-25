@@ -207,7 +207,7 @@ fn removing_a_passkey_ends_the_sessions_it_began_and_it_signs_in_no_more() {
 }
 
 #[test]
-fn setup_codes_and_requests_expire_and_codes_that_are_not_one_are_limited() {
+fn setup_codes_and_requests_expire_and_codes_that_are_not_one_block_no_one() {
     block_on!(async {
         let clock = ManualClock::at_second(START);
         let browsers = open(store().log(), &clock).await;
@@ -226,15 +226,13 @@ fn setup_codes_and_requests_expire_and_codes_that_are_not_one_are_limited() {
             Err(BrowserError::Setup)
         ));
         let good = browsers.setup().unwrap();
-        // With the expired code above, ten that are not one this minute.
-        for _ in 0..9 {
-            assert!(browsers.create_options(Proof::Code("guess")).is_err());
+        // Codes that are not one, however many, are refused and hold back no one's good code.
+        for _ in 0..100 {
+            assert!(matches!(
+                browsers.create_options(Proof::Code("guess")),
+                Err(BrowserError::Setup)
+            ));
         }
-        assert!(matches!(
-            browsers.create_options(Proof::Code(good.expose())),
-            Err(BrowserError::TooMany)
-        ));
-        clock.advance_seconds(61);
         assert!(browsers.create_options(Proof::Code(good.expose())).is_ok());
     });
 }

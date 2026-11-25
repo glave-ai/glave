@@ -384,6 +384,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) signups: Mutex<crate::signups::Signups>,
     /// The accounts being made by sign-up on this server.
     pub(crate) signings: Mutex<crate::signups::Signings>,
+    /// What each network asked here without signing in (`strangers.rs`).
+    pub(crate) strangers: Mutex<crate::strangers::Strangers>,
     /// Where people reach the server from elsewhere, if they do.
     pub(crate) origin: Option<PublicOrigin>,
     /// What the threads opened or started here did with their projects' asks.
@@ -492,6 +494,7 @@ where
                 forwarded: wiring.forwarded,
                 signups: Mutex::new(crate::signups::Signups::default()),
                 signings: Mutex::new(crate::signups::Signings::default()),
+                strangers: Mutex::new(crate::strangers::Strangers::default()),
                 origin: wiring.origin,
                 stopping: AtomicBool::new(false),
                 leases,

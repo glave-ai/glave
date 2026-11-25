@@ -72,8 +72,6 @@ pub enum BrowserError {
          runs on, ask glave for a new one"
     )]
     Setup,
-    #[error("too many sign-in links that do not work were tried: wait a minute, then try again")]
-    TooMany,
     #[error("this browser's sign-in has ended: open glave again to sign in")]
     Ended,
     #[error("this browser was signed in on the computer glave runs on, and signs in only there")]

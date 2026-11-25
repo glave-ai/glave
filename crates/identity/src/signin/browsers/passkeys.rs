@@ -4,14 +4,14 @@
 //! email: elsewhere, glave on its computer makes a setup code, good once and for ten minutes,
 //! which a browser there trades for a passkey it makes and a session with it; on this
 //! computer, a browser signed in by glave's link makes one. After that, a passkey signs a
-//! browser in, and someone signed in may make another. Each request to make or
-//! use one is answered within five minutes, on the server that began it, and kept in memory
-//! meanwhile, at most 16 of each. Setup codes that are not one are counted, and past 10 in a
-//! minute none is taken until it passes. Removing a passkey ends the sessions it began. Every
-//! passkey carries the person's handle, which the caller gives, so a passkey made again on a
-//! device replaces the one made there before; and the browser is told which of the person's
-//! passkeys still sign in, and of one that does not, so its passkey manager forgets the rest
-//! (`signals`).
+//! browser in, and someone signed in may make another. Each request to make or use one is
+//! answered within five minutes, on the server that began it, and kept in memory meanwhile, at
+//! most 4,096 of each, the server counting who asks for them. A setup code, 32 random bytes,
+//! is never guessed: one that is not one is refused, and no more. Removing a passkey ends the
+//! sessions it began. Every passkey carries the person's handle, which the caller gives, so a
+//! passkey made again on a device replaces the one made there before; and the browser is told
+//! which of the person's passkeys still sign in, and of one that does not, so its passkey
+//! manager forgets the rest (`signals`).
 
 mod discoverable;
 mod signals;
@@ -42,17 +42,12 @@ const SETUP_LIFETIME: SignedDuration = SignedDuration::from_mins(10);
 /// How long a request to make or use a passkey may wait for its answer.
 const CEREMONY_LIFETIME: SignedDuration = SignedDuration::from_mins(5);
 
-/// Requests of each kind waiting at once; a new one past this forgets the oldest.
-const MOST_CEREMONIES: usize = 16;
+/// Requests of each kind waiting at once; a new one past this forgets the oldest. Enough that
+/// the asks the server lets one network make within a request's lifetime never fill it.
+const MOST_CEREMONIES: usize = 4_096;
 
 /// Passkeys kept at once.
 const MOST_PASSKEYS: usize = 32;
-
-/// Setup codes that are not one taken in a minute before none is taken.
-const MOST_MISSES: usize = 10;
-
-/// What a setup code that is not one is counted against.
-const MISS_WINDOW: SignedDuration = SignedDuration::from_mins(1);
 
 /// The longest name a passkey keeps, in characters.
 const LONGEST_NAME: usize = 64;
@@ -229,9 +224,9 @@ impl Browsers {
         let relying = self.relying()?;
         let now = self.clock.now();
         let (code, exclude) = {
-            let mut state = self.state();
+            let state = self.state();
             let code = match proof {
-                Proof::Code(code) => Some(live_setup(&mut state, code, now)?),
+                Proof::Code(code) => Some(live_setup(&state, code, now)?),
                 Proof::SignedIn => None,
             };
             if state.passkeys.len() >= MOST_PASSKEYS {
@@ -528,28 +523,14 @@ impl Browsers {
     }
 }
 
-/// The digest of `code`, when it is a live setup code; counted against the limit when it is
-/// not.
-fn live_setup(
-    state: &mut MutexGuard<'_, State>,
-    code: &str,
-    now: Timestamp,
-) -> Result<[u8; 32], BrowserError> {
-    state
-        .misses
-        .retain(|missed| now.duration_since(*missed) <= MISS_WINDOW);
-    if state.misses.len() >= MOST_MISSES {
-        return Err(BrowserError::TooMany);
-    }
+/// The digest of `code`, when it is a live setup code.
+fn live_setup(state: &State, code: &str, now: Timestamp) -> Result<[u8; 32], BrowserError> {
     let presented = digest(code);
-    let found = state.setups.iter().position(|(kept, made)| {
-        same(kept, &presented) && now.duration_since(*made) <= SETUP_LIFETIME
-    });
-    if found.is_none() {
-        state.misses.push(now);
-        return Err(BrowserError::Setup);
-    }
-    Ok(presented)
+    let live = state
+        .setups
+        .iter()
+        .any(|(kept, made)| same(kept, &presented) && now.duration_since(*made) <= SETUP_LIFETIME);
+    live.then_some(presented).ok_or(BrowserError::Setup)
 }
 
 /// Spends the setup code whose digest is `code`, which must still be live.

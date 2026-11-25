@@ -4,10 +4,10 @@
 
 use std::net::IpAddr;
 
-use glave_event::{Permissions, Principal, PrincipalId};
+use glave_event::{Permissions, Principal, PrincipalId, Secret};
 use glave_ports::{Caller, ProjectKind};
 use glave_session::Answering;
-use glave_session::protocol::{Request, code};
+use glave_session::protocol::{ApiError, LinkKind, Reply, Request, code};
 use glave_session::signin::{LocalToken, SignIn};
 use serde_json::json;
 
@@ -113,5 +113,48 @@ fn no_one_reads_or_makes_anything_of_anyone_s() {
             0,
             "no one's"
         );
+    });
+}
+
+/// No one asks to begin signing in, or to see an invite, at most 20 times a minute from one
+/// network: past that they are told to wait, while another network, and anyone signed in, asks
+/// on, so no stranger pushes everyone else's sign-in out.
+#[test]
+fn a_network_not_signed_in_begins_at_most_twenty_sign_ins_a_minute() {
+    let dir = folder("no-one-counted");
+    block_on!(async {
+        let server = server(&dir, Vec::new(), Answering::NoOne).await;
+        let asking = Caller::no_one(IpAddr::from([203, 0, 113, 9]));
+        let limited = |answered: Result<Reply, ApiError>| {
+            answered.err().map(|refused| refused.code) == Some(code::LIMIT)
+        };
+        for n in 0..20 {
+            let request = match n % 3 {
+                0 => Request::PasskeyGetOptions {},
+                1 => Request::InviteShow {
+                    code: Secret::new("not-an-invite"),
+                },
+                _ => Request::PasskeyCreateOptions {
+                    code: Secret::new("not-a-setup-code"),
+                    link: LinkKind::Setup,
+                },
+            };
+            assert!(!limited(server.request_as(&asking, request).await), "{n}");
+        }
+        let again = server
+            .request_as(&asking, Request::PasskeyGetOptions {})
+            .await;
+        assert!(limited(again), "the network's twenty-first");
+        let other = Caller::no_one(IpAddr::from([198, 51, 100, 4]));
+        let elsewhere = server
+            .request_as(&other, Request::PasskeyGetOptions {})
+            .await;
+        assert!(!limited(elsewhere), "another network's first");
+        let discover = server.request_as(&asking, Request::Discover {}).await;
+        assert!(discover.is_ok(), "what isn't counted is answered");
+        let signed_in = server
+            .request_as(&Caller::default(), Request::PasskeyGetOptions {})
+            .await;
+        assert!(!limited(signed_in), "the person here is never counted");
     });
 }

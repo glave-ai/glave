@@ -36,8 +36,9 @@ mod operator;
 const LIFETIME: SignedDuration = SignedDuration::from_mins(15);
 
 /// Accounts being made by sign-up at once; a new one past this forgets the oldest. Each
-/// passkey request expires on its own, as any does.
-const MOST: usize = 16;
+/// passkey request expires on its own, as any does. Enough that the asks the server lets one
+/// network make within a request's lifetime never fill it (`strangers.rs`).
+const MOST: usize = 4_096;
 
 /// Sign-ups waiting at once, at most; past this, an address is answered as ever and sent
 /// nothing, until some expire.

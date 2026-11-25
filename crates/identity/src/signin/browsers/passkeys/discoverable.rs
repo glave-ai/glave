@@ -2,7 +2,7 @@
 //! accounts must (`specs/session.md`, "glave accounts for many people"): the request names no
 //! passkeys, the browser offers every one it holds for the relying party, and the passkey's
 //! user handle says whose it is. The request is answered within five minutes, on the server
-//! that began it, at most 16 waiting.
+//! that began it, at most 4,096 waiting.
 
 use std::sync::{Mutex, PoisonError};
 
