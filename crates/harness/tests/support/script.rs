@@ -438,7 +438,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::ShareStopped(_) => "share.stopped",
             Body::SharePlaced(_) => "share.placed",
             Body::ShareUnplaced(_) => "share.unplaced",
-            Body::ShareCodeSent(_) => "share.code.sent",
+            Body::ShareLinkSent(_) => "share.link.sent",
             Body::ShareOpened(_) => "share.opened",
             Body::TurnMade(_) => "turn.made",
             Body::PersonJoined(_) => "person.joined",

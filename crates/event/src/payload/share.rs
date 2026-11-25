@@ -19,7 +19,7 @@ pub(crate) const SET: &str = "share.set";
 pub(crate) const STOPPED: &str = "share.stopped";
 pub(crate) const PLACED: &str = "share.placed";
 pub(crate) const UNPLACED: &str = "share.unplaced";
-pub(crate) const CODE_SENT: &str = "share.code.sent";
+pub(crate) const LINK_SENT: &str = "share.link.sent";
 pub(crate) const OPENED: &str = "share.opened";
 
 /// What a share is of: a file one of a chat's turns made, by the chat and its path there, or an
@@ -71,15 +71,17 @@ pub struct ShareStopped {
     pub share: ShareId,
 }
 
-/// glave emailed a code to an address a share lists: each kept as its SHA-256 alone.
+/// glave emailed a one-time link to an address a share lists: each kept as its SHA-256 alone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ShareCodeSent {
+pub struct ShareLinkSent {
     pub share: ShareId,
     /// The SHA-256 of the address, as glave reads addresses, in hex.
     pub to: String,
-    /// The SHA-256 of the code, in hex.
-    pub code: String,
+    /// The SHA-256 of the link's token, in hex.
+    pub token: String,
+    /// The `seq` of the share's list of people the link is for: changed since, it opens nothing.
+    pub given: u64,
 }
 
 /// Someone proved an address a share lists, and their browser holds the proof: each kept as
@@ -92,6 +94,10 @@ pub struct ShareOpened {
     pub to: String,
     /// The SHA-256 of the proof its browser holds, in hex.
     pub proof: String,
+    /// The `seq` of the `share.link.sent` it spends.
+    pub link: u64,
+    /// The `seq` of the share's list of people it is for, as its link's.
+    pub given: u64,
     /// When the proof stops working.
     pub until: At,
 }
@@ -124,8 +130,8 @@ impl Payload for ShareStopped {
     const VERSION: u32 = 1;
 }
 
-impl Payload for ShareCodeSent {
-    const TYPE: &'static str = CODE_SENT;
+impl Payload for ShareLinkSent {
+    const TYPE: &'static str = LINK_SENT;
     const VERSION: u32 = 1;
 }
 
@@ -159,7 +165,7 @@ pub(crate) fn decode(
         STOPPED => parse(data).map(Body::ShareStopped),
         PLACED => parse(data).map(Body::SharePlaced),
         UNPLACED => parse(data).map(Body::ShareUnplaced),
-        CODE_SENT => parse(data).map(Body::ShareCodeSent),
+        LINK_SENT => parse(data).map(Body::ShareLinkSent),
         OPENED => parse(data).map(Body::ShareOpened),
         _ => return None,
     })

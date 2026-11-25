@@ -10,7 +10,7 @@ use glave_event::{AssetKind, ShareSet};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, read_all};
 use hyper::body::Bytes;
 use hyper::body::Incoming;
-use hyper::header::{self, HeaderName, HeaderValue};
+use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
 use hyper::{Method, Request as HttpRequest, Response, StatusCode};
 use std::net::IpAddr;
 
@@ -82,17 +82,27 @@ where
     let (scope, share) = found;
     if let glave_event::Audience::People { .. } = share.audience {
         if posted {
-            return asking::posted(server, (&scope, &share), request, from, language).await;
+            let asked = (from, language);
+            return asking::posted(server, (scope, share), request, asked).await;
         }
-        let proof = asking::proof(request.headers()).unwrap_or_default();
-        match server.proven(&scope, &share, &proof).await {
-            Ok(true) => {}
-            Ok(false) if path == "/" => return asking::ask(language),
-            Ok(false) => return answered(StatusCode::NOT_FOUND, Answer::empty()),
+        if let Some(token) = path.strip_prefix("/open/") {
+            return asking::link_page(token, language);
+        }
+        let secure = server.shares_securely();
+        let proof = asking::proof(request.headers(), secure).unwrap_or_default();
+        let ledger = match server.share_ledger(&scope).await {
+            Ok(ledger) => ledger,
             Err(error) => {
                 tracing::warn!(error = %error.message, "could not read a share's proofs");
                 return answered(StatusCode::SERVICE_UNAVAILABLE, Answer::empty());
             }
+        };
+        if !server.proven(&ledger, &share, &proof) {
+            return if path == "/" {
+                asking::ask(language)
+            } else {
+                answered(StatusCode::NOT_FOUND, Answer::empty())
+            };
         }
     } else if posted {
         return answered(StatusCode::METHOD_NOT_ALLOWED, Answer::empty());

@@ -32,7 +32,8 @@ pub(crate) fn domain() -> ShareDomain {
 
 /// A server sharing at [`domain`], whose model draws a fox, and the fox in its Library.
 pub(crate) async fn shared_fox(dir: &std::path::Path) -> (Tested, LibraryItem) {
-    fox_sending(dir, None).await
+    let (server, item, _) = fox_sending(dir, None).await;
+    (server, item)
 }
 
 /// A server sharing at [`domain`] and sending email through `mail` where it is given, whose
@@ -40,7 +41,7 @@ pub(crate) async fn shared_fox(dir: &std::path::Path) -> (Tested, LibraryItem) {
 pub(crate) async fn fox_sending(
     dir: &std::path::Path,
     mail: Option<Arc<dyn glave_ports::Mailer>>,
-) -> (Tested, LibraryItem) {
+) -> (Tested, LibraryItem, glave_ports::testing::ManualClock) {
     let mut setup = Setup::new(Vec::new());
     setup.mail = mail;
     setup.model = Some(drawing(vec![
@@ -51,13 +52,14 @@ pub(crate) async fn fox_sending(
         answer(Some("Here it is."), None),
     ]));
     setup.shares = Some(domain());
+    let clock = setup.clock.clone();
     let (server, _) = setup.build(dir).await;
     let thread = start(&server, false).await;
     turn(&server, thread, "draw me a fox").await.unwrap();
     let Ok(Reply::Library { items }) = server.request(Request::LibraryList {}).await else {
         panic!("the Library");
     };
-    (server, items.into_iter().next().unwrap())
+    (server, items.into_iter().next().unwrap(), clock)
 }
 
 pub(crate) fn item_of(item: &LibraryItem) -> ShareOf {

@@ -739,7 +739,7 @@
     "shareDialog.onlyYou": "Only you",
     "shareDialog.onlyYouHint": "No one else can open it.",
     "shareDialog.people": "Specific people",
-    "shareDialog.peopleHint": "Only the people you add. They prove it's them with a code sent to their email; no account needed.",
+    "shareDialog.peopleHint": "Only the people you add. They prove it's them with a link sent to their email; no account needed.",
     "shareDialog.save": "Save",
     "shareDialog.saving": "Saving…",
     "shareDialog.share": "Share",

@@ -72,7 +72,7 @@ export class ShareDialogComponent {
     onlyYouHint: $localize`:@@shareDialog.onlyYouHint:No one else can open it.`,
     stopHint: $localize`:@@shareDialog.stopHint:Stops sharing. The link stops working.`,
     people: $localize`:@@shareDialog.people:Specific people`,
-    peopleHint: $localize`:@@shareDialog.peopleHint:Only the people you add. They prove it's them with a code sent to their email; no account needed.`,
+    peopleHint: $localize`:@@shareDialog.peopleHint:Only the people you add. They prove it's them with a link sent to their email; no account needed.`,
     emails: $localize`:@@shareDialog.emails:Their emails, separated by commas`,
     anyone: $localize`:@@shareDialog.anyone:Anyone with the link`,
     anyoneHint: $localize`:@@shareDialog.anyoneHint:Whoever has the link can view it without signing in.`,

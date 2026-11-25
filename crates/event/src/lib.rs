@@ -52,7 +52,7 @@ pub use payload::{
 };
 pub use payload::{AssetKind, LibraryKept, LibraryRemoved};
 pub use payload::{
-    Audience, ShareCodeSent, ShareOpened, SharePlaced, ShareSet, ShareStopped, ShareUnplaced,
+    Audience, ShareLinkSent, ShareOpened, SharePlaced, ShareSet, ShareStopped, ShareUnplaced,
     SharedFrom,
 };
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};

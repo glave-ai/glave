@@ -1,17 +1,25 @@
 //! Specific people (`specs/session.md`, "Sharing"): a share for a list of addresses, each person
-//! proving theirs with a code glave emails there. The page asks for an address and sends a code
-//! only to one the share lists, answering alike either way, the mail going after the answer; the
-//! right code, good once and for ten minutes, gives the browser a proof for that share's name
-//! alone, good for thirty days, and checked on every request against the share as it stands.
-//! Codes and proofs are kept in the shares ledger as their SHA-256 alone (`share.code.sent`,
-//! `share.opened`), and so are the addresses they were for.
+//! proving theirs by opening a one-time link glave emails there. The page asks for an address;
+//! the answer is the same, and as quick, whether or not the share lists it, since the network's
+//! count comes first and everything else happens after, in a task the server owns: whether the
+//! share lists the address, the link's record and the mail. A link is good once, for ten
+//! minutes, for its share, its address and the list of people as it was when sent; asking again
+//! leaves earlier links working, so no one asking in someone's name locks them out. Opening one
+//! gives the browser a proof for that share's name alone, good for thirty days while the list
+//! of people stays as it was. Tokens and proofs are kept in the shares ledger as their SHA-256
+//! alone, with the address's (`share.link.sent`, `share.opened`); each server keeps what it read
+//! of each project's ledger in a bounded cache, reading on from where it last read.
 
+use std::collections::{BTreeMap, HashMap};
 use std::net::IpAddr;
+use std::sync::PoisonError;
 
-use glave_event::{At, Audience, Body, ShareCodeSent, ShareOpened, ShareSet, decode};
+use glave_event::{
+    At, Audience, Body, RawEvent, Seq, ShareId, ShareLinkSent, ShareOpened, ShareSet,
+};
 use glave_identity::signin::{kept, one_time_code, same_kept};
-use glave_ports::stream::{Reserved, catch_up};
-use glave_ports::{BlobStore, Caller, EventLog, Mail, ModelProvider, Scope};
+use glave_ports::stream::{Reserved, catch_up, in_order};
+use glave_ports::{BlobStore, Caller, EventLog, Located, Mail, ModelProvider, Scope};
 use jiff::SignedDuration;
 
 use super::SHARES;
@@ -23,17 +31,17 @@ use crate::words::{Language, Sentence, say};
 /// The most addresses one share lists.
 pub(crate) const MOST_PEOPLE: usize = 50;
 
-/// How long a code works.
-const CODE_FOR: SignedDuration = SignedDuration::from_mins(10);
+/// How long an emailed link works.
+const LINK_FOR: SignedDuration = SignedDuration::from_mins(10);
 
 /// How long a proof works on the browser that holds it.
 pub(crate) const PROOF_FOR: SignedDuration = SignedDuration::from_hours(30 * 24);
 
-/// The letters a code is written in, none two alike to the eye.
-const CODE_LETTERS: &[u8; 32] = b"abcdefghjkmnpqrstuvwxyz234567890";
+/// The most projects' ledgers a server keeps read in memory; past them, it starts over.
+const MOST_LEDGERS: usize = 256;
 
-/// How many letters a code has: 40 bits.
-const CODE_LENGTH: usize = 8;
+/// The most links sent, and proofs given, a ledger keeps in memory, the latest.
+const MOST_KEPT: usize = 4_096;
 
 /// `people` as a share lists them: each address read as glave reads every address, once, at
 /// most [`MOST_PEOPLE`]; refused for anything but addresses, or for none.
@@ -57,39 +65,68 @@ pub(crate) fn listed(people: &[String]) -> Result<Vec<String>, ApiError> {
     Ok(read)
 }
 
-/// A new code: [`CODE_LENGTH`] letters from the operating system's randomness.
-fn new_code() -> Result<String, ApiError> {
-    let mut random = [0u8; CODE_LENGTH];
-    getrandom::fill(&mut random).map_err(|error| ApiError::internal(&error))?;
-    Ok(random
-        .iter()
-        .map(|byte| {
-            char::from(
-                CODE_LETTERS
-                    .get(usize::from(byte % 32))
-                    .copied()
-                    .unwrap_or(b'a'),
-            )
-        })
-        .collect())
+/// A project's shares ledger as far as this server has read it: its live shares, each with the
+/// `seq` its list of people was last set at, and the links sent and proofs given, the latest.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Ledger {
+    next: u64,
+    pub(crate) live: BTreeMap<ShareId, (ShareSet, u64)>,
+    sent: Vec<(u64, At, ShareLinkSent)>,
+    opened: Vec<ShareOpened>,
 }
 
-/// `typed` as a code is compared: lowercase, without spaces or dashes.
-fn as_typed(typed: &str) -> String {
-    typed
-        .chars()
-        .filter(|c| !c.is_whitespace() && *c != '-')
-        .flat_map(char::to_lowercase)
-        .collect()
+impl Ledger {
+    fn take(&mut self, raw: RawEvent) {
+        let seq = raw.seq.get();
+        let Some((at, body)) = in_order(&mut self.next, raw) else {
+            return;
+        };
+        match body {
+            Body::ShareSet(set) => {
+                let given = match self.live.get(&set.share) {
+                    Some((before, given)) if before.audience == set.audience => *given,
+                    _ => seq,
+                };
+                self.live.insert(set.share, (set, given));
+            }
+            Body::ShareStopped(stopped) => {
+                self.live.remove(&stopped.share);
+            }
+            Body::ShareLinkSent(sent) => {
+                self.sent.push((seq, at, sent));
+                trim(&mut self.sent);
+            }
+            Body::ShareOpened(opened) => {
+                self.opened.push(opened);
+                trim(&mut self.opened);
+            }
+            _ => {}
+        }
+    }
+
+    /// The `seq` `share`'s list of people was last set at, while it is live.
+    fn given(&self, share: ShareId) -> Option<u64> {
+        self.live.get(&share).map(|(_, given)| *given)
+    }
 }
 
-/// What a share's ledger says of its codes and proofs.
-#[derive(Default)]
-struct Proofs {
-    /// Each code sent, with when, by `seq`.
-    sent: Vec<(u64, At, ShareCodeSent)>,
-    /// Each proof given, by `seq`.
-    opened: Vec<(u64, ShareOpened)>,
+/// Keeps the latest [`MOST_KEPT`] of `kept`.
+fn trim<T>(kept: &mut Vec<T>) {
+    if kept.len() > MOST_KEPT {
+        let over = kept.len() - MOST_KEPT;
+        kept.drain(..over);
+    }
+}
+
+/// What each server has read of projects' shares ledgers.
+pub(crate) type Ledgers = HashMap<Located, Ledger>;
+
+/// Whether `share` lists the address whose SHA-256 is `to`.
+fn lists(share: &ShareSet, to: &str) -> bool {
+    match &share.audience {
+        Audience::People { people } => people.iter().any(|address| kept(address) == to),
+        Audience::Anyone => false,
+    }
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -98,112 +135,135 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// The codes sent and proofs given for `share` in `scope`.
-    async fn proofs(&self, scope: &Scope, share: &ShareSet) -> Result<Proofs, ApiError> {
-        let mut proofs = Proofs::default();
+    /// `scope`'s shares ledger, read on from where this server last read it.
+    pub(crate) async fn share_ledger(&self, scope: &Scope) -> Result<Ledger, ApiError> {
+        let at = scope.located();
+        let held = |ledgers: &mut Ledgers| ledgers.get(&at).cloned().unwrap_or_default();
+        let mut ledger = self.held_ledgers(held);
+        let after = Seq::new(ledger.next.saturating_sub(1)).ok();
         let log = self.inner.harness.log();
-        catch_up(log, scope, Reserved::Shares.id(), None, |page| {
+        catch_up(log, scope, Reserved::Shares.id(), after, |page| {
             for raw in page {
-                let (seq, at) = (raw.seq.get(), raw.at);
-                match decode(raw).map(|event| event.body) {
-                    Ok(Body::ShareCodeSent(sent)) if sent.share == share.share => {
-                        proofs.sent.push((seq, at, sent));
-                    }
-                    Ok(Body::ShareOpened(opened)) if opened.share == share.share => {
-                        proofs.opened.push((seq, opened));
-                    }
-                    _ => {}
-                }
+                ledger.take(raw);
             }
         })
         .await?;
-        Ok(proofs)
+        self.held_ledgers(|ledgers| {
+            if ledgers.len() >= MOST_LEDGERS && !ledgers.contains_key(&at) {
+                ledgers.clear();
+            }
+            ledgers.insert(at, ledger.clone());
+        });
+        Ok(ledger)
     }
 
-    /// Sends a code to `to` when `share` lists it, at most one a minute to an address and
-    /// counted against `from`'s network, the mail going after the answer; answered alike
-    /// whether or not it lists it.
-    pub(crate) async fn send_code(
+    fn held_ledgers<R>(&self, look: impl FnOnce(&mut Ledgers) -> R) -> R {
+        let mut ledgers = (self.inner.share_ledgers)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        look(&mut ledgers)
+    }
+
+    /// Asks for a link to `share` to be emailed to `to`: counted against `from`'s network, then
+    /// answered at once, alike whether or not the share lists it; the rest happens after, in a
+    /// task the server owns, the link written in `language`.
+    pub(crate) async fn ask_link(
         &self,
-        scope: &Scope,
-        share: &ShareSet,
-        to: &str,
-        from: IpAddr,
-        language: Language,
+        scope: Scope,
+        share: ShareSet,
+        to: String,
+        (from, language): (IpAddr, Language),
     ) -> Result<(), ApiError> {
-        let (Some(mailer), Audience::People { people }) = (&self.inner.mail, &share.audience)
-        else {
-            return Ok(());
-        };
-        let Some(address) = read_address(to).filter(|address| people.contains(address)) else {
-            self.send_later(std::sync::Arc::clone(mailer), None);
-            return Ok(());
-        };
-        let to_kept = kept(&address);
-        let now = self.inner.harness.clock().now();
-        let proofs = self.proofs(scope, share).await?;
-        let recent = (proofs.sent.iter().rev())
-            .find(|(_, _, sent)| sent.to == to_kept)
-            .is_some_and(|(_, at, _)| just_now(at.timestamp(), now));
-        if recent {
-            self.send_later(std::sync::Arc::clone(mailer), None);
-            return Ok(());
-        }
         self.count_asked(&Caller::no_one(from)).await?;
-        let code = new_code()?;
-        let sent = ShareCodeSent {
-            share: share.share,
-            to: to_kept,
-            code: kept(&code),
-        };
-        self.keep_latest(scope, Reserved::Shares.id(), &SHARES, &sent)
-            .await?;
-        let shown = code.to_uppercase();
-        let (half, rest) = shown.split_at(CODE_LENGTH / 2);
-        let mail = Mail {
-            to: address,
-            subject: say(language, &Sentence::ShareCodeSubject),
-            text: format!(
-                "{}\n\n{}\n",
-                say(
-                    language,
-                    &Sentence::ShareCodeText {
-                        code: format!("{half}-{rest}"),
-                    },
-                ),
-                say(language, &Sentence::ShareCodeNote),
-            ),
-        };
-        self.send_later(std::sync::Arc::clone(mailer), Some(mail));
+        let server = self.clone();
+        self.own(tokio::spawn(async move {
+            if let Err(error) = server.send_link(&scope, &share, &to, language).await {
+                tracing::warn!(error = %error.message, "a share's link was not sent");
+            }
+        }));
         Ok(())
     }
 
-    /// A proof for `to` on `share`, when `typed` is the last code sent there, unspent and within
-    /// [`CODE_FOR`]: the browser's to keep, its SHA-256 kept here. None for any other.
-    pub(crate) async fn open_with_code(
+    /// Emails a link to `share` to `to` when the share lists it and the mail server takes it,
+    /// at most one a minute to an address.
+    async fn send_link(
         &self,
         scope: &Scope,
         share: &ShareSet,
         to: &str,
-        typed: &str,
-    ) -> Result<Option<String>, ApiError> {
-        let Some(address) = read_address(to) else {
-            return Ok(None);
+        language: Language,
+    ) -> Result<(), ApiError> {
+        let Some(mailer) = &self.inner.mail else {
+            return Ok(());
+        };
+        let address = read_address(to).filter(|address| mailer.reaches(address));
+        let Some(address) = address else {
+            return Ok(());
         };
         let to_kept = kept(&address);
+        let ledger = self.share_ledger(scope).await?;
         let now = self.inner.harness.clock().now();
-        let proofs = self.proofs(scope, share).await?;
-        let last = (proofs.sent.iter().rev()).find(|(_, _, sent)| sent.to == to_kept);
-        let Some((seq, at, sent)) = last else {
+        let (Some((live, _)), Some(given)) =
+            (ledger.live.get(&share.share), ledger.given(share.share))
+        else {
+            return Ok(());
+        };
+        let recent = (ledger.sent.iter().rev())
+            .find(|(_, _, sent)| sent.share == share.share && sent.to == to_kept)
+            .is_some_and(|(_, at, _)| just_now(at.timestamp(), now));
+        if !lists(live, &to_kept) || recent {
+            return Ok(());
+        }
+        let token = one_time_code().map_err(|error| ApiError::internal(&error))?;
+        let sent = ShareLinkSent {
+            share: share.share,
+            to: to_kept,
+            token: kept(token.expose()),
+            given,
+        };
+        self.keep_latest(scope, Reserved::Shares.id(), &SHARES, &sent)
+            .await?;
+        let port = self.reached_port();
+        let page = (self.inner.shares.as_ref())
+            .map(|domain| domain.link(&share.link, port))
+            .unwrap_or_default();
+        let mail = Mail {
+            to: address,
+            subject: say(language, &Sentence::ShareLinkSubject),
+            text: format!(
+                "{}\n\n{page}open/{}\n\n{}\n",
+                say(language, &Sentence::ShareLinkText),
+                token.expose(),
+                say(language, &Sentence::ShareLinkNote),
+            ),
+        };
+        self.send(mailer.as_ref(), &mail).await
+    }
+
+    /// A proof for the browser that opened the link whose token is `token`, when it is one sent
+    /// for `share`, unused, within [`LINK_FOR`], for an address the share still lists and its
+    /// list of people as it is: the browser's to keep, its SHA-256 kept here. None for any other.
+    pub(crate) async fn open_with_link(
+        &self,
+        scope: &Scope,
+        share: &ShareSet,
+        token: &str,
+    ) -> Result<Option<String>, ApiError> {
+        let ledger = self.share_ledger(scope).await?;
+        let now = self.inner.harness.clock().now();
+        let held = kept(token);
+        let found = (ledger.sent.iter())
+            .find(|(_, _, sent)| sent.share == share.share && same_kept(&sent.token, &held));
+        let Some((seq, at, sent)) = found else {
             return Ok(None);
         };
-        let used =
-            (proofs.opened.iter()).any(|(after, opened)| after > seq && opened.to == to_kept);
+        let used = (ledger.opened.iter()).any(|opened| opened.link == *seq);
         let fresh = at
             .timestamp()
-            .checked_add(CODE_FOR)
+            .checked_add(LINK_FOR)
             .is_ok_and(|by| by > now);
-        if used || !fresh || !same_kept(&kept(&as_typed(typed)), &sent.code) {
+        let current = ledger.given(share.share) == Some(sent.given);
+        if used || !fresh || !current || !lists(share, &sent.to) {
             return Ok(None);
         }
         let proof = one_time_code().map_err(|error| ApiError::internal(&error))?;
@@ -212,8 +272,10 @@ where
             .map_err(|error| ApiError::internal(&error))?;
         let opened = ShareOpened {
             share: share.share,
-            to: to_kept,
+            to: sent.to.clone(),
             proof: kept(proof.expose()),
+            link: *seq,
+            given: sent.given,
             until: At::from(until),
         };
         self.keep_latest(scope, Reserved::Shares.id(), &SHARES, &opened)
@@ -222,23 +284,28 @@ where
     }
 
     /// Whether `proof` lets its browser open `share` now: given for it, within its time, for an
-    /// address the share still lists.
-    pub(crate) async fn proven(
-        &self,
-        scope: &Scope,
-        share: &ShareSet,
-        proof: &str,
-    ) -> Result<bool, ApiError> {
-        let Audience::People { people } = &share.audience else {
-            return Ok(true);
-        };
+    /// address the share still lists and its list of people as it is now.
+    pub(crate) fn proven(&self, ledger: &Ledger, share: &ShareSet, proof: &str) -> bool {
+        if !matches!(share.audience, Audience::People { .. }) {
+            return true;
+        }
         let held = kept(proof);
         let now = self.inner.harness.clock().now();
-        let proofs = self.proofs(scope, share).await?;
-        Ok(proofs.opened.iter().any(|(_, opened)| {
-            same_kept(&opened.proof, &held)
+        let given = ledger.given(share.share);
+        ledger.opened.iter().any(|opened| {
+            opened.share == share.share
+                && same_kept(&opened.proof, &held)
                 && opened.until.timestamp() > now
-                && people.iter().any(|address| kept(address) == opened.to)
-        }))
+                && Some(opened.given) == given
+                && lists(share, &opened.to)
+        })
+    }
+
+    /// The port this server is reached at on this computer, for a link at `localhost`.
+    pub(crate) fn reached_port(&self) -> Option<u16> {
+        self.inner.reached.get().and_then(|reached| {
+            let at = reached.at.as_deref()?;
+            at.rsplit_once(':')?.1.parse().ok()
+        })
     }
 }

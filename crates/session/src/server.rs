@@ -393,6 +393,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) shares: Option<crate::ShareDomain>,
     /// The shares' list, as far as this server has read it (`shares/links.rs`).
     pub(crate) links: Mutex<crate::shares::Links>,
+    /// What this server has read of projects' shares ledgers, bounded (`shares/people.rs`).
+    pub(crate) share_ledgers: Mutex<crate::shares::Ledgers>,
     /// What the threads opened or started here did with their projects' asks.
     pub(crate) asks: Mutex<Asks>,
     /// Set once the server stops: it starts no new work (`stopping.rs`).
@@ -502,6 +504,7 @@ where
                 origin: wiring.origin,
                 shares: wiring.shares,
                 links: Mutex::new(crate::shares::Links::default()),
+                share_ledgers: Mutex::new(crate::shares::Ledgers::default()),
                 stopping: AtomicBool::new(false),
                 leases,
                 holder: OnceLock::new(),

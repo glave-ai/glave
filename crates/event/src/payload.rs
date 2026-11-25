@@ -101,7 +101,7 @@ pub use service::{
     ServiceFieldKind, ServiceOption, ServiceOutcome, misfit,
 };
 pub use share::{
-    Audience, ShareCodeSent, ShareOpened, SharePlaced, ShareSet, ShareStopped, ShareUnplaced,
+    Audience, ShareLinkSent, ShareOpened, SharePlaced, ShareSet, ShareStopped, ShareUnplaced,
     SharedFrom,
 };
 pub use signup::{MailAsked, SignupFinished, SignupStarted};

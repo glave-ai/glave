@@ -1,7 +1,7 @@
 //! Sharing with specific people (`specs/session.md`, "Sharing"): the page asks for an email and
-//! sends a code only to one the share lists, answering alike either way; the right code, once,
-//! gives the browser a proof for that share's name alone, which taking the address off the
-//! share ends.
+//! emails a one-time link only to one the share lists, answering alike either way; opening the
+//! link, once, gives the browser a proof for that share's name alone, which any change to who
+//! may open the share ends for good, and asking for another link leaves the first working.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -26,14 +26,17 @@ fn people(addresses: &[&str]) -> Audience {
 
 /// A server sharing at the tests' domain and sending email to `outbox`, and the fox its model
 /// drew, as sharing names it.
-async fn drawn_fox(dir: &std::path::Path, outbox: &Arc<Outbox>) -> (Tested, ShareOf) {
+async fn drawn_fox(
+    dir: &std::path::Path,
+    outbox: &Arc<Outbox>,
+) -> (Tested, ShareOf, glave_ports::testing::ManualClock) {
     let mail = Some(Arc::clone(outbox) as Arc<dyn Mailer>);
-    let (server, item) = crate::shares::fox_sending(dir, mail).await;
+    let (server, item, clock) = crate::shares::fox_sending(dir, mail).await;
     let of = ShareOf::Item {
         project: item.project,
         asset: item.asset,
     };
-    (server, of)
+    (server, of, clock)
 }
 
 /// `share/set` of `of` for `audience`.
@@ -54,7 +57,7 @@ fn a_share_lists_addresses_read_one_way_only_where_the_server_sends_email() {
     let dir = folder("shares-people-listed");
     block_on!(async {
         let outbox = Arc::new(Outbox::default());
-        let (server, of) = drawn_fox(&dir, &outbox).await;
+        let (server, of, _) = drawn_fox(&dir, &outbox).await;
         let Ok(Reply::Server(info)) = server.request(Request::Discover {}).await else {
             panic!("the server");
         };
@@ -112,20 +115,35 @@ impl Browser {
         let posting = posting.header("content-type", "application/x-www-form-urlencoded");
         posting.send().await.unwrap()
     }
-}
 
-/// The code a message from glave holds: what follows "Your code: ".
-fn code_in(text: &str) -> String {
-    let (_, rest) = text.split_once("Your code: ").unwrap();
-    rest.split_whitespace().next().unwrap().to_owned()
+    /// Opens the emailed link `text` holds with one click: the proof's cookie it is given, or
+    /// none, with the page answered.
+    async fn open(&self, text: &str) -> (Option<String>, String) {
+        let (_, rest) = text.split_once("/open/").unwrap();
+        let token = rest.split_whitespace().next().unwrap();
+        let page = self
+            .get(&format!("/open/{token}"), "")
+            .await
+            .text()
+            .await
+            .unwrap();
+        assert!(
+            page.contains("name=\"token\"") && !page.contains("fox"),
+            "{page}"
+        );
+        let opened = self.post("/open", &format!("token={token}")).await;
+        let cookie =
+            (opened.headers().get("set-cookie")).map(|cookie| cookie.to_str().unwrap().to_owned());
+        (cookie, opened.text().await.unwrap())
+    }
 }
 
 #[test]
-fn only_a_listed_address_gets_a_code_and_its_proof_opens_the_share_until_it_is_taken_off() {
+fn only_a_listed_address_gets_a_link_and_its_proof_ends_with_any_change_to_who_may_open() {
     let dir = folder("shares-people");
     block_on!(async {
         let outbox = Arc::new(Outbox::default());
-        let (server, of) = drawn_fox(&dir, &outbox).await;
+        let (server, of, _) = drawn_fox(&dir, &outbox).await;
         let share = shared(&server, &of, people(&["ada@example.com"]))
             .await
             .unwrap();
@@ -149,46 +167,69 @@ fn only_a_listed_address_gets_a_code_and_its_proof_opens_the_share_until_it_is_t
         assert_eq!(browser.get("/file", "").await.status(), 404);
 
         // An address the share doesn't list is answered alike, and sent nothing.
-        let stranger = browser.post("/code", "email=bea%40example.com").await;
-        let stranger = stranger.text().await.unwrap();
-        let listed = browser.post("/code", "email=ada%40example.com").await;
-        assert_eq!(
-            listed.text().await.unwrap(),
-            stranger.replace("bea@", "ada@")
-        );
+        let stranger = browser.post("/link", "email=bea%40example.com").await;
+        let listed = browser.post("/link", "email=ada%40example.com").await;
+        assert_eq!(listed.text().await.unwrap(), stranger.text().await.unwrap());
         let mails = outbox.sent_by(1).await;
         let [mail] = mails.as_slice() else {
-            panic!("one code, to ada: {mails:?}");
+            panic!("one link, to ada: {mails:?}");
         };
         assert_eq!(mail.to, "ada@example.com");
-        let typed = code_in(&mail.text);
 
-        // A wrong code opens nothing; the right one, once, gives a proof for this name alone.
-        let wrong = browser
-            .post("/open", "email=ada%40example.com&code=zzzz-zzzz")
-            .await;
-        assert!(wrong.text().await.unwrap().contains("That code doesn"));
-        let form = format!("email=ada%40example.com&code={typed}");
-        let opened = browser.post("/open", &form).await;
-        assert_eq!(opened.status(), 303);
-        let cookie = opened.headers()["set-cookie"].to_str().unwrap().to_owned();
+        // One click opens it, once, with a proof for this name alone.
+        let (cookie, _) = browser.open(&mail.text).await;
+        let cookie = cookie.expect("a proof");
         assert!(
             cookie.contains("HttpOnly") && cookie.contains("SameSite=Lax"),
             "{cookie}"
         );
         assert!(!cookie.contains("Domain"), "host-only: {cookie}");
         let proof = cookie.split(';').next().unwrap().to_owned();
-        assert_eq!(browser.post("/open", &form).await.status(), 200, "once");
+        let (again, said) = browser.open(&mail.text).await;
+        assert_eq!(again, None, "a link works once");
+        assert!(said.contains("used or have expired"), "{said}");
         let page = browser.get("/", &proof).await.text().await.unwrap();
         assert!(page.contains("<h1>A fox at dawn</h1>"), "{page}");
         assert_eq!(browser.get("/file", &proof).await.status(), 200);
 
-        // Taken off the share, the address's proof opens it no more.
-        shared(&server, &of, people(&["bea@example.com"]))
+        // Taken off and put back, or the share opened to anyone and closed again, the proof
+        // given before opens it no more.
+        for audience in [people(&["bea@example.com"]), people(&["ada@example.com"])] {
+            shared(&server, &of, audience).await.unwrap();
+        }
+        let page = browser.get("/", &proof).await.text().await.unwrap();
+        assert!(page.contains("Enter your email"), "re-added: {page}");
+        listening.close().await;
+    });
+}
+
+#[test]
+fn asking_for_another_link_leaves_the_first_working() {
+    let dir = folder("shares-people-again");
+    block_on!(async {
+        let outbox = Arc::new(Outbox::default());
+        let (server, of, clock) = drawn_fox(&dir, &outbox).await;
+        let share = shared(&server, &of, people(&["ada@example.com"]))
             .await
             .unwrap();
-        let page = browser.get("/", &proof).await.text().await.unwrap();
-        assert!(page.contains("Enter your email"), "{page}");
+        let local = LocalToken::new([7; 32]);
+        let signin = SignIn::local(local, Box::new(fixed_clock()));
+        let listening = serve_with(server.clone(), signin, None).await;
+        let id = share
+            .link
+            .trim_start_matches("https://")
+            .split('.')
+            .next()
+            .unwrap();
+        let browser = Browser::new(&format!("{id}.share.example.net"), listening.address);
+        browser.post("/link", "email=ada%40example.com").await;
+        let first = outbox.sent_by(1).await[0].text.clone();
+        clock.advance_millis(61_000);
+        browser.post("/link", "email=ada%40example.com").await;
+        let mails = outbox.sent_by(2).await;
+        assert_eq!(mails.len(), 2, "a minute after, a second link");
+        let (cookie, _) = browser.open(&first).await;
+        assert!(cookie.is_some(), "the first link still opens it");
         listening.close().await;
     });
 }

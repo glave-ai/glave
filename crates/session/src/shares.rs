@@ -10,7 +10,7 @@ mod links;
 mod people;
 
 pub(crate) use self::links::Links;
-pub(crate) use self::people::PROOF_FOR;
+pub(crate) use self::people::{Ledgers, PROOF_FOR};
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -468,12 +468,14 @@ where
             Ok(removed) => (!removed).then_some(()),
             Err(_) => None,
         };
-        let shares = match readable {
-            Some(()) => self.shares_in(&scope).await.unwrap_or_default(),
+        let live = match readable {
+            Some(()) => (self.share_ledger(&scope).await)
+                .map(|ledger| ledger.live)
+                .unwrap_or_default(),
             None => BTreeMap::new(),
         };
-        let found = shares.into_values().find(|(_, set)| set.link == id);
-        Ok(found.map(|(_, set)| (scope, set)))
+        let found = live.into_values().find(|(set, _)| set.link == id);
+        Ok(found.map(|(set, _)| (scope, set)))
     }
 }
 
@@ -481,6 +483,6 @@ where
 const SHARES: [&str; 4] = [
     ShareSet::TYPE,
     ShareStopped::TYPE,
-    glave_event::ShareCodeSent::TYPE,
+    glave_event::ShareLinkSent::TYPE,
     glave_event::ShareOpened::TYPE,
 ];
