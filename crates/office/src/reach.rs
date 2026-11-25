@@ -2,7 +2,8 @@
 //! cell of a range from its first used cell to its last, empty or not, so two cells far apart
 //! (A1 and XFD1048576) would take hundreds of gigabytes. An xlsx or xlsb sheet is read once, as
 //! a stream of the cells it holds, stopped as soon as they span more than is left, and only then
-//! made a range. calamine reads an xls or ods workbook whole when it opens it, xls within the
+//! made a range; the text its cells hold is counted too, as calamine copies a shared string
+//! into every cell that names it. calamine reads an xls or ods workbook whole when it opens it, xls within the
 //! format's 65,536 rows by 256 columns and ods within a cap of its own (100 million cells), and
 //! its sheets spend the budget all the same. The strings an xlsx or xlsb workbook shares among
 //! its cells are also read whole when it opens, so their part is measured first, unpacked
@@ -26,14 +27,34 @@ const MOST_SHARED_STRINGS: u64 = 128 * 1024 * 1024;
 /// Where an xlsx and an xlsb workbook keep the strings their cells share.
 const SHARED_STRINGS: [&str; 2] = ["xl/sharedStrings.xml", "xl/sharedStrings.bin"];
 
-/// What is left to read of a workbook, in cells.
+/// The most bytes of text glave holds of a workbook's cells, values and formulas: a cell's own
+/// text, or a copy of a shared string for each cell that names it.
+const MOST_TEXT: u64 = 256 * 1024 * 1024;
+
+/// What is left to read of a workbook, in cells and in bytes of their text.
 pub(crate) struct Budget {
     left: u64,
+    text: u64,
 }
 
 impl Budget {
     pub(crate) fn new() -> Self {
-        Self { left: MOST_CELLS }
+        Self {
+            left: MOST_CELLS,
+            text: MOST_TEXT,
+        }
+    }
+
+    /// Spends `bytes` of text.
+    fn read(&mut self, bytes: usize) -> Result<(), OfficeError> {
+        let bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
+        self.text = self
+            .text
+            .checked_sub(bytes)
+            .ok_or(OfficeError::TooMuchText {
+                most: MOST_TEXT / (1024 * 1024),
+            })?;
+        Ok(())
     }
 
     /// Spends what `cells` span, refusing `sheet` when that is more than is left.
@@ -70,13 +91,14 @@ impl Span {
     }
 }
 
-/// The cells `next` gives that `kept` keeps, as a range, the cells they span spent from
-/// `budget`: stopped, refusing `sheet`, as soon as they span more than is left.
+/// The cells `next` gives that `kept` keeps, each with the bytes of text it holds, as a range,
+/// the cells they span and their text spent from `budget`: stopped, refusing `sheet`, as soon
+/// as either is more than is left.
 fn collected<S: CellType, T: CellType, E: ToString>(
     sheet: &str,
     budget: &mut Budget,
     mut next: impl FnMut() -> Result<Option<Cell<S>>, E>,
-    kept: impl Fn(&Cell<S>) -> Option<Cell<T>>,
+    kept: impl Fn(&Cell<S>) -> Option<(Cell<T>, usize)>,
 ) -> Result<Range<T>, OfficeError> {
     let mut span = Span::default();
     let mut spanned = 0;
@@ -84,9 +106,10 @@ fn collected<S: CellType, T: CellType, E: ToString>(
     while let Some(cell) =
         next().map_err(|error| OfficeError::Sheet(sheet.to_owned(), error.to_string()))?
     {
-        let Some(cell) = kept(&cell) else {
+        let Some((cell, text)) = kept(&cell) else {
             continue;
         };
+        budget.read(text)?;
         spanned = span.take(cell.get_position());
         if spanned > budget.left {
             budget.spend(sheet, spanned)?;
@@ -109,10 +132,19 @@ fn spent<T: CellType>(
     Ok(range)
 }
 
-/// A value that is there, as calamine gives it to keep.
-fn value(cell: &Cell<DataRef<'_>>) -> Option<Cell<Data>> {
+/// A value that is there, as calamine gives it to keep, and the bytes of text it holds: a
+/// shared string is copied into each cell that names it.
+fn value(cell: &Cell<DataRef<'_>>) -> Option<(Cell<Data>, usize)> {
     let value = cell.get_value();
-    (!matches!(value, DataRef::Empty)).then(|| Cell::new(cell.get_position(), value.clone().into()))
+    let text = match value {
+        DataRef::Empty => return None,
+        DataRef::String(text) | DataRef::DateTimeIso(text) | DataRef::DurationIso(text) => {
+            text.len()
+        }
+        DataRef::SharedString(text) => text.len(),
+        _ => 0,
+    };
+    Some((Cell::new(cell.get_position(), value.clone().into()), text))
 }
 
 /// The values of `sheet`, within `budget`.
@@ -145,8 +177,9 @@ pub(crate) fn values(
 }
 
 /// A formula that is there.
-fn formula(cell: &Cell<String>) -> Option<Cell<String>> {
-    (!cell.get_value().is_empty()).then(|| cell.clone())
+fn formula(cell: &Cell<String>) -> Option<(Cell<String>, usize)> {
+    let text = cell.get_value().len();
+    (text > 0).then(|| (cell.clone(), text))
 }
 
 /// The formulas of `sheet`, within `budget`; none when they can't be read, as a kind of

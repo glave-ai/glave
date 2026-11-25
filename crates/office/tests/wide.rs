@@ -189,3 +189,28 @@ fn sheets_that_each_fit_are_refused_together() {
     let one = doc(&["csv", &path, "--sheet", "Sheet2"]).unwrap();
     assert_eq!(one.lines().count(), 1_900);
 }
+
+/// One shared string, which calamine copies into every cell that names it: a tiny file of
+/// 9,000 cells naming one 32,000-character string would hold 288 MB of text.
+#[test]
+fn text_copied_into_many_cells_is_refused() {
+    let dir = TempDir::new("office-text").unwrap();
+    let path = dir.join("text.xlsx");
+    let mut book = rust_xlsxwriter::Workbook::new();
+    let sheet = book.add_worksheet();
+    let text = "a".repeat(32_000);
+    for row in 0..9_000 {
+        sheet.write(row, 0, &text).unwrap();
+    }
+    book.save(&path).unwrap();
+    let path = path.to_string_lossy();
+    for command in ["read", "csv", "sql"] {
+        let said = doc(&[command, &path]).unwrap_err().to_string();
+        assert_eq!(
+            said,
+            "the workbook's text takes more than 256 MB unpacked, more than glave reads. Open it \
+             in a spreadsheet app and copy the part you need to a file of its own",
+            "{command}"
+        );
+    }
+}

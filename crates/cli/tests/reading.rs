@@ -1,85 +1,47 @@
 //! A reader of a file a turn made is held to its memory on every computer (`reading.rs`): a
-//! workbook whose strings take more and more memory as they are read, past what a reader may
-//! have, ends the reader with what it held under 2 GB, as the operating system measures it.
+//! workbook that takes more memory to read than a reader may have ends the reader with what it
+//! held under 2 GB, as the operating system measures it. glave-office reads an xlsx or xlsb
+//! workbook within limits of its own, so the workbook is an OpenDocument spreadsheet, which
+//! calamine reads whole as it opens it: a few cells far apart, which it holds as a range of
+//! every cell between them, just under its own cap of 100 million (some 3 GB).
 
 use std::time::Duration;
 
-use flate2::{Compress, Compression, Crc, FlushCompress};
+use flate2::Crc;
 use glave_ports::testing::read_program;
 use glave_process::{Processes, Program};
 
 /// What the program is started with to read a file, as the server starts it.
 const READER_ARG: &str = "--glave-read-made";
 
-const XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const ODS: &str = "application/vnd.oasis.opendocument.spreadsheet";
 
-/// The parts of a workbook beside its strings, stored as they are.
-const PARTS: [(&str, &str); 5] = [
-    (
-        "[Content_Types].xml",
-        r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>"#,
-    ),
-    (
-        "_rels/.rels",
-        r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
-    ),
-    (
-        "xl/workbook.xml",
-        r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Budget" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
-    ),
-    (
-        "xl/_rels/workbook.xml.rels",
-        r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>"#,
-    ),
-    (
-        "xl/worksheets/sheet1.xml",
-        r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>"#,
-    ),
-];
+/// A row holding a number at its first and last columns.
+const ENDS: &str = r#"<table:table-row><table:table-cell office:value-type="float" office:value="1"/><table:table-cell table:number-columns-repeated="16382"/><table:table-cell office:value-type="float" office:value="1"/></table:table-row>"#;
 
-/// Megabytes of strings the workbook's strings part inflates to: more than a reader may hold,
-/// less than 4 GB, should it hold them all.
-const STRINGS_MB: usize = 2_000;
+/// What an OpenDocument file lists of its parts: here nothing, which calamine takes as a file
+/// with no password.
+const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"/>"#;
 
-/// A deflated stream of `head`, then `times` copies of `block`, then `tail`, made cheaply:
-/// each flushed whole, needing nothing before it, so its copies are copies of its bytes.
-fn deflated(head: &[u8], block: &[u8], times: usize, tail: &[u8]) -> Vec<u8> {
-    let mut compress = Compress::new(Compression::best(), false);
-    let mut flushed = |input: &[u8], flush| {
-        let mut out = Vec::with_capacity(input.len() / 8 + 1024);
-        compress.compress_vec(input, &mut out, flush).unwrap();
-        out
-    };
-    let (first, middle) = (
-        flushed(head, FlushCompress::Full),
-        flushed(block, FlushCompress::Full),
+/// An OpenDocument spreadsheet holding numbers at its four corners, 6,100 rows and 16,384
+/// columns apart, every part stored as it is.
+fn spread_workbook() -> Vec<u8> {
+    let empty = r#"<table:table-row table:number-rows-repeated="6098"><table:table-cell table:number-columns-repeated="16384"/></table:table-row>"#;
+    let content = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" office:version="1.2"><office:body><office:spreadsheet><table:table table:name="Budget">{ENDS}{empty}{ENDS}</table:table></office:spreadsheet></office:body></office:document-content>"#
     );
-    let mut stream = first;
-    stream.extend_from_slice(&middle.repeat(times));
-    stream.extend_from_slice(&flushed(tail, FlushCompress::Finish));
-    stream
-}
-
-/// A workbook whose strings part holds strings of 64 KB each, `STRINGS_MB` megabytes of them,
-/// read one after another into memory; its record of that part's checksum is wrong, which a
-/// reader finds only at its end.
-fn growing_workbook() -> Vec<u8> {
-    let head = br#"<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">"#;
-    let text = vec![b'a'; 65_536];
-    let entry = [b"<si><t>".as_slice(), &text, b"</t></si>"].concat();
-    let block = entry.repeat((1 << 20) / entry.len());
-    let tail = b"</sst>";
-    let strings = deflated(head, &block, STRINGS_MB, tail);
-    let inflated = head.len() + block.len() * STRINGS_MB + tail.len();
-    let mut parts: Vec<(&str, u16, u32, Vec<u8>, usize)> = PARTS
-        .iter()
-        .map(|(name, text)| {
-            let mut crc = Crc::new();
-            crc.update(text.as_bytes());
-            (*name, 0, crc.sum(), text.as_bytes().to_vec(), text.len())
-        })
-        .collect();
-    parts.push(("xl/sharedStrings.xml", 8, 0, strings, inflated));
+    let parts: Vec<(&str, u16, u32, Vec<u8>, usize)> = [
+        ("mimetype", ODS),
+        ("META-INF/manifest.xml", MANIFEST),
+        ("content.xml", &content),
+    ]
+    .iter()
+    .map(|(name, text)| {
+        let mut crc = Crc::new();
+        crc.update(text.as_bytes());
+        (*name, 0, crc.sum(), text.as_bytes().to_vec(), text.len())
+    })
+    .collect();
     zipped(&parts)
 }
 
@@ -145,7 +107,7 @@ fn most_held(report: &str) -> Option<u64> {
 fn a_reader_that_needs_more_memory_than_it_may_have_ends_under_two_gigabytes() {
     let glave = env!("CARGO_BIN_EXE_glave");
     read_program(glave).unwrap();
-    let workbook = growing_workbook();
+    let workbook = spread_workbook();
     assert!(workbook.len() < 10 << 20, "{}", workbook.len());
     let time = std::path::Path::new("/usr/bin/time");
     let mut reader = if time.exists() {
@@ -160,7 +122,7 @@ fn a_reader_that_needs_more_memory_than_it_may_have_ends_under_two_gigabytes() {
     } else {
         Program::new(glave)
     };
-    reader.arg(READER_ARG).arg(XLSX);
+    reader.arg(READER_ARG).arg(ODS);
     let processes = Processes::unrecorded();
     let read = glave_ports::block_on!(processes.output_with(
         &mut reader,
