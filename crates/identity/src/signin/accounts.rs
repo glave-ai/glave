@@ -14,8 +14,8 @@ use glave_ports::host::PublicOrigin;
 use glave_ports::{BoxFuture, Clock, Directory, EventLog, IdentityKey, OrgId};
 
 use super::browsers::{
-    BrowserError, Browsers, Ceremony, Discovered, Discoverer, Session, account_of, kept, new_id,
-    passkey_key,
+    BrowserError, Browsers, Ceremony, Discovered, Discoverer, Sealer, Session, account_of, kept,
+    new_id, passkey_key,
 };
 
 /// Accounts whose sessions and passkeys a server keeps in memory at once. Past this, those no
@@ -32,6 +32,8 @@ pub struct Accounts {
     directory: Arc<dyn Directory>,
     clock: Arc<dyn Clock>,
     opened: Mutex<BTreeMap<PrincipalId, Arc<Browsers>>>,
+    /// What every account's passkey requests are sealed under on this server.
+    sealer: Arc<Sealer>,
     discoverer: Discoverer,
 }
 
@@ -56,12 +58,15 @@ impl Accounts {
     ) -> Result<Self, BrowserError> {
         let (opening, at, ticking) = (log, origin.clone(), Arc::clone(&clock));
         let indexing = Arc::clone(&directory);
+        let sealer = Arc::new(Sealer::new()?);
+        let sealing = Arc::clone(&sealer);
         let open: Opener = Box::new(move |person| {
             let (log, server, origin) = (opening.clone(), server.clone(), at.clone());
             let clock: Box<dyn Clock> = Box::new(Arc::clone(&ticking));
-            let index = Arc::clone(&indexing);
+            let (index, sealer) = (Arc::clone(&indexing), Arc::clone(&sealing));
             Box::pin(async move {
-                Browsers::open_account(log, person, server, &origin, clock, index).await
+                let at = (&origin, sealer);
+                Browsers::open_account(log, person, server, at, clock, index).await
             })
         });
         Ok(Self {
@@ -69,7 +74,8 @@ impl Accounts {
             directory,
             clock,
             opened: Mutex::new(BTreeMap::new()),
-            discoverer: Discoverer::new(origin)?,
+            discoverer: Discoverer::new(origin, Arc::clone(&sealer))?,
+            sealer,
         })
     }
 
@@ -105,11 +111,19 @@ impl Accounts {
     }
 
     /// A new account: its person's id, and its sessions and passkeys, none yet. Nothing is
-    /// kept of it until its first passkey is.
+    /// kept of it until its first passkey is, nor held in memory: its passkey's request is the
+    /// browser's to hold.
     pub async fn made(&self) -> Result<(PrincipalId, Arc<Browsers>), BrowserError> {
         let id = new_id(self.clock.now())?;
         let person = PrincipalId::try_from(id).map_err(|e| BrowserError::Keep(e.to_string()))?;
-        Ok((person, self.browsers(person).await?))
+        Ok((person, Arc::new((self.open)(person).await?)))
+    }
+
+    /// What the request to make an account's passkey `ceremony` carries, as
+    /// [`Browsers::create_options_carrying`] sealed it here: none when it carries nothing, is
+    /// no request begun here, or has expired.
+    pub fn carried(&self, ceremony: &str) -> Option<serde_json::Value> {
+        self.sealer.carried(ceremony, self.clock.now())
     }
 
     /// The organizations `person` belongs to, the first joined first.
@@ -180,9 +194,10 @@ impl Accounts {
         self.discoverer.options(self.clock.now())
     }
 
-    /// Whether the passkey request `ceremony` is one [`Accounts::get_options`] began.
+    /// Whether the passkey request `ceremony` is one [`Accounts::get_options`] began, and has
+    /// not expired.
     pub fn began(&self, ceremony: &str) -> bool {
-        self.discoverer.waits(ceremony)
+        self.discoverer.began(ceremony, self.clock.now())
     }
 
     /// Whose passkey answered the request `ceremony` with `credential`, by its handle.

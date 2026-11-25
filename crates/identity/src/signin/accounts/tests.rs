@@ -9,6 +9,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::*;
+use crate::signin::Proof;
 use crate::testing::Authenticator;
 
 /// What `accounts` refuses `forged` with, a passkey no account here knows, once it says it is
@@ -89,5 +90,30 @@ fn a_passkey_no_account_has_is_refused_before_any_ledger_is_opened() {
             !accounts.held().contains_key(&member),
             "the member's ledger was opened"
         );
+    });
+}
+
+/// A request to add a passkey begun for one account is answered for it alone: another account
+/// answering it is refused, though every account's requests are sealed under one key.
+#[test]
+fn one_account_s_request_to_add_a_passkey_is_refused_to_another() {
+    block_on!(async {
+        let root = glave_keys::InMemoryRoot::new().unwrap();
+        let store = Store::open_in_memory(glave_keys::KeySettings::new(Arc::new(root))).unwrap();
+        let origin = PublicOrigin::parse("https://glave.test").unwrap();
+        let clock = Arc::new(ManualClock::at_second(1_791_590_400));
+        let directory = Arc::new(store.directory());
+        let accounts =
+            Accounts::new(store.log(), directory, "server".into(), &origin, clock).unwrap();
+        let (_, theirs) = accounts.made().await.unwrap();
+        let (_, another) = accounts.made().await.unwrap();
+        let asked = theirs.create_options(Proof::SignedIn).unwrap();
+        let mut device = Authenticator::new(origin.as_str()).unwrap();
+        let answer = device.create(&asked.options).unwrap();
+        assert!(matches!(
+            another.add(&asked.id, &answer, None).await,
+            Err(BrowserError::Ceremony)
+        ));
+        assert!(theirs.add(&asked.id, &answer, None).await.is_ok());
     });
 }

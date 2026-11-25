@@ -132,7 +132,6 @@ impl From<BrowserError> for ApiError {
             BrowserError::Ended => Self::new(code::NO_SIGN_IN, Sentence::SignInEnded),
             BrowserError::Elsewhere => Self::new(code::NO_SIGN_IN, Sentence::SignedInThere),
             BrowserError::Setup => Self::new(code::NO_SIGN_IN, Sentence::SetupSpent),
-            BrowserError::TooMany => Self::new(code::NO_SIGN_IN, Sentence::TooManyLinks),
             BrowserError::Ceremony => Self::new(code::NO_SIGN_IN, Sentence::PasskeyExpired),
             BrowserError::Passkey(reason) => {
                 Self::new(code::NO_SIGN_IN, Sentence::PasskeyRefused { reason })
@@ -529,7 +528,6 @@ mod tests {
         let browsers = [
             BrowserError::Code,
             BrowserError::Setup,
-            BrowserError::TooMany,
             BrowserError::Ended,
             BrowserError::Elsewhere,
             BrowserError::NoPasskeys,
