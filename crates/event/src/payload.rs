@@ -100,7 +100,10 @@ pub use service::{
     AddedFile, ServiceAdds, ServiceAnswer, ServiceAnswered, ServiceAsked, ServiceField,
     ServiceFieldKind, ServiceOption, ServiceOutcome, misfit,
 };
-pub use share::{Audience, SharePlaced, ShareSet, ShareStopped, ShareUnplaced, SharedFrom};
+pub use share::{
+    Audience, ShareLinkSent, ShareOpened, SharePlaced, ShareSet, ShareStopped, ShareUnplaced,
+    SharedFrom,
+};
 pub use signup::{MailAsked, SignupFinished, SignupStarted};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
 pub use task::{

@@ -3,7 +3,9 @@ import { ApiError, ErrorCode, type ShareInfo, type ShareGetParams } from '@glave
 import { expectAccessible } from '@glave/glaze/testing';
 import { settle } from '@glave/glaze/testing/settle';
 
+import { ServerService } from '../../services/server.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { SERVER } from '../../testing/fixtures';
 import { ShareDialogComponent } from './share-dialog.component';
 
 /** A file a turn made, at the version its card shows. */
@@ -34,6 +36,7 @@ async function opened(
   of: ShareGetParams = BUDGET,
 ): Promise<{ fixture: ComponentFixture<ShareDialogComponent>; changes: (ShareInfo | null)[] }> {
   TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+  await TestBed.inject(ServerService).load();
   const fixture = TestBed.createComponent(ShareDialogComponent);
   const changes: (ShareInfo | null)[] = [];
   fixture.componentInstance.changed.subscribe((share) => changes.push(share));
@@ -45,6 +48,35 @@ async function opened(
 }
 
 describe('ShareDialogComponent', () => {
+  it('shares with specific people where the server sends email, each address once', async () => {
+    const plain = await opened(new FakeSession().answer('share/get', {}));
+    expect(document.querySelector('[data-testid="share-who"] input[value="people"]')).toBeNull();
+    plain.fixture.destroy();
+    TestBed.resetTestingModule();
+    const people = { kind: 'people', people: ['ada@example.com', 'bea@example.com'] } as const;
+    const fake = new FakeSession()
+      .answer('server/discover', { ...SERVER, shares: ['people', 'anyone'] })
+      .answer('share/get', {})
+      .answer('share/set', {
+        share: { ...SHARED, audience: people, said: 'Shared with 2 people' },
+      });
+    const { fixture } = await opened(fake);
+    choose('people');
+    await settle(fixture);
+    const emails = hook<HTMLTextAreaElement>('share-emails');
+    if (emails === null) {
+      throw new Error('no field for their emails');
+    }
+    emails.value = 'ada@example.com, bea@example.com\n';
+    emails.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    await expectAccessible(document.body);
+    hook('share-apply')?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('share/set')).toEqual([{ ...BUDGET, audience: people, update: false }]);
+    expect(hook<HTMLInputElement>('share-link')?.value).toBe(SHARED.link);
+  });
+
   it('shares a file with anyone, then shows its link to copy', async () => {
     const fake = new FakeSession().answer('share/get', {}).answer('share/set', { share: SHARED });
     const { fixture, changes } = await opened(fake);

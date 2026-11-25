@@ -119,6 +119,8 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::ShareStopped(_)
         | Body::SharePlaced(_)
         | Body::ShareUnplaced(_)
+        | Body::ShareLinkSent(_)
+        | Body::ShareOpened(_)
         | Body::TurnMade(_)
         | Body::PersonJoined(_)
         | Body::RoleSet(_)

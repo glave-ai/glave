@@ -51,7 +51,10 @@ pub use payload::{
     Usage, Verdict, WebPage,
 };
 pub use payload::{AssetKind, LibraryKept, LibraryRemoved};
-pub use payload::{Audience, SharePlaced, ShareSet, ShareStopped, ShareUnplaced, SharedFrom};
+pub use payload::{
+    Audience, ShareLinkSent, ShareOpened, SharePlaced, ShareSet, ShareStopped, ShareUnplaced,
+    SharedFrom,
+};
 pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{
     Catalog, CatalogEndpoint, CatalogModel, CatalogProvider, CatalogRefreshed, Precision,

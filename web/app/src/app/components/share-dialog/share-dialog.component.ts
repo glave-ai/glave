@@ -21,10 +21,11 @@ import {
 } from '@glave/glaze';
 
 import { whyNot } from '../../lib/made';
+import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 
 /** Who may open a file, as the dialog offers it. */
-type Choice = 'only_you' | 'anyone';
+type Choice = 'only_you' | 'people' | 'anyone';
 
 /**
  * Sharing one file at a link of its own (`share/get`, `share/set`): who may open it, Only you
@@ -59,11 +60,20 @@ export class ShareDialogComponent {
   readonly changed = output<ShareInfo | null>();
 
   private readonly session = inject(SessionService);
+  private readonly server = inject(ServerService);
+  /** Whether the server lets the person share with specific people: where it sends email. */
+  protected readonly offersPeople = computed(() => this.server.shareChoices().includes('people'));
+  /** The addresses typed for Specific people, as the person wrote them. */
+  protected readonly emails = signal('');
+  protected readonly choosingPeople = computed(() => this.choice() === 'people');
   protected readonly copy = {
     who: $localize`:@@shareDialog.who:Who can open it`,
     onlyYou: $localize`:@@shareDialog.onlyYou:Only you`,
     onlyYouHint: $localize`:@@shareDialog.onlyYouHint:No one else can open it.`,
     stopHint: $localize`:@@shareDialog.stopHint:Stops sharing. The link stops working.`,
+    people: $localize`:@@shareDialog.people:Specific people`,
+    peopleHint: $localize`:@@shareDialog.peopleHint:Only the people you add. They prove it's them with a link sent to their email; no account needed.`,
+    emails: $localize`:@@shareDialog.emails:Their emails, separated by commas`,
     anyone: $localize`:@@shareDialog.anyone:Anyone with the link`,
     anyoneHint: $localize`:@@shareDialog.anyoneHint:Whoever has the link can view it without signing in.`,
     share: $localize`:@@shareDialog.share:Share`,
@@ -90,7 +100,13 @@ export class ShareDialogComponent {
     this.share() === null ? this.copy.onlyYouHint : this.copy.stopHint,
   );
   /** Whether choosing would change nothing: the same as the share now. */
-  private readonly unchanged = computed(() => this.choice() === chosen(this.share()));
+  private readonly unchanged = computed(() => {
+    const share = this.share();
+    const same = this.choice() === chosen(share);
+    return this.choice() === 'people'
+      ? same && listed(this.emails()).join() === peopleOf(share).join()
+      : same;
+  });
   /** Whether Share or Save does nothing now: busy, or nothing to change. */
   protected readonly blocked = computed(() => this.busy() || !this.loaded() || this.unchanged());
   /** Whether the share as it is now was read: until then, and if it can't be, nothing to choose. */
@@ -117,7 +133,13 @@ export class ShareDialogComponent {
   }
 
   protected chose(value: string | null): void {
-    this.choice.set(value === 'anyone' ? 'anyone' : 'only_you');
+    this.choice.set(value === 'anyone' || value === 'people' ? value : 'only_you');
+  }
+
+  protected typed(event: Event): void {
+    if (event.target instanceof HTMLTextAreaElement) {
+      this.emails.set(event.target.value);
+    }
   }
 
   /** Keeps the choice: shares the file, or stops sharing it. */
@@ -126,7 +148,13 @@ export class ShareDialogComponent {
       return;
     }
     const choice = this.choice();
-    await this.set(choice === 'anyone' ? { kind: 'anyone' } : null, false);
+    const audience: Audience | null =
+      choice === 'people'
+        ? { kind: 'people', people: listed(this.emails()) }
+        : choice === 'anyone'
+          ? { kind: 'anyone' }
+          : null;
+    await this.set(audience, false);
   }
 
   /** Moves the share to this card's version, the same link, for the same people. */
@@ -151,6 +179,7 @@ export class ShareDialogComponent {
       const share = held(await this.session.call('share/get', of));
       this.share.set(share);
       this.choice.set(chosen(share));
+      this.emails.set(peopleOf(share).join(', '));
       this.loaded.set(true);
     } catch (error: unknown) {
       this.problem.set(whyNot(error));
@@ -186,5 +215,21 @@ function held(answered: Methods['share/set']['result']): ShareInfo | null {
 
 /** The choice `share` is. */
 function chosen(share: ShareInfo | null): Choice {
-  return share === null ? 'only_you' : 'anyone';
+  if (share === null) {
+    return 'only_you';
+  }
+  return share.audience.kind === 'people' ? 'people' : 'anyone';
+}
+
+/** The addresses `share` lists, where it is for specific people. */
+function peopleOf(share: ShareInfo | null): readonly string[] {
+  return share?.audience.kind === 'people' ? share.audience.people : [];
+}
+
+/** The addresses `typed` names: split at commas, semicolons and spaces, the empty left out. */
+function listed(typed: string): string[] {
+  return typed
+    .split(/[\s,;]+/u)
+    .map((each) => each.trim())
+    .filter((each) => each !== '');
 }

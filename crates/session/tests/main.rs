@@ -76,6 +76,7 @@ mod secrets;
 mod server;
 mod service_asks;
 mod shares;
+mod shares_people;
 mod shares_stopping;
 mod sharing;
 mod signup_links;

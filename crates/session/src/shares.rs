@@ -7,17 +7,19 @@
 //! origin nor under its name (`http/shared.rs`).
 
 mod links;
+mod people;
 
 pub(crate) use self::links::Links;
+pub(crate) use self::people::{Ledgers, PROOF_FOR};
 
 use std::collections::{BTreeMap, HashMap};
 
 use glave_event::{
-    At, Audience, Body, MadePreview, Payload as _, Principal, PrincipalId, ShareId, ShareSet,
-    ShareStopped, SharedFrom, ThreadId, decode,
+    At, Audience, MadePreview, Payload as _, Principal, PrincipalId, ShareId, ShareSet,
+    ShareStopped, SharedFrom, ThreadId,
 };
 use glave_ports::host::PublicOrigin;
-use glave_ports::stream::{Reserved, catch_up};
+use glave_ports::stream::Reserved;
 use glave_ports::{BlobStore, Caller, EventLog, Located, ModelProvider, OrgId, Scope, digest};
 
 use crate::files::not_here;
@@ -154,37 +156,32 @@ where
             .ok_or_else(|| ApiError::new(code::NOT_AVAILABLE, Sentence::NoShares))
     }
 
+    /// Whether the share domain is served over HTTPS, so a proof's cookie goes only there.
+    pub(crate) fn shares_securely(&self) -> bool {
+        (self.inner.shares.as_ref())
+            .is_some_and(|domain| domain.origin.as_str().starts_with("https://"))
+    }
+
     /// Who besides themselves `caller` may share with here, as `server/discover` says.
     pub(crate) fn share_choices(&self, caller: &Caller) -> Vec<ShareChoice> {
         if caller.is_no_one() || self.inner.shares.is_none() {
             return Vec::new();
         }
-        vec![ShareChoice::Anyone]
+        // Specific people prove themselves with a code glave emails them.
+        let people = self.inner.mail.is_some().then_some(ShareChoice::People);
+        people.into_iter().chain([ShareChoice::Anyone]).collect()
     }
 
-    /// The live shares of `scope`'s shares ledger, each with when it was last set.
+    /// The live shares of `scope`'s shares ledger, each with when it was last set, read on from
+    /// where this server last read it.
     pub(crate) async fn shares_in(
         &self,
         scope: &Scope,
     ) -> Result<BTreeMap<ShareId, (At, ShareSet)>, ApiError> {
-        let mut shares = BTreeMap::new();
-        let log = self.inner.harness.log();
-        catch_up(log, scope, Reserved::Shares.id(), None, |page| {
-            for raw in page {
-                let at = raw.at;
-                match decode(raw).map(|event| event.body) {
-                    Ok(Body::ShareSet(set)) => {
-                        shares.insert(set.share, (at, set));
-                    }
-                    Ok(Body::ShareStopped(stopped)) => {
-                        shares.remove(&stopped.share);
-                    }
-                    _ => {}
-                }
-            }
-        })
-        .await?;
-        Ok(shares)
+        let ledger = self.share_ledger(scope).await?;
+        Ok((ledger.live.into_iter())
+            .map(|(share, live)| (share, (live.at, live.set)))
+            .collect())
     }
 
     /// Who each shared file of `scope` is shared with, in a sentence, by what it is of.
@@ -222,8 +219,12 @@ where
         setting: ShareSetting,
     ) -> Result<Reply, ApiError> {
         self.share_domain()?;
-        if matches!(setting.audience, Some(Audience::People { .. })) {
-            return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::ShareNoPeople));
+        let mut setting = setting;
+        if let Some(Audience::People { people }) = &mut setting.audience {
+            if self.inner.mail.is_none() {
+                return Err(ApiError::new(code::NOT_AVAILABLE, Sentence::ShareNoPeople));
+            }
+            *people = people::listed(people)?;
         }
         let shareable = self.shareable(caller, &setting.of).await?;
         let scope = shareable.scope;
@@ -481,11 +482,13 @@ where
             Ok(removed) => (!removed).then_some(()),
             Err(_) => None,
         };
-        let shares = match readable {
-            Some(()) => self.shares_in(&scope).await.unwrap_or_default(),
+        let live = match readable {
+            Some(()) => (self.share_ledger(&scope).await)
+                .map(|ledger| ledger.live)
+                .unwrap_or_default(),
             None => BTreeMap::new(),
         };
-        let Some((_, set)) = shares.into_values().find(|(_, set)| set.link == id) else {
+        let Some(set) = (live.into_values().map(|live| live.set)).find(|set| set.link == id) else {
             return Ok(None);
         };
         // Someone taken out of the organization shares nothing there any more, even before
@@ -496,7 +499,12 @@ where
 }
 
 /// Every kind the shares ledger holds, which each writer numbers its event after.
-const SHARES: [&str; 2] = [ShareSet::TYPE, ShareStopped::TYPE];
+const SHARES: [&str; 4] = [
+    ShareSet::TYPE,
+    ShareStopped::TYPE,
+    glave_event::ShareLinkSent::TYPE,
+    glave_event::ShareOpened::TYPE,
+];
 
 #[cfg(test)]
 mod tests {

@@ -585,6 +585,22 @@ sentences! {
     ShareNoPeople = "share-no-people" "This server can't share with specific people",
     TooManyShares { most: u64 } = "too-many-shares"
         "This server already shares { $most } files: stop sharing one to share another",
+    SharePeopleCount { most: u64 } = "share-people-count"
+        "Add between 1 and { $most } email addresses",
+    ShareLinkSubject = "share-link-subject" "Something was shared with you",
+    ShareLinkText = "share-link-text" "Open this link to see what was shared with you:",
+    ShareLinkNote = "share-link-note"
+        "It works once, for 10 minutes. If you didn't ask for it, ignore this email.",
+    PageSomeone = "page-someone" "Someone shared a file with you",
+    PageAskEmail = "page-ask-email"
+        "Enter your email. If this was shared with you, we'll email you a link to open it.",
+    PageEmail = "page-email" "Email",
+    PageSendLink = "page-send-link" "Email me a link",
+    PageLinkSent = "page-link-sent"
+        "If this was shared with that address, a link to open it is on its way. It works for 10 minutes.",
+    PageOpen = "page-open" "Open",
+    PageLinkWrong = "page-link-wrong"
+        "That link doesn't work: it may have been used or have expired. Ask for a new one below.",
     PageDownload = "page-download" "Download",
     PageShared = "page-shared" "Shared with Glave",
     PageReport = "page-report" "Report this page",

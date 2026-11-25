@@ -202,9 +202,13 @@ where
 {
     // A share's own name answers its share and nothing of glave's.
     if let Some(id) = came.shared {
-        let (method, path) = (request.method(), request.uri().path());
-        let headers = request.headers();
-        return shared::answer(server, &id, method, path, headers).await;
+        let from = client(
+            request.headers(),
+            came.peer,
+            came.secure,
+            server.inner.forwarded,
+        );
+        return shared::answer(server, &id, request, from).await;
     }
     if came.foreign {
         return plain(StatusCode::FORBIDDEN);

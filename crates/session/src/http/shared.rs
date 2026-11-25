@@ -9,11 +9,15 @@
 use glave_event::{AssetKind, ShareSet};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, read_all};
 use hyper::body::Bytes;
+use hyper::body::Incoming;
 use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
-use hyper::{Method, Response, StatusCode};
+use hyper::{Method, Request as HttpRequest, Response, StatusCode};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use std::net::IpAddr;
 
 use super::body::Answer;
+
+mod asking;
 use crate::server::Server;
 use crate::words::{Language, Sentence, say};
 
@@ -35,23 +39,26 @@ const PDF_POLICY: &str = "default-src 'none'; object-src 'self'; frame-ancestors
 /// The page's style: plain, light or dark as the reader's system is.
 const STYLE: &str = include_str!("shared.css");
 
-/// Answers a request to the share whose link's id is `id`, its words in the first language
-/// of `headers`'s `Accept-Language` the server writes.
+/// Answers `request` to the share whose link's id is `id`, from the address `from`, its words
+/// in the first language of its `Accept-Language` the server writes.
 pub(super) async fn answer<P, L, B>(
     server: &Server<P, L, B>,
     id: &str,
-    method: &Method,
-    path: &str,
-    headers: &HeaderMap,
+    request: HttpRequest<Incoming>,
+    from: IpAddr,
 ) -> Response<Answer>
 where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
+    let headers = request.headers();
     let language = language_of(headers);
-    let head = *method == Method::HEAD;
-    if *method != Method::GET && !head {
+    let (method, path) = (request.method().clone(), request.uri().path().to_owned());
+    let path = path.as_str();
+    let posted = method == Method::POST;
+    let head = method == Method::HEAD;
+    if !posted && method != Method::GET && !head {
         let mut refused = answered(StatusCode::METHOD_NOT_ALLOWED, Answer::empty());
         refused
             .headers_mut()
@@ -74,8 +81,32 @@ where
         }
     };
     let (scope, share) = found;
-    if !matches!(share.audience, glave_event::Audience::Anyone) {
-        return gone(language);
+    if let glave_event::Audience::People { .. } = share.audience {
+        if posted {
+            let asked = (from, language);
+            return asking::posted(server, (scope, share), request, asked).await;
+        }
+        if let Some(token) = path.strip_prefix("/open/") {
+            return asking::link_page(token, language);
+        }
+        let secure = server.shares_securely();
+        let proof = asking::proof(request.headers(), secure).unwrap_or_default();
+        let ledger = match server.share_ledger(&scope).await {
+            Ok(ledger) => ledger,
+            Err(error) => {
+                tracing::warn!(error = %error.message, "could not read a share's proofs");
+                return answered(StatusCode::SERVICE_UNAVAILABLE, Answer::empty());
+            }
+        };
+        if !server.proven(&ledger, &share, &proof) {
+            return if path == "/" {
+                asking::ask(language)
+            } else {
+                answered(StatusCode::NOT_FOUND, Answer::empty())
+            };
+        }
+    } else if posted {
+        return answered(StatusCode::METHOD_NOT_ALLOWED, Answer::empty());
     }
     match path {
         "/" => page(server, &scope, &share, language).await,
