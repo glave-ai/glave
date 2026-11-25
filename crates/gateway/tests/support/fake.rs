@@ -5,9 +5,11 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use glave_event::Principal;
 use glave_event::{Currency, ModelRef, Money, Nanos, Opaque, Part, StopReason, TokenCounts, Usage};
-use glave_gateway::{Model, Price, Target};
+use glave_gateway::{Credits, Model, Price, Target};
 pub(crate) use glave_ports::block_on;
+use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
 use glave_ports::{
     BoxFuture, Completion, Delta, Hit, Made, MadeFile, MediaAsk, Message, ModelRequest,
     ProviderError, Purpose, SearchAsk, SearchResults, ToolChoice, ToolSpec,
@@ -266,4 +268,26 @@ pub(crate) fn person() -> glave_event::PrincipalId {
 pub(crate) fn org() -> glave_ports::OrgId {
     let id = glave_event::PrincipalId::new(jiff::Timestamp::from_second(2).unwrap(), [2; 10]);
     glave_ports::OrgId::from_uuid(id.unwrap().as_uuid())
+}
+
+/// Credits on a log of their own, with `nanos` added for the test's organization.
+pub(crate) fn funded(nanos: i64) -> Arc<Credits<FaultyLog>> {
+    let credits = Arc::new(Credits::new(
+        FaultyLog::default(),
+        Box::new(ManualClock::ticking(1_793_350_800_000)),
+        Box::new(CountingEntropy::starting_at(1)),
+        None,
+    ));
+    let by = Principal::person(person());
+    block_on!(credits.add(org(), dollars(nanos), "order-1", by)).unwrap();
+    credits
+}
+
+/// What is left of the test organization's balance.
+pub(crate) fn balance(credits: &Credits<FaultyLog>) -> i64 {
+    block_on!(credits.account(org()))
+        .unwrap()
+        .balance
+        .nanos
+        .get()
 }

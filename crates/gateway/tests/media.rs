@@ -10,7 +10,9 @@ use glave_gateway::{Credits, Gateway, Routes};
 use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
 use glave_ports::{EventLog as _, MediaAsk, ModelProvider, Payer, ProviderError, Purpose, Scope};
 
-use crate::support::{Fake, answer, block_on, dollars, org, person, price, request};
+use crate::support::{
+    Fake, answer, balance, block_on, dollars, funded, org, person, price, request,
+};
 
 #[test]
 fn a_media_call_goes_only_to_its_own_route_and_comes_back_with_what_it_made() {
@@ -100,19 +102,6 @@ fn a_media_call_is_held_at_what_it_allows_and_charged_as_media() {
     assert_eq!(kinds, [CostKind::Media]);
 }
 
-/// Credits on a log of their own, with `nanos` added for the test's organization.
-fn funded(nanos: i64) -> Arc<Credits<FaultyLog>> {
-    let credits = Arc::new(Credits::new(
-        FaultyLog::default(),
-        Box::new(ManualClock::ticking(1_793_350_800_000)),
-        Box::new(CountingEntropy::starting_at(1)),
-        None,
-    ));
-    let by = Principal::person(person());
-    block_on!(credits.add(org(), dollars(nanos), "order-1", by)).unwrap();
-    credits
-}
-
 /// A gateway making images at `fake`'s `painter`, a billionth of a dollar a token, charging
 /// `credits`.
 fn painting(fake: &Arc<Fake>, credits: &Arc<Credits<FaultyLog>>) -> Gateway {
@@ -131,14 +120,6 @@ fn paid() -> glave_ports::ModelRequest {
         person: Some(person()),
     });
     asked
-}
-
-fn balance(credits: &Credits<FaultyLog>) -> i64 {
-    block_on!(credits.account(org()))
-        .unwrap()
-        .balance
-        .nanos
-        .get()
 }
 
 /// What the test request holds at a billionth of a dollar a token: what it reads and its 100

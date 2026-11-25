@@ -7,32 +7,21 @@
 
 use std::sync::Arc;
 
-use glave_event::{Cost, Principal};
+use glave_event::Cost;
 use glave_gateway::{Credits, Gateway, Routes, Target};
-use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
+use glave_ports::testing::FaultyLog;
 use glave_ports::{
     InlineFile, Message, ModelProvider, ModelRequest, Payer, ProviderError, Purpose, Unpaid, digest,
 };
 
-use crate::support::{Fake, answer, block_on, dollars, org, person, price, request};
+use crate::support::{
+    Fake, answer, balance, block_on, dollars, funded, org, person, price, request,
+};
 
 /// What the test request reads at a billionth of a dollar a token, "Be brief." and "hello",
 /// 14 bytes at 4 a token, and what "Twelve bytes" of answer comes to at 4 bytes a token.
 const READ: i64 = 4;
 const CAME: i64 = 3;
-
-/// Credits on a log of their own, with `nanos` added for the test's organization.
-fn funded(nanos: i64) -> Arc<Credits<FaultyLog>> {
-    let credits = Arc::new(Credits::new(
-        FaultyLog::default(),
-        Box::new(ManualClock::ticking(1_793_350_800_000)),
-        Box::new(CountingEntropy::starting_at(1)),
-        None,
-    ));
-    let by = Principal::person(person());
-    block_on!(credits.add(org(), dollars(nanos), "order-1", by)).unwrap();
-    credits
-}
 
 fn over(target: Target, credits: &Arc<Credits<FaultyLog>>) -> Gateway {
     Gateway::new(Routes::new(vec![target]).unwrap()).with_credits(Arc::clone(credits))
@@ -48,14 +37,6 @@ fn paid(mut asked: ModelRequest) -> ModelRequest {
 
 fn ask(gateway: &Gateway) -> Result<glave_ports::Completion, ProviderError> {
     block_on!(gateway.complete(&paid(request(Purpose::Main)), &mut |_| {}))
-}
-
-fn balance(credits: &Credits<FaultyLog>) -> i64 {
-    block_on!(credits.account(org()))
-        .unwrap()
-        .balance
-        .nanos
-        .get()
 }
 
 /// A fake at a billionth of a dollar a token that says "Twelve bytes", then answers `next`.
