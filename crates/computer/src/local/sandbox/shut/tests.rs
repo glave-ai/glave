@@ -23,17 +23,15 @@ fn someone_else_s_commands_lose_the_home_and_projects_folders_but_toolchains() {
         "home/.cargo/bin",
         "home/glave/app",
         "home/notes",
-        "home/dotfiles",
+        "home/dotfiles/tools",
+        "home/.config/git",
+        "home/.local",
         "projects/other",
     ] {
         std::fs::create_dir_all(real.join(folder)).unwrap();
     }
-    std::fs::write(
-        home.join("dotfiles/gitconfig"),
-        "[include]\npath = ~/.extra\n",
-    )
-    .unwrap();
-    std::os::unix::fs::symlink("dotfiles/gitconfig", home.join(".gitconfig")).unwrap();
+    // A dotfiles manager's link.
+    std::os::unix::fs::symlink("../dotfiles/tools", home.join(".local/bin")).unwrap();
     let root = home.join("glave/app");
     let projects = real.join("projects");
     block_on!(async {
@@ -46,19 +44,18 @@ fn someone_else_s_commands_lose_the_home_and_projects_folders_but_toolchains() {
         let shut = Shut::for_sandbox(&someone, &root, None, Some(&projects));
         let shut = shut.await.unwrap();
         assert_eq!(shut.folders, vec![home.clone(), projects.clone()]);
-        for open in [
-            ".cargo/bin",
-            ".gitconfig",
-            "dotfiles/gitconfig",
-            ".extra",
-            ".config/git",
-        ] {
+        for open in [".cargo/bin", ".local/bin", "dotfiles/tools"] {
             let path = home.join(open);
             assert!(shut.open.contains(&path), "{open}: {:?}", shut.open);
         }
         assert!(shut.hides(&home.join("notes")));
         assert!(shut.hides(&home.join(".cargo/config.toml")));
         assert!(shut.hides(&home.join("dotfiles/other")));
+        assert!(
+            shut.hides(&home.join(".gitconfig")),
+            "git's settings are the person's"
+        );
+        assert!(shut.hides(&home.join(".config/git/config")));
         assert!(shut.hides(&projects.join("other")));
         assert!(!shut.hides(&home.join(".cargo/bin/cargo")));
         assert!(!shut.hides(&real.join("elsewhere")));

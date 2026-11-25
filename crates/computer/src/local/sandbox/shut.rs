@@ -1,23 +1,24 @@
 //! What someone else's commands on the person's computer never read ([`RunsFor::SomeoneElse`],
 //! `specs/sandbox.md`, "Whose computer"): the person's home folder and the folder their
-//! projects are made in, hidden whole, but for the toolchains kept there and git's own
-//! settings, without which their commands could build and run nothing. The workspace, its
+//! projects are made in, hidden whole, but for the toolchains kept there, without which their
+//! commands could build and run nothing. git's own settings stay hidden too: their commands'
+//! git reads a settings file glave writes instead ([`GIT_SETTINGS`]). The workspace, its
 //! repository's shared git folder, the command's own temp folder and what glave lets every
 //! sandbox reach stay theirs wherever they are; each platform's sandbox turns this into its own
 //! rules.
 
-mod settings;
+mod npmrc;
 
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::{ComputerError, RunsFor, Sandbox, git_settings};
+use glave_ports::computer::{ComputerError, RunsFor, Sandbox};
 
 /// Under the home folder: where toolchains, their version managers and what they install live,
 /// as narrowly as each still runs. Not Cargo's home whole (its `config.toml` can hold a
 /// registry's token, its `git` and `registry` the source of private crates), nor Go's (its
 /// module cache holds private modules): what they install to run alone. The credential stores
 /// among them stay hidden (`secrets.rs`), and so does each Node install's own `etc/npmrc`
-/// (`settings.rs`). A toolchain kept elsewhere in the home folder does not run for someone
+/// (`npmrc.rs`). A toolchain kept elsewhere in the home folder does not run for someone
 /// else.
 pub(super) const TOOLCHAINS: &[&str] = &[
     // Rust's.
@@ -54,6 +55,12 @@ pub(super) const TOOLCHAINS: &[&str] = &[
     ".nix-profile",
 ];
 
+/// git's settings for someone else's commands, in place of the person's own, which may hold a
+/// token or name a file of theirs: the files git would read in the home folder by default
+/// named as none, so git looks for nothing there.
+pub(crate) const GIT_SETTINGS: &str =
+    "[core]\n\texcludesFile = /dev/null\n\tattributesFile = /dev/null\n";
+
 /// The most links followed from one path, as an operating system limits them.
 const MOST_LINKS: usize = 40;
 
@@ -64,9 +71,8 @@ pub(crate) struct Shut {
     /// Hidden whole, as real paths: the home folder, and the projects' folder where it is not
     /// in it.
     pub(crate) folders: Vec<PathBuf>,
-    /// Readable again inside them: the toolchains there, git's settings and the files they
-    /// name, and a worktree's shared git folder; each as named, there or not, every link on the
-    /// way from it, and where it leads.
+    /// Readable again inside them: the toolchains there and a worktree's shared git folder;
+    /// each as named, there or not, every link on the way from it, and where it leads.
     pub(crate) open: Vec<PathBuf>,
     /// Hidden again inside what is readable: each Node install's own `npmrc`.
     pub(crate) hidden: Vec<PathBuf>,
@@ -98,8 +104,8 @@ impl Shut {
         .map_err(|error| ComputerError::Failed(format!("could not prepare the sandbox: {error}")))
     }
 
-    /// [`Shut::for_sandbox`] for someone else's commands. Blocking: it reads git's settings
-    /// and follows links.
+    /// [`Shut::for_sandbox`] for someone else's commands. Blocking: it looks through the Node
+    /// managers' folders and follows links.
     fn reading(
         home: Option<&Path>,
         root: &Path,
@@ -122,13 +128,18 @@ impl Shut {
                 .any(|other| other != folder && folder.starts_with(other))
         });
         let mut wanted: Vec<PathBuf> = git_common.into_iter().collect();
-        let mut hidden = Vec::new();
+        let mut found = npmrc::Found::default();
         if let Some(home) = &home {
-            wanted.extend(TOOLCHAINS.iter().map(|path| home.join(path)));
-            wanted.extend(git_settings(home));
-            wanted.extend(settings::named_by_git(home));
-            hidden = settings::npmrcs(home);
+            found = npmrc::found(home);
+            // A Node manager too large to look through for its installs' `npmrc` stays hidden.
+            let unsearched = &found.unsearched;
+            wanted.extend(
+                (TOOLCHAINS.iter())
+                    .map(|path| home.join(path))
+                    .filter(|path| !unsearched.contains(path)),
+            );
         }
+        let mut hidden = found.npmrcs;
         let inside = |path: &PathBuf| folders.iter().any(|folder| path.starts_with(folder));
         let mut open: Vec<PathBuf> = wanted
             .iter()
@@ -163,9 +174,17 @@ fn hops(path: &Path) -> Vec<PathBuf> {
         let Ok(target) = std::fs::read_link(&at) else {
             break;
         };
-        at = match at.parent() {
+        let next = match at.parent() {
             Some(parent) => parent.join(target),
             None => target,
+        };
+        // Its folder resolved, so the link itself is named as the system names it.
+        let folder = next
+            .parent()
+            .and_then(|folder| std::fs::canonicalize(folder).ok());
+        at = match (folder, next.file_name()) {
+            (Some(folder), Some(name)) => folder.join(name),
+            _ => next,
         };
         hops.push(at.clone());
     }

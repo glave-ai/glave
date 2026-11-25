@@ -81,6 +81,9 @@ pub(crate) struct Prepared {
     temps: Temps,
     /// glave's sandbox cache folder, when there is glave's own folder.
     cache: Option<PathBuf>,
+    /// Whether its commands run for someone other than the person whose computer it is, whose
+    /// git reads glave's settings in place of the person's (`shut::GIT_SETTINGS`).
+    someone_else: bool,
     enforcer: platform::Enforcer,
 }
 
@@ -182,6 +185,7 @@ impl Prepared {
         Ok(Self {
             temps,
             cache,
+            someone_else: sandbox.runs_for == RunsFor::SomeoneElse,
             enforcer,
         })
     }
@@ -195,17 +199,35 @@ impl Prepared {
             .unwrap_or_else(|| launch.temp.path().join("caches"))
     }
 
+    /// The git settings `launch`'s command reads in place of the person's own
+    /// (`GIT_CONFIG_GLOBAL`), for someone else's: in its own temp folder.
+    pub(crate) fn git_settings(&self, launch: &Launch) -> Option<PathBuf> {
+        self.someone_else
+            .then(|| launch.temp.path().join(GIT_SETTINGS_FILE))
+    }
+
     /// How to start the next command, from the workspace as it is now, in a temp folder of
-    /// its own.
+    /// its own, which holds glave's git settings for someone else's.
     pub(crate) async fn launch(&self) -> Result<Launch, ComputerError> {
         let temp = RunTemp::new(&self.temps.parent, self.temps.prefix)
             .await
             .map_err(|error| {
                 ComputerError::Failed(format!("could not make the command's temp folder: {error}"))
             })?;
+        if self.someone_else {
+            let settings = temp.path().join(GIT_SETTINGS_FILE);
+            tokio::fs::write(&settings, shut::GIT_SETTINGS)
+                .await
+                .map_err(|error| {
+                    ComputerError::Failed(format!("could not write git's settings: {error}"))
+                })?;
+        }
         self.enforcer.launch(temp).await
     }
 }
+
+/// The name of the file of git's settings for someone else's commands, in each one's temp folder.
+const GIT_SETTINGS_FILE: &str = "gitconfig";
 
 /// The folder in glave's own where sandboxed commands keep package caches between runs.
 pub(crate) const CACHE_FOLDER: &str = "sandbox-cache";

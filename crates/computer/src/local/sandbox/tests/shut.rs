@@ -1,6 +1,7 @@
 //! Someone else's commands on the person's computer read nothing of the person's home folder or
-//! projects' folder but their own workspace, the toolchains there and git's settings (`specs/
-//! sandbox.md`, "Whose computer"); the person's own commands read it all.
+//! projects' folder but their own workspace and the toolchains there, their git reading glave's
+//! settings in place of the person's (`specs/sandbox.md`, "Whose computer"); the person's own
+//! commands read it all.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -79,6 +80,8 @@ fn checked(owners: &str, theirs: &str) {
         "the-cargo-token",
         "the-npm-token",
         "the-dotfile",
+        "the-included-token",
+        "the-xdg-name",
         "notes-file.txt",
         "secret-proj",
     ] {
@@ -97,10 +100,23 @@ fn checked(owners: &str, theirs: &str) {
         assert!(!owners.contains(told), "{told}: {owners}");
         assert!(theirs.contains(told), "{told}: {theirs}");
     }
-    for works in ["the-toolchain", "the-node", "their-own", "git-works"] {
+    let works = [
+        "the-toolchain",
+        "the-node",
+        "the-linked-tool",
+        "their-own",
+        "git-works",
+    ];
+    for works in works {
         assert!(owners.contains(works), "{works}: {owners}");
         assert!(theirs.contains(works), "{works}: {theirs}");
     }
+    // Their git reads glave's settings, looking for nothing of the person's.
+    assert!(!theirs.contains("unable to access"), "{theirs}");
+    assert!(
+        theirs.contains("/dev/null") && !owners.contains("/dev/null"),
+        "{theirs}"
+    );
 }
 
 /// The person's home folder `dir/home` and projects' folder `dir/projects` with what each keeps,
@@ -124,16 +140,24 @@ fn furnished(dir: &Path) -> (PathBuf, PathBuf, PathBuf, String) {
     put(&node.join("bin/node"), "the-node\n");
     put(&node.join("etc/npmrc"), "the-npm-token\n");
     put(&home.join("dotfiles/unrelated"), "the-dotfile\n");
-    // A dotfiles manager's link, which git's settings include.
+    // A dotfiles manager's links: a toolchain's folder, and a file git's settings include.
+    put(&home.join("dotfiles/tools/linked"), "the-linked-tool\n");
+    std::fs::create_dir_all(home.join(".local")).unwrap();
+    std::os::unix::fs::symlink("../dotfiles/tools", home.join(".local/bin")).unwrap();
     put(
         &home.join("dotfiles/gitlocal"),
-        "[alias]\n\tshown = status\n",
+        "[http]\n\textraHeader = the-included-token\n",
     );
     std::os::unix::fs::symlink("dotfiles/gitlocal", home.join(".gitconfig.local")).unwrap();
     put(
         &home.join(".gitconfig"),
         "[include]\n\tpath = ~/.gitconfig.local\n",
     );
+    put(
+        &home.join(".config/git/config"),
+        "[user]\n\tname = the-xdg-name\n",
+    );
+    put(&home.join(".config/git/ignore"), "*.log\n");
     let app = committed_repo(&home.join("glave"), "app");
     put(&app.join("own.txt"), "their-own\n");
     let script = format!(
@@ -144,8 +168,10 @@ fn furnished(dir: &Path) -> (PathBuf, PathBuf, PathBuf, String) {
          cat '{}' 2>/dev/null || echo no-npmrc; \
          cat \"$HOME/dotfiles/unrelated\" 2>/dev/null || echo no-dotfiles; \
          ls -a \"$HOME\" \"$HOME/glave\" 2>/dev/null; \
-         cat \"$HOME/.cargo/bin/tool\" '{}' own.txt; \
-         git shown --short >/dev/null && echo git-works",
+         cat \"$HOME/.cargo/bin/tool\" '{}' \"$HOME/.local/bin/linked\" own.txt; \
+         git config --get http.extraHeader; git config --get user.name; \
+         git config --get core.excludesFile; \
+         git status --short && echo git-works",
         projects.join("elsewhere/plan.txt").display(),
         node.join("etc/npmrc").display(),
         node.join("bin/node").display(),

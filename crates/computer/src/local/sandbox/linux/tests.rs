@@ -557,7 +557,7 @@ fn landlock_keeps_what_glave_writes_later_hidden() {
 }
 
 /// Under Landlock too, someone else's commands read nothing of the person's home folder or
-/// projects' folder but their own workspace, the toolchains there and git's settings.
+/// projects' folder but their own workspace and the toolchains there, nor the person's git settings.
 #[test]
 fn landlock_hides_the_person_s_folders_from_someone_else_s_commands() {
     let Some(helper) = landlock() else {
