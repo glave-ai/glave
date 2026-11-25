@@ -37,9 +37,13 @@ const LINK_FOR: SignedDuration = SignedDuration::from_mins(10);
 /// How long a proof works on the browser that holds it.
 pub(crate) const PROOF_FOR: SignedDuration = SignedDuration::from_hours(30 * 24);
 
-/// The most links sent for one share within [`LINK_FOR`], to every address together, so asking
-/// for many addresses at once sends few.
-const MOST_SENT: usize = 10;
+/// The most links sent to one address for one share within [`LINK_FOR`], besides one a minute:
+/// someone asking for it again and again holds up only that address.
+const MOST_EACH_SENT: usize = 3;
+
+/// The most links sent for one share within [`LINK_FOR`], to every address together: as many as
+/// all it may list may be sent.
+const MOST_SENT: usize = MOST_PEOPLE * MOST_EACH_SENT;
 
 /// The most projects' ledgers a server keeps read in memory; past them, it starts over, and
 /// reads each again from its start when next asked.
@@ -169,18 +173,23 @@ impl Ledger {
 pub(crate) type Ledgers = HashMap<Located, Ledger>;
 
 /// Whether another link may go to the address whose SHA-256 is `to`, after the links `sent`
-/// for its share: none to it within the minute, and fewer than [`MOST_SENT`] to anyone within
-/// [`LINK_FOR`].
+/// for its share: none to it within the minute, fewer than [`MOST_EACH_SENT`] to it within
+/// [`LINK_FOR`], and fewer than [`MOST_SENT`] to every address together.
 fn room(sent: &[(u64, At, ShareLinkSent)], to: &str, now: jiff::Timestamp) -> bool {
     let within = |at: &At| {
         at.timestamp()
             .checked_add(LINK_FOR)
             .is_ok_and(|by| by > now)
     };
+    let lately: Vec<&ShareLinkSent> = (sent.iter())
+        .filter(|(_, at, _)| within(at))
+        .map(|(_, _, sent)| sent)
+        .collect();
     let recent = (sent.iter().rev())
         .find(|(_, _, sent)| sent.to == to)
         .is_some_and(|(_, at, _)| just_now(at.timestamp(), now));
-    !recent && sent.iter().filter(|(_, at, _)| within(at)).count() < MOST_SENT
+    let theirs = lately.iter().filter(|sent| sent.to == to).count();
+    !recent && theirs < MOST_EACH_SENT && lately.len() < MOST_SENT
 }
 
 /// Whether `share` lists the address whose SHA-256 is `to`.
@@ -409,17 +418,33 @@ mod tests {
     }
 
     #[test]
-    fn a_share_sends_one_link_a_minute_to_an_address_and_a_few_in_ten_minutes_to_all() {
+    fn one_address_asked_for_again_and_again_holds_up_no_other() {
         let start = Timestamp::from_second(1_800_000_000).unwrap();
         let later = |secs: i64| start.checked_add(SignedDuration::from_secs(secs)).unwrap();
-        let mut sent = vec![sent_to("ada", start)];
-        assert!(!room(&sent, "ada", later(30)), "not twice in a minute");
-        assert!(room(&sent, "ada", later(61)));
-        sent.extend((1..MOST_SENT).map(|n| sent_to(&format!("other-{n}"), later(1))));
+        let mut sent = Vec::new();
+        // Asked for every second, ada's address is sent one a minute, three in ten minutes.
+        for second in 0..600 {
+            if room(&sent, "ada", later(second)) {
+                sent.push(sent_to("ada", later(second)));
+            }
+        }
+        assert_eq!(sent.len(), MOST_EACH_SENT);
         assert!(
-            !room(&sent, "bea", later(120)),
+            room(&sent, "bea", later(599)),
+            "bea's link goes all the same"
+        );
+        assert!(
+            room(&sent, "ada", later(601)),
+            "ten minutes on, ada's again"
+        );
+        // Every address the share may list, three times each, and no more.
+        let all = (0..MOST_PEOPLE).flat_map(|n| {
+            (0..MOST_EACH_SENT).map(move |_| sent_to(&format!("other-{n}"), later(700)))
+        });
+        sent.extend(all);
+        assert!(
+            !room(&sent, "bea", later(800)),
             "{MOST_SENT} in ten minutes"
         );
-        assert!(room(&sent, "bea", later(601)), "ten minutes on, again");
     }
 }
