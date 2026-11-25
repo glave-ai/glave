@@ -166,18 +166,19 @@ fn no_other_name_under_the_share_domain_opens_anything_of_glave_s() {
 }
 
 #[test]
-fn a_removed_project_s_links_open_nothing_as_one_never_made() {
+fn a_removed_project_s_shares_stop_and_its_links_open_nothing_as_one_never_made() {
     let dir = folder("shares-project");
     let garden = dir.join("garden");
     std::fs::create_dir_all(&garden).unwrap();
     block_on!(async {
+        let log = Shared::default();
         let mut setup = Setup::new(Vec::new());
         setup.model = Some(drawing(vec![
             answer(None, Some(("image_generate", json!({"prompt": "a rose"})))),
             answer(Some("Here."), None),
         ]));
         setup.shares = Some(crate::shares::domain());
-        let (server, _) = setup.build(&dir).await;
+        let (server, _) = setup.build_on(&dir, log.clone()).await;
         let project = make_project(&server, "Garden", &garden).await;
         let start = Request::ThreadStart {
             project: Some(project),
@@ -206,6 +207,12 @@ fn a_removed_project_s_links_open_nothing_as_one_never_made() {
         assert!(matches!(removed, Ok(Reply::Done {})), "{removed:?}");
         let never = nothing(&listening).await;
         assert_eq!(opened(&listening, &link).await, (404, never));
+        // Stopped, so its link counts against its owner no more.
+        let garden_scope = Scope::glaves_own(scope().org(), project);
+        let read = log.read(&garden_scope, Reserved::Shares.id(), None, usize::MAX);
+        let stopped = (read.await.unwrap().into_iter())
+            .any(|raw| matches!(decode(raw).unwrap().body, Body::ShareStopped(_)));
+        assert!(stopped, "its share stopped");
         listening.close().await;
     });
 }
