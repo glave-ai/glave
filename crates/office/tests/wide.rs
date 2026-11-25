@@ -179,11 +179,19 @@ fn a_workbook_saying_it_shares_too_many_strings_is_refused() {
     let dir = TempDir::new("office-count").unwrap();
     let written = dir.join("written.xlsx");
     one_string(&written, "x");
-    for count in ["4000000000000", "1e12"] {
+    // An end tag that matches nothing, before `<sst>`, which calamine reads straight past.
+    for (count, before) in [
+        ("4000000000000", ""),
+        ("1e12", ""),
+        ("99999999999", "<a></b>"),
+    ] {
         let path = dir.join("count.xlsx");
         rezipped(&written, &path, STRINGS, STRINGS, |old, out| {
             let text = String::from_utf8(old).unwrap();
-            let text = text.replace("uniqueCount=\"1\"", &format!("uniqueCount=\"{count}\""));
+            let text = text
+                .replace("uniqueCount=\"1\"", &format!("uniqueCount=\"{count}\""))
+                .replace("<sst ", &format!("{before}<sst "));
+            assert!(text.contains(&format!("{before}<sst ")), "{text}");
             assert!(text.contains(count), "{text}");
             out.write_all(text.as_bytes()).unwrap();
         });

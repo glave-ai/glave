@@ -40,7 +40,13 @@ pub(crate) fn shared_strings(bytes: &[u8]) -> Result<(), OfficeError> {
         if !ENDINGS.iter().any(|ending| name.ends_with(ending)) {
             continue;
         }
-        let unpacked = measured(BufReader::new(part.take(left.saturating_add(1))))?;
+        let part = BufReader::new(part.take(left.saturating_add(1)));
+        let unpacked = if name.ends_with(".xml") {
+            measured(part)?
+        } else {
+            // An xlsb part says how many strings it holds only as it reads them.
+            sized(part)?
+        };
         left = left.checked_sub(unpacked).ok_or(OfficeError::TooMuchText {
             most: MOST_BYTES / (1024 * 1024),
         })?;
@@ -48,11 +54,23 @@ pub(crate) fn shared_strings(bytes: &[u8]) -> Result<(), OfficeError> {
     Ok(())
 }
 
-/// How many bytes `part` unpacks to, refusing it when its `<sst>` says it holds more strings
-/// than [`MOST_STRINGS`].
+/// How many bytes `part` unpacks to.
+fn sized(mut part: impl BufRead) -> Result<u64, OfficeError> {
+    std::io::copy(&mut part, &mut std::io::sink())
+        .map_err(|error| OfficeError::Damaged(error.to_string()))
+}
+
+/// How many bytes `part`, XML, unpacks to, read as calamine reads it (end tags that match
+/// nothing, and comments, let through), refusing it when its `<sst>` says it holds more strings
+/// than [`MOST_STRINGS`], or when it can't be read so far: calamine might read on.
 fn measured(part: impl BufRead) -> Result<u64, OfficeError> {
-    let unreadable = |error: String| OfficeError::NotAWorkbook(error);
+    let unreadable = |error: String| OfficeError::Damaged(error);
     let mut xml = Reader::from_reader(part);
+    let config = xml.config_mut();
+    config.check_end_names = false;
+    config.check_comments = false;
+    config.trim_text(false);
+    config.expand_empty_elements = true;
     let mut buf = Vec::new();
     loop {
         let event = xml.read_event_into(&mut buf);
@@ -80,13 +98,11 @@ fn measured(part: impl BufRead) -> Result<u64, OfficeError> {
                 }
                 break;
             }
-            // An xlsb part, or one that is not XML: only its size counts.
-            Ok(Event::Eof) | Err(_) => break,
+            Ok(Event::Eof) => break,
+            Err(error) => return Err(unreadable(error.to_string())),
             Ok(_) => buf.clear(),
         }
     }
     let read = xml.buffer_position();
-    let rest = std::io::copy(&mut xml.into_inner(), &mut std::io::sink())
-        .map_err(|error| unreadable(error.to_string()))?;
-    Ok(read.saturating_add(rest))
+    Ok(read.saturating_add(sized(xml.into_inner())?))
 }
