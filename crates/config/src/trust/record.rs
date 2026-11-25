@@ -1,6 +1,6 @@
 //! What the person has decided, as the trust ledger in the store holds it: one entry per
-//! project, found by its canonical path or, for a clone that moved, by its `origin` remote.
-//! Each entry is a `trust.decided` event, the latest about a project replacing the ones before.
+//! project, found by its canonical path alone, so a moved folder is asked about again. Each
+//! entry is a `trust.decided` event, the latest about a project replacing the ones before.
 //! What is trusted is the content (each server's definition), not just a name, so a repository
 //! that changes a server's command asks again.
 
@@ -29,21 +29,14 @@ impl Record {
         &self.project
     }
 
-    /// The decisions about `project`: found by path, else by the remote a moved clone shares.
+    /// The decisions about `project`, found by its path alone: a remote is only what a folder's
+    /// own files say, so any folder could name a trusted one's.
     pub fn entry_for(&self, project: &Project) -> Option<&Entry> {
-        self.find(&project.root.to_string_lossy(), project.remote.as_deref())
+        self.find(&project.root.to_string_lossy())
     }
 
-    fn find(&self, path: &str, remote: Option<&str>) -> Option<&Entry> {
-        self.project
-            .iter()
-            .find(|entry| entry.path == path)
-            .or_else(|| {
-                let remote = remote?;
-                self.project
-                    .iter()
-                    .find(|entry| entry.remote.as_deref() == Some(remote))
-            })
+    fn find(&self, path: &str) -> Option<&Entry> {
+        self.project.iter().find(|entry| entry.path == path)
     }
 
     /// What is decided about `project` set to exactly `decisions`, so an item the project no
@@ -57,14 +50,10 @@ impl Record {
         }
     }
 
-    /// Takes in `entry`, replacing what was decided about its project: the entry its path or,
-    /// failing that, its remote finds. One with no items forgets the project.
+    /// Takes in `entry`, replacing what was decided about the project at its path. One with no
+    /// items forgets the project.
     pub fn take(&mut self, entry: Entry) {
-        let known = self
-            .find(&entry.path, entry.remote.as_deref())
-            .map(|known| known.path.clone());
-        self.project
-            .retain(|kept| Some(&kept.path) != known.as_ref());
+        self.project.retain(|kept| kept.path != entry.path);
         if !entry.items.is_empty() {
             self.project.push(entry);
         }

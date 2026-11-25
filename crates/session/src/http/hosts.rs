@@ -81,38 +81,42 @@ impl ListenerNames {
 /// Which way a request with `headers` from `peer` came in, to a listener with `names` (none
 /// where it checks no names): through the public origin when it came to that name, or to a
 /// listener beyond this computer from elsewhere; else from this computer to the server's own
-/// address when it came from here, and from elsewhere when not. A request a proxy forwarded
-/// ([`proxied`]) never came in here, whatever its `Host` says, as one that rewrites `Host` to
-/// its upstream makes a request from anywhere look like one from this computer (#1487): it
-/// came through the public origin, where there is one, else from elsewhere. A best-effort
-/// signal: a proxy that adds none of these, or a raw TCP forward, still looks like this
-/// computer, so the local token and a link's code stay the wall.
+/// address when it came from here, and from elsewhere when not. It came in here only when all
+/// say so: its peer is this computer, its `Host` names this computer, nothing a proxy adds
+/// ([`proxied`]) is there, and a page it came from, if any, is at a name of this computer. A
+/// proxy that rewrites `Host` to its upstream (nginx's default) makes a request from anywhere
+/// look like one from this computer (#1487, #625); what it adds, or the page at the public
+/// origin a browser names, says it came through the public origin, where there is one, else
+/// from elsewhere. A best-effort signal: a proxy that adds none of these, or a raw TCP
+/// forward, still looks like this computer for a request no page sent, so the local token and
+/// a link's code stay the wall.
 pub(crate) fn door(names: Option<&ListenerNames>, headers: &HeaderMap, peer: IpAddr) -> Door {
     let host = headers
         .get(header::HOST)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
-    if proxied(headers) {
-        return match names {
-            Some(
-                ListenerNames::Loopback {
-                    origin: Some(_), ..
-                }
-                | ListenerNames::Public(_),
-            ) => Door::Public,
-            Some(ListenerNames::Loopback { origin: None, .. }) | None => Door::Elsewhere,
-        };
-    }
-    match names {
+    let (public, away) = match names {
         Some(ListenerNames::Loopback {
             origin: Some(origin),
             ..
-        }) if origin.authority().eq_ignore_ascii_case(host) => Door::Public,
-        Some(ListenerNames::Loopback { .. }) => Door::Here,
-        Some(ListenerNames::Public(_)) if is_loopback(peer) && here(host) => Door::Here,
-        Some(ListenerNames::Public(_)) => Door::Public,
-        None if is_loopback(peer) => Door::Here,
-        None => Door::Elsewhere,
+        }) => (origin.authority().eq_ignore_ascii_case(host), Door::Public),
+        Some(ListenerNames::Public(_)) => (false, Door::Public),
+        Some(ListenerNames::Loopback { origin: None, .. }) | None => (false, Door::Elsewhere),
+    };
+    if public {
+        return Door::Public;
+    }
+    let page_here = headers.get(header::ORIGIN).is_none_or(|page| {
+        page.to_str().is_ok_and(|page| {
+            page.strip_prefix("http://")
+                .or_else(|| page.strip_prefix("https://"))
+                .is_some_and(here)
+        })
+    });
+    if is_loopback(peer) && here(host) && page_here && !proxied(headers) {
+        Door::Here
+    } else {
+        away
     }
 }
 
@@ -410,6 +414,38 @@ mod tests {
             assert_eq!(door(None, &sent, local), Door::Elsewhere, "{added}");
             sent.insert(header::HOST, "localhost:443".parse().unwrap());
             assert_eq!(door(beyond.as_ref(), &sent, local), Door::Public, "{added}");
+        }
+    }
+
+    /// nginx in front of a loopback listener names its upstream in `Host` by default; a page at
+    /// the public origin, or one anywhere but this computer, says the request came from
+    /// elsewhere whatever the `Host` (#625). So does a `Host` that names no computer of this one,
+    /// to a listener that checks no names.
+    #[test]
+    fn only_a_request_that_says_here_everywhere_comes_in_here() {
+        let local = "127.0.0.1".parse::<IpAddr>().unwrap();
+        let origin = PublicOrigin::parse("https://glave.example.com").unwrap();
+        let tunnel = ListenerNames::of("127.0.0.1:4180".parse().unwrap(), Some(&origin));
+        let alone = ListenerNames::of("127.0.0.1:4180".parse().unwrap(), None);
+        let public_page = headers(Some("127.0.0.1:4180"), Some("https://glave.example.com"));
+        assert!(tunnel.as_ref().unwrap().allow(&public_page));
+        assert_eq!(door(tunnel.as_ref(), &public_page, local), Door::Public);
+        let mut forwarded = public_page.clone();
+        forwarded.insert(FORWARDED_FOR, "203.0.113.9".parse().unwrap());
+        assert_eq!(door(tunnel.as_ref(), &forwarded, local), Door::Public);
+        let elsewhere = headers(Some("127.0.0.1:4180"), Some("https://evil.example"));
+        assert_eq!(door(alone.as_ref(), &elsewhere, local), Door::Elsewhere);
+        assert_eq!(door(None, &elsewhere, local), Door::Elsewhere);
+        let named = headers(Some("glave.internal:8080"), None);
+        assert_eq!(door(None, &named, local), Door::Elsewhere);
+        for page in [
+            None,
+            Some("http://127.0.0.1:4180"),
+            Some("http://localhost:4180"),
+        ] {
+            let here = headers(Some("127.0.0.1:4180"), page);
+            assert_eq!(door(tunnel.as_ref(), &here, local), Door::Here, "{page:?}");
+            assert_eq!(door(alone.as_ref(), &here, local), Door::Here, "{page:?}");
         }
     }
 
