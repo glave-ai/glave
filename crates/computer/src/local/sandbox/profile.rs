@@ -100,8 +100,13 @@ pub(crate) fn profile(places: &Places, level: SandboxLevel, network: SandboxNetw
 fn reads(profile: &mut Profile, places: &Places) {
     let mut conditions = vec![r#"(subpath "/")"#.to_owned(), OTHER_TERMINALS.to_owned()];
     if !places.shared_tmp {
-        conditions.push(r#"(require-not (subpath "/private/tmp"))"#.to_owned());
-        conditions.push(r#"(require-not (subpath "/private/var/tmp"))"#.to_owned());
+        // But for their own temp folder and workspace, where the system's temp folder is in
+        // one of these (`TMPDIR=/tmp/...`, as `cargo xtask ci` sets it).
+        for shared in ["/private/tmp", "/private/var/tmp"] {
+            conditions.push(format!(
+                r#"(require-any (require-not (subpath "{shared}")) (subpath (param "TEMP")) (subpath (param "ROOT")))"#
+            ));
+        }
         if let Some(person_temp) = &places.person_temp {
             conditions.push(
                 r#"(require-any (require-not (subpath (param "PERSON_TEMP"))) (subpath (param "TEMP")) (subpath (param "ROOT")))"#
@@ -579,6 +584,7 @@ mod tests {
         );
         let mut someone = places();
         someone.preferences = false;
+        someone.shared_tmp = false;
         someone.root = PathBuf::from("/Users/me/.glave/scratch/t");
         someone.shut = Shut {
             folders: vec![PathBuf::from("/Users/me"), PathBuf::from("/srv/projects")],
@@ -621,6 +627,12 @@ mod tests {
         assert!(
             !profile.text.contains("cfprefsd"),
             "nor theirs, preferences"
+        );
+        assert!(
+            profile.text.contains(&format!(
+                r#"(require-any (require-not (subpath "/private/tmp")) (subpath (param "{TEMP_PARAM}")) (subpath (param "ROOT")))"#
+            )),
+            "their own temp folder stays theirs where the system's is in /tmp"
         );
     }
 
