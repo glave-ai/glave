@@ -169,12 +169,15 @@ pub(super) const MACOS_HOME_SECRETS: &[&str] = &[
     "Library/Jupyter/runtime",
 ];
 
-/// Under the home folder, on Linux besides the common list: keyrings, where GNU screen's
-/// sessions, Docker Desktop and the connections Ansible has ssh share listen there (on macOS
-/// no command reaches a socket in a file), and browser profiles (cookies are credentials), a
-/// snap's and a Flatpak's among them, as Ubuntu's own Firefox is.
+/// Under the home folder, on Linux besides the common list: the X server's cookie, keyrings,
+/// where GNU screen's sessions, Docker Desktop and the connections Ansible has ssh share listen
+/// there (on macOS no command reaches a socket in a file), and browser profiles (cookies are
+/// credentials), a snap's and a Flatpak's among them, as Ubuntu's own Firefox is.
 #[cfg(target_os = "linux")]
 const LINUX_HOME_SECRETS: &[&str] = &[
+    // The X server's cookie: with it, a command that reaches the server could read and type
+    // into every window.
+    ".Xauthority",
     ".local/share/keyrings",
     ".local/share/kwalletd",
     ".screen",

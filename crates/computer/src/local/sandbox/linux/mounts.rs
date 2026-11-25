@@ -18,6 +18,7 @@
 //! every namespace's mount on it, leaving that command to reach what listens there next.
 
 use std::collections::HashMap;
+use std::io::Write as _;
 use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -51,12 +52,29 @@ const DAEMONS: &[&str] = &[
     "/tmp/.X11-unix",
 ];
 
-/// Inside a git folder: what runs code later, and the folders of other worktrees and of
-/// submodules, whose own hooks and config would.
-const GIT_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "worktrees", "modules"];
+/// Inside a git folder: what runs code later, `commondir` ([`COMMONDIR`]), and the folders of
+/// other worktrees and of submodules, whose own hooks and config would.
+const GIT_PROTECTED: &[&str] = &[
+    "hooks",
+    "config",
+    "config.worktree",
+    COMMONDIR,
+    "worktrees",
+    "modules",
+];
 
-/// Inside a worktree's own git folder: what runs code later, and its submodules' folders.
-const WORKTREE_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "modules"];
+/// Inside a worktree's own git folder: what runs code later, `commondir`, and its submodules'
+/// folders.
+const WORKTREE_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", COMMONDIR, "modules"];
+
+/// The file naming the folder git takes a repository's config and hooks from, relative to the
+/// git folder it is in. git reads it wherever it is there and fails on one it cannot read, so
+/// one not there yet gets no empty folder as its stand-in but a file glave writes, naming its
+/// own git folder ([`SAME_FOLDER`]), which git reads as it reads none.
+const COMMONDIR: &str = "commondir";
+
+/// What a stand-in `commondir` holds: the git folder it is in.
+const SAME_FOLDER: &str = ".\n";
 
 /// `/tmp` as a command sees it.
 #[derive(Debug)]
@@ -186,9 +204,16 @@ impl Drop for Held {
                 continue;
             }
             counts.remove(path);
-            // Only the empty folder bubblewrap made: anything else there is someone's.
-            if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir()) {
-                let _ = std::fs::remove_dir(path);
+            // Only the empty folder bubblewrap made, or the `commondir` glave wrote: anything
+            // else there is someone's.
+            match std::fs::symlink_metadata(path) {
+                Ok(meta) if meta.is_dir() => {
+                    let _ = std::fs::remove_dir(path);
+                }
+                Ok(meta) if meta.is_file() && is_stand_in_commondir(path) => {
+                    let _ = std::fs::remove_file(path);
+                }
+                _ => {}
             }
         }
     }
@@ -284,7 +309,7 @@ impl Protect<'_> {
                 self.inside(&git, GIT_PROTECTED)?;
             }
             State::File => self.mounts.push(Mount::ReadOnly(git)),
-            State::StandIn => self.stand_in(git),
+            State::StandIn => self.stand_in(git)?,
         }
         for path in PROTECTED.iter().filter(|path| !path.starts_with(".git/")) {
             self.protect(layout.root.join(path))?;
@@ -317,15 +342,30 @@ impl Protect<'_> {
     fn protect(&mut self, path: PathBuf) -> Result<(), String> {
         match self.state(&path)? {
             State::Folder | State::File => self.mounts.push(Mount::ReadOnly(path)),
-            State::StandIn => self.stand_in(path),
+            State::StandIn => self.stand_in(path)?,
         }
         Ok(())
     }
 
-    fn stand_in(&mut self, path: PathBuf) {
+    fn stand_in(&mut self, path: PathBuf) -> Result<(), String> {
+        if path.file_name().is_some_and(|name| name == COMMONDIR) {
+            if !self.counts.contains_key(&path) {
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+                    .and_then(|mut file| file.write_all(SAME_FOLDER.as_bytes()))
+                    .map_err(|error| {
+                        format!("the sandbox cannot protect {}: {error}", path.display())
+                    })?;
+            }
+            self.mounts.push(Mount::ReadOnly(path.clone()));
+        } else {
+            self.mounts.push(Mount::HiddenFolder(path.clone()));
+        }
         *self.counts.entry(path.clone()).or_default() += 1;
-        self.mounts.push(Mount::HiddenFolder(path.clone()));
         self.held.push(path);
+        Ok(())
     }
 
     fn state(&self, path: &Path) -> Result<State, String> {
@@ -343,6 +383,12 @@ impl Protect<'_> {
             Ok(_) => Ok(State::File),
         }
     }
+}
+
+/// Whether the file at `path` is a `commondir` glave stood in, holding [`SAME_FOLDER`] alone.
+fn is_stand_in_commondir(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == COMMONDIR)
+        && std::fs::read(path).is_ok_and(|held| held == SAME_FOLDER.as_bytes())
 }
 
 /// Where the person's daemons listen, which a command that may make Unix sockets, as one with

@@ -10,11 +10,13 @@ use serde::{Deserialize, Serialize};
 use super::ComputerError;
 
 /// Inside the project: paths that make code run later, outside the sandbox. Neither commands
-/// nor glave's file tools may change them in a sandbox, even before they exist.
+/// nor glave's file tools may change them in a sandbox, even before they exist. `commondir`
+/// names the folder git takes the repository's config and hooks from.
 pub const PROTECTED: &[&str] = &[
     ".git/hooks",
     ".git/config",
     ".git/config.worktree",
+    ".git/commondir",
     "HEAD",
     "objects",
     "refs",
@@ -23,6 +25,14 @@ pub const PROTECTED: &[&str] = &[
     ".vscode",
     ".idea",
     ".envrc",
+    // Other tools' settings for the project, which run commands: hooks, tool servers, tasks.
+    ".claude",
+    ".codex",
+    ".cursor",
+    ".gemini",
+    ".zed",
+    "mise.toml",
+    ".mise.toml",
 ];
 
 /// In the home folder: git's own settings, which every git the person runs reads, in every
@@ -51,7 +61,7 @@ pub fn is_protected(root: &Path, path: &Path) -> bool {
             git == ".git"
                 && (kind == "worktrees" || kind == "modules")
                 && rest.first().is_some_and(|part| {
-                    ["hooks", "config", "config.worktree"].contains(&part.as_str())
+                    ["hooks", "config", "config.worktree", "commondir"].contains(&part.as_str())
                 })
         }
         _ => false,

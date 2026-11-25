@@ -228,8 +228,9 @@ fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
 /// with hooks and config of its own. Whole, since a folder moved in whole brings its own.
 const NESTED_GIT: &[&str] = &["worktrees", "modules"];
 
-/// Inside any git folder: what runs code later.
-const GIT_RUNS_CODE: &[&str] = &["hooks", "config", "config.worktree"];
+/// Inside any git folder: what runs code later, and `commondir`, which names the folder git
+/// takes config and hooks from.
+const GIT_RUNS_CODE: &[&str] = &["hooks", "config", "config.worktree", "commondir"];
 
 /// A worktree's repository's shared git folder: its objects, refs and logs, so commits work,
 /// but never its hooks or config, which would run code in every checkout of it, nor other
@@ -332,6 +333,7 @@ mod tests {
             .filter_map(|i| param(&profile, &format!("PROTECTED_{i}")))
             .collect();
         assert!(protected.contains(&Path::new("/Users/me/my.project/.git/hooks")));
+        assert!(protected.contains(&Path::new("/Users/me/my.project/.git/commondir")));
         assert!(protected.contains(&Path::new("/Users/me/my.project/.glave")));
         assert!(protected.contains(&Path::new("/Users/me/my.project/.git/modules")));
         assert!(protected.contains(&Path::new("/Users/me/my.project/.git/worktrees")));
@@ -418,10 +420,18 @@ mod tests {
         );
         assert_eq!(
             param(&profile, "COMMON_PROTECTED_3"),
+            Some(Path::new("/Users/me/code/app/.git/commondir"))
+        );
+        assert_eq!(
+            param(&profile, "COMMON_PROTECTED_4"),
             Some(Path::new("/Users/me/code/app/.git/worktrees"))
         );
         assert_eq!(
             param(&profile, "OWN_PROTECTED_3"),
+            Some(Path::new("/Users/me/code/app/.git/worktrees/w/commondir"))
+        );
+        assert_eq!(
+            param(&profile, "OWN_PROTECTED_4"),
             Some(Path::new("/Users/me/code/app/.git/worktrees/w/modules"))
         );
         assert!(

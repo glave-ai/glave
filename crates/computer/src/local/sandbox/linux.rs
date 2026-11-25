@@ -89,7 +89,7 @@ impl Enforcer {
                 Tmp::Shared(resolved(Some(Path::new("/tmp"))).await)
             },
             home: resolved(sandbox.home.as_deref()).await,
-            also_hidden: also_hidden.to_vec(),
+            also_hidden: also_hidden.iter().cloned().chain(x_cookie()).collect(),
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
             cache: reached.cache.map(Path::to_path_buf),
             glave_on_path: resolved(reached.glave_on_path).await,
@@ -181,6 +181,13 @@ fn runtime_folder() -> PathBuf {
 /// The ssh agent's socket, where `$SSH_AUTH_SOCK` names one.
 fn ssh_agent() -> Option<PathBuf> {
     path_in("SSH_AUTH_SOCK")
+}
+
+/// The X server's cookie, where `$XAUTHORITY` names one outside the home folder (a display
+/// manager's, in `/tmp` or the runtime folder): with it, a command that reaches the X server
+/// could read and type into every window.
+fn x_cookie() -> Option<PathBuf> {
+    path_in("XAUTHORITY")
 }
 
 /// The absolute path the variable `name` holds, if it holds one.
