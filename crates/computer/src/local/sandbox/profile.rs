@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use glave_ports::computer::{PROTECTED, SandboxLevel, SandboxNetwork};
+use glave_ports::computer::{GIT_RUNS_CODE, PROTECTED, SandboxLevel, SandboxNetwork};
 
 use super::folders_leading_to;
 use super::shut::Shut;
@@ -286,10 +286,12 @@ fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
         r#"(require-not (literal (param "GIT")))"#.to_owned(),
     ];
     let git = places.root.join(".git");
-    let protected = PROTECTED
-        .iter()
-        .map(|path| places.root.join(path))
-        .chain(NESTED_GIT.iter().map(|name| git.join(name)));
+    let protected = PROTECTED.iter().map(|path| places.root.join(path)).chain(
+        GIT_RUNS_CODE
+            .iter()
+            .chain(NESTED_GIT)
+            .map(|name| git.join(name)),
+    );
     unless(profile, &mut conditions, "PROTECTED", protected);
     unless(
         profile,
@@ -311,9 +313,6 @@ fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
 /// Inside a git folder: the folders of other worktrees and of submodules, each a git folder
 /// with hooks and config of its own. Whole, since a folder moved in whole brings its own.
 const NESTED_GIT: &[&str] = &["worktrees", "modules"];
-
-/// Inside any git folder: what runs code later.
-const GIT_RUNS_CODE: &[&str] = &["hooks", "config", "config.worktree"];
 
 /// A worktree's repository's shared git folder: its objects, refs and logs, so commits work,
 /// but never its hooks or config, which would run code in every checkout of it, nor other
@@ -414,10 +413,11 @@ mod tests {
             param(&profile, "ROOT"),
             Some(Path::new("/Users/me/my.project"))
         );
-        let protected: Vec<&Path> = (0..PROTECTED.len() + NESTED_GIT.len())
+        let protected: Vec<&Path> = (0..PROTECTED.len() + GIT_RUNS_CODE.len() + NESTED_GIT.len())
             .filter_map(|i| param(&profile, &format!("PROTECTED_{i}")))
             .collect();
         assert!(protected.contains(&Path::new("/Users/me/my.project/.git/hooks")));
+        assert!(protected.contains(&Path::new("/Users/me/my.project/.git/commondir")));
         assert!(protected.contains(&Path::new("/Users/me/my.project/.glave")));
         assert!(protected.contains(&Path::new("/Users/me/my.project/.git/modules")));
         assert!(protected.contains(&Path::new("/Users/me/my.project/.git/worktrees")));
@@ -504,10 +504,18 @@ mod tests {
         );
         assert_eq!(
             param(&profile, "COMMON_PROTECTED_3"),
+            Some(Path::new("/Users/me/code/app/.git/commondir"))
+        );
+        assert_eq!(
+            param(&profile, "COMMON_PROTECTED_4"),
             Some(Path::new("/Users/me/code/app/.git/worktrees"))
         );
         assert_eq!(
             param(&profile, "OWN_PROTECTED_3"),
+            Some(Path::new("/Users/me/code/app/.git/worktrees/w/commondir"))
+        );
+        assert_eq!(
+            param(&profile, "OWN_PROTECTED_4"),
             Some(Path::new("/Users/me/code/app/.git/worktrees/w/modules"))
         );
         assert!(

@@ -169,12 +169,15 @@ pub(super) const MACOS_HOME_SECRETS: &[&str] = &[
     "Library/Jupyter/runtime",
 ];
 
-/// Under the home folder, on Linux besides the common list: keyrings, where GNU screen's
-/// sessions, Docker Desktop and the connections Ansible has ssh share listen there (on macOS
-/// no command reaches a socket in a file), and browser profiles (cookies are credentials), a
-/// snap's and a Flatpak's among them, as Ubuntu's own Firefox is.
+/// Under the home folder, on Linux besides the common list: the X server's cookie, keyrings,
+/// where GNU screen's sessions, Docker Desktop and the connections Ansible has ssh share listen
+/// there (on macOS no command reaches a socket in a file), and browser profiles (cookies are
+/// credentials), a snap's and a Flatpak's among them, as Ubuntu's own Firefox is.
 #[cfg(target_os = "linux")]
 const LINUX_HOME_SECRETS: &[&str] = &[
+    // The X server's cookie: with it, a command that reaches the server could read and type
+    // into every window.
+    ".Xauthority",
     ".local/share/keyrings",
     ".local/share/kwalletd",
     ".screen",
@@ -215,19 +218,17 @@ const MOVED: &[(&str, &str)] = &[
     (".cache/", "XDG_CACHE_HOME"),
 ];
 
+/// The variable that moves the X server's cookie from `~/.Xauthority`, as display managers do
+/// (to `/tmp` or the runtime folder): with it, a command that reaches the X server could read
+/// and type into every window.
+const X_COOKIE: &str = "XAUTHORITY";
+
 /// Where `environment` moves the stores of `home_secrets`: one kept under `~/.config`,
 /// `~/.local/share` or `~/.cache` is under `XDG_CONFIG_HOME`, `XDG_DATA_HOME` or
 /// `XDG_CACHE_HOME` instead where that is set, and so is hidden there too. The last value of
 /// each, as a command takes it; one that is not a full path is no folder to the tools either.
 pub(crate) fn moved_stores(environment: &[(OsString, OsString)]) -> Vec<PathBuf> {
-    let set = |variable: &str| {
-        environment
-            .iter()
-            .rev()
-            .find(|(name, _)| name == variable)
-            .map(|(_, folder)| PathBuf::from(folder))
-            .filter(|folder| folder.is_absolute())
-    };
+    let set = |variable: &str| set(environment, variable);
     MOVED
         .iter()
         .filter_map(|&(default, variable)| set(variable).map(|folder| (default, folder)))
@@ -239,8 +240,28 @@ pub(crate) fn moved_stores(environment: &[(OsString, OsString)]) -> Vec<PathBuf>
         .collect()
 }
 
+/// The full path the last `variable` in `environment` holds, as a command takes it.
+fn set(environment: &[(OsString, OsString)], variable: &str) -> Option<PathBuf> {
+    environment
+        .iter()
+        .rev()
+        .find(|(name, _)| name == variable)
+        .map(|(_, place)| PathBuf::from(place))
+        .filter(|place| place.is_absolute())
+}
+
+/// The X server's cookie where `XAUTHORITY` in `environment` names a file: a folder named there
+/// is no cookie, and hiding it could hide what commands need.
+pub(crate) async fn x_cookie(environment: &[(OsString, OsString)]) -> Option<PathBuf> {
+    let cookie = set(environment, X_COOKIE)?;
+    let meta = tokio::fs::metadata(&cookie).await.ok()?;
+    meta.is_file().then_some(cookie)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     fn environment(set: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
@@ -268,6 +289,20 @@ mod tests {
         // Only what is kept under the folder a variable moves, and only where the last says.
         let elsewhere = |path: &PathBuf| !path.starts_with("/x") || path.ends_with(".ssh");
         assert!(!moved.iter().any(elsewhere), "{moved:?}");
+    }
+
+    #[test]
+    fn the_x_server_s_cookie_is_hidden_where_the_environment_names_a_file() {
+        let dir = glave_ports::testing::TempDir::new("x-cookie").unwrap();
+        let cookie = dir.join("xauth_abc");
+        std::fs::write(&cookie, "").unwrap();
+        let named = |place: &Path| environment(&[("XAUTHORITY", place.to_str().unwrap())]);
+        glave_ports::block_on!(async {
+            assert_eq!(x_cookie(&named(&cookie)).await, Some(cookie.clone()));
+            assert_eq!(x_cookie(&named(dir.path())).await, None, "a folder");
+            assert_eq!(x_cookie(&named(&dir.join("gone"))).await, None);
+            assert_eq!(x_cookie(&named(Path::new("xauth_abc"))).await, None);
+        });
     }
 
     #[test]

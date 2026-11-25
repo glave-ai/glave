@@ -100,6 +100,28 @@ fn stores_once_missed_are_hidden_from_a_sandboxed_command() {
     );
 }
 
+/// The X server's cookie is hidden where `XAUTHORITY` names it, as a display manager keeps it.
+#[test]
+fn the_x_server_s_cookie_is_hidden_where_xauthority_names_it() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("x-cookie");
+    let cookie = dir.join("display/xauth_abc");
+    let made = computers_saying(&dir, &[("XAUTHORITY", cookie.to_str().unwrap())]);
+    let beside = dir.join("display/other");
+    let (outside, inside) = read(&dir, &made, &[cookie, beside]);
+    assert_eq!(outside.matches("canary-").count(), 2, "{outside}");
+    assert!(
+        !inside.contains("canary-0"),
+        "a sandboxed command read the cookie: {inside}"
+    );
+    assert!(
+        inside.contains("canary-1"),
+        "what is beside it stays readable: {inside}"
+    );
+}
+
 /// A store the environment moves is hidden where it is: one kept under `~/.config`,
 /// `~/.local/share` or `~/.cache` is under `XDG_CONFIG_HOME`, `XDG_DATA_HOME` or
 /// `XDG_CACHE_HOME` where the person set it. What else is kept there stays readable.

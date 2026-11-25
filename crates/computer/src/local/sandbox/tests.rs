@@ -17,6 +17,8 @@ use glave_ports::computer::{
 use super::{CACHE_FOLDER, sandbox_available};
 use crate::{CancelSwitch, LocalComputers};
 
+mod commondir;
+
 mod toolchains;
 
 mod nested_repository;
