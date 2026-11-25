@@ -3,11 +3,13 @@
 //! project that hold its share and the person who shares it, listed as the link is made
 //! (`share.placed`) and unlisted once it stops (`share.unplaced`). A server keeps what it read
 //! of it in memory, reading on from where it last read when asked for a link it doesn't hold,
-//! so serving a link finds its share without knowing whose it is. Memory is bounded: past
-//! [`MOST_HELD`] links it lets some go, and a link it doesn't hold then is looked for in the
-//! whole list. How many links each person holds is counted exactly, whatever it let go.
+//! so serving a link finds its share without knowing whose it is. It keeps every listed link's
+//! key, 32 bytes each, so a link never made is answered without reading the store; where each
+//! is, at most [`MOST_HELD`] of them: past that it lets some go, and a listed link it let go of
+//! is looked for in the whole list, which only someone holding a live link can ask for. How
+//! many links each person holds is counted exactly, whatever it let go.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::PoisonError;
 
 use glave_event::{Body, Payload as _, PrincipalId, RawEvent, Seq, SharePlaced, ShareUnplaced};
@@ -17,7 +19,7 @@ use glave_ports::{BlobStore, EventLog, Located, ModelProvider, OrgId, ProjectId,
 use crate::protocol::ApiError;
 use crate::server::Server;
 
-/// The most links a server holds in memory; past them, it lets some go.
+/// The most links a server holds where they are in memory; past them, it lets some go.
 const MOST_HELD: usize = 100_000;
 
 /// The shares' list as far as this server has read it: where each link is, at most
@@ -27,8 +29,8 @@ pub(crate) struct Links {
     next: u64,
     /// By the SHA-256 of each link's id, so letting the first go lets go of one at random.
     held: BTreeMap<String, Located>,
-    /// Whether some link was let go, so one not held may still be listed.
-    let_go: bool,
+    /// Every listed link's key, held or let go.
+    listed: HashSet<[u8; 32]>,
     each: HashMap<PrincipalId, usize>,
 }
 
@@ -38,12 +40,11 @@ impl Links {
         match in_order(&mut self.next, raw).map(|(_, body)| body) {
             Some(Body::SharePlaced(placed)) => {
                 *self.each.entry(placed.owner).or_default() += 1;
-                let at = located(&placed);
-                self.held.insert(placed.link, at);
-                if self.held.len() > MOST_HELD {
-                    self.held.pop_first();
-                    self.let_go = true;
+                if let Some(key) = key_bytes(&placed.link) {
+                    self.listed.insert(key);
                 }
+                let at = located(&placed);
+                self.hold(placed.link, at);
             }
             Some(Body::ShareUnplaced(unplaced)) => {
                 if let Some(count) = self.each.get_mut(&unplaced.owner) {
@@ -52,11 +53,40 @@ impl Links {
                         self.each.remove(&unplaced.owner);
                     }
                 }
+                if let Some(key) = key_bytes(&unplaced.link) {
+                    self.listed.remove(&key);
+                }
                 self.held.remove(&unplaced.link);
             }
             _ => {}
         }
     }
+
+    /// Holds where the link `key` is, letting one go past [`MOST_HELD`].
+    fn hold(&mut self, key: String, at: Located) {
+        self.held.insert(key, at);
+        if self.held.len() > MOST_HELD {
+            self.held.pop_first();
+        }
+    }
+
+    /// Whether the link `key` is listed, held or not.
+    fn lists(&self, key: &str) -> bool {
+        key_bytes(key).is_some_and(|key| self.listed.contains(&key))
+    }
+}
+
+/// A link's key, its id's SHA-256 written in hex, as its 32 bytes.
+fn key_bytes(key: &str) -> Option<[u8; 32]> {
+    let mut bytes = [0u8; 32];
+    if key.len() != 64 {
+        return None;
+    }
+    for (byte, pair) in bytes.iter_mut().zip(key.as_bytes().chunks(2)) {
+        let pair = std::str::from_utf8(pair).ok()?;
+        *byte = u8::from_str_radix(pair, 16).ok()?;
+    }
+    Some(bytes)
 }
 
 /// Where `placed`'s share is.
@@ -110,15 +140,23 @@ where
     }
 
     /// Where the link whose id hashes to `key` is held, read on from where this server last
-    /// read when it holds none, and looked for in the whole list where it let some go.
+    /// read when it holds none, and looked for in the whole list only when it is listed and was
+    /// let go of: a link never made, or stopped, reads nothing more.
     pub(crate) async fn find_link(&self, key: &str) -> Result<Option<Located>, ApiError> {
         if let Some(at) = self.held_links(|links| links.held.get(key).copied()) {
             return Ok(Some(at));
         }
         self.read_links().await?;
-        let (found, let_go) = self.held_links(|links| (links.held.get(key).copied(), links.let_go));
+        let (found, listed) =
+            self.held_links(|links| (links.held.get(key).copied(), links.lists(key)));
         match found {
-            None if let_go => self.look_for_link(key).await,
+            None if listed => {
+                let found = self.look_for_link(key).await?;
+                if let Some(at) = found {
+                    self.held_links(|links| links.hold(key.to_owned(), at));
+                }
+                Ok(found)
+            }
             found => Ok(found),
         }
     }
@@ -225,7 +263,14 @@ mod tests {
             links.take(listed(seq, &placed(n, owner)));
         }
         assert_eq!(links.held.len(), MOST_HELD, "one let go");
-        assert!(links.let_go, "so one not held may still be listed");
+        assert!(
+            links.lists(&format!("{:064x}", 0)),
+            "let go of, still listed"
+        );
+        assert!(
+            !links.lists(&format!("{:064x}", MOST_HELD + 1)),
+            "never made"
+        );
         assert_eq!(links.each.get(&ada), Some(&(MOST_HELD / 2 + 1)));
         assert_eq!(links.each.get(&grace), Some(&(MOST_HELD / 2)));
         // Unlisting counts one fewer, whether it was held or let go.
@@ -238,6 +283,7 @@ mod tests {
             links.take(listed(seq, &unplaced));
         }
         assert_eq!(links.each.get(&ada), Some(&(MOST_HELD / 2 - 1)));
+        assert!(!links.lists(&format!("{:064x}", 0)), "unlisted");
         assert!(!links.held.contains_key(&format!("{:064x}", 2)));
     }
 }

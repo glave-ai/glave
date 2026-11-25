@@ -58,8 +58,8 @@ pub(crate) fn item_of(item: &LibraryItem) -> ShareOf {
 }
 
 /// `share/set` of `of` for `audience`, moving it to `of`'s version when `update`.
-pub(crate) async fn set(
-    server: &Tested,
+pub(crate) async fn set<L: glave_ports::EventLog + 'static>(
+    server: &Tested<L>,
     of: ShareOf,
     audience: Option<Audience>,
     update: bool,
