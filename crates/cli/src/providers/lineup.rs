@@ -10,8 +10,8 @@ use glave_config::policy::{Choices, Constraints, ModelEntry, Source, check_model
 use glave_event::{
     Catalog, CatalogModel, CatalogProvider, Principal, ProviderConnected, ProviderId, ProviderKind,
 };
-use glave_gateway::{Gateway, Router, Target};
-use glave_ports::settings::Judge;
+use glave_gateway::{Gateway, PriceList, Router, Target};
+use glave_ports::settings::{Judge, PriceEntry};
 use glave_session::Models;
 use glave_session::protocol::ModelInfo;
 use jiff::Timestamp;
@@ -36,6 +36,8 @@ pub(crate) struct Lineup {
     constraints: Constraints,
     /// Whether the server keeps credits (`[credits]`).
     credits: bool,
+    /// The payer's own prices (`[[prices]]`), before glave's list.
+    prices: Vec<PriceEntry>,
 }
 
 /// The models of one lineup: the gateway to them, what `model/list` offers, and the endpoint
@@ -66,6 +68,10 @@ impl Lineup {
                 .map_or(Source::Default, |models| models.from.clone()),
             constraints: setup.loaded.constraints.clone(),
             credits: choices.credits.is_some(),
+            prices: choices
+                .prices
+                .as_ref()
+                .map_or_else(Vec::new, |prices| prices.value.clone()),
         }
     }
 
@@ -88,6 +94,23 @@ impl Lineup {
             models: vec![endpoint.model.clone()],
             by: Principal::glave(),
         })
+    }
+
+    /// What models cost: the payer's own prices, then glave's list, each winning over a
+    /// catalog's where it names a model at its service.
+    fn prices(&self) -> anyhow::Result<PriceList> {
+        Ok(PriceList::built_in()?.under(self.prices.clone())?)
+    }
+
+    /// What the settings say of the models, at `prices`.
+    fn allowed<'a>(&'a self, prices: &'a PriceList) -> Allowed<'a> {
+        Allowed {
+            constraints: &self.constraints,
+            prices,
+            main: self.main_from.as_ref(),
+            judge: &self.judge_from,
+            models: &self.entries_from,
+        }
     }
 
     /// Whether the server's own account offers `model`, `main` being the model its settings
@@ -162,12 +185,8 @@ impl Lineup {
         let Some(endpoint) = self.configured.clone().or(first) else {
             return Ok(Built::default());
         };
-        let allowed = Allowed {
-            constraints: &self.constraints,
-            main: self.main_from.as_ref(),
-            judge: &self.judge_from,
-            models: &self.entries_from,
-        };
+        let prices = self.prices()?;
+        let allowed = self.allowed(&prices);
         let judge = self.judge.model(&endpoint.model);
         let mut gateway = gateway(
             Model::for_endpoint(&endpoint)?,
@@ -300,6 +319,7 @@ mod tests {
             entries_from: Source::Default,
             constraints: Constraints::default(),
             credits: false,
+            prices: Vec::new(),
         }
     }
 

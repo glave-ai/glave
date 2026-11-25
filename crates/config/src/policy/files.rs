@@ -9,7 +9,7 @@ use glave_event::{HookPoint, Money, Nanos, Permissions, Precision};
 use glave_ports::auth::safe_to_send;
 use glave_ports::computer::{CredentialHost, Forge};
 use glave_ports::host::{PublicOrigin, shown};
-use glave_ports::settings::{Hook, Hooks};
+use glave_ports::settings::{Hook, Hooks, PriceEntry, check_prices};
 use globset::Glob;
 
 use crate::policy::memory::{MemoryRules, ProjectChoice};
@@ -79,6 +79,9 @@ pub struct ConfigFile {
     /// What this server allows among a router's providers for everyone it serves. Only the
     /// server's own file sets it: a person's or a project's could only be chosen around.
     pub router_floor: Option<RouterFloorFile>,
+    /// What models cost at each service, as `[[prices]]`, before glave's own price list. Only
+    /// the person's or the server's own file sets them: whoever pays the provider.
+    pub prices: Option<Vec<PriceEntry>>,
 }
 
 /// `[router_floor]`: what a router's providers must be for any call this server makes, which a
@@ -697,6 +700,11 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
         && !StoreFile::bucket(bucket)
     {
         invalid!("{}: [store] bucket is not an s3:// bucket", path.display());
+    }
+    if let Some(prices) = &file.prices {
+        check_prices(prices).map_err(|error| {
+            crate::Error::Invalid(format!("{}: [[prices]] {error}", path.display()))
+        })?;
     }
     if let Some(web) = &file.web {
         web.policy().map_err(|error| {

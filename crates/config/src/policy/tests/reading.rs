@@ -617,6 +617,42 @@ fn credits_are_the_server_s_own_choice_with_its_monthly_limit() {
 }
 
 #[test]
+fn prices_are_the_payer_s_own_and_each_prices_something_once() {
+    let dir = scratch("prices");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let price = |model: &str, fields: &str| {
+        format!(
+            "[[prices]]\nservice = \"anthropic\"\nmodel = \"{model}\"\n{fields}\n\
+             date = \"2026-11-24\"\npage = \"https://example.com/pricing\"\n"
+        )
+    };
+    let text = price("m", "input = \"1\"\noutput = \"2\"");
+    let project = files::config(&text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.prices, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), &text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = loaded.choices.prices.as_ref().unwrap();
+    assert_eq!(chosen.value.len(), 1);
+    assert_eq!(chosen.from, Source::File(locations.person.clone()));
+    let twice = format!("{text}{text}");
+    let unpriced = price("n", "input = \"1\"");
+    for (wrong, says) in [
+        (twice, "is written twice"),
+        (unpriced, "no price for input"),
+    ] {
+        let refused = files::config(&wrong, &locations.person)
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("config.toml: [[prices]]"), "{refused}");
+        assert!(refused.contains(says), "{refused}");
+    }
+}
+
+#[test]
 fn the_mail_server_is_the_person_s_or_server_s_choice() {
     let dir = scratch("email");
     let home = dir.join("home");

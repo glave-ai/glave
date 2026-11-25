@@ -148,13 +148,12 @@ impl Model for Fake {
 /// `per_mtok` billionths of a dollar a million tokens, in and out: at 1,000,000, a billionth
 /// of a dollar a token.
 pub(crate) fn price(per_mtok: i64) -> Price {
-    Price {
-        list: "test".into(),
-        currency: Currency::USD,
-        input_per_mtok: Nanos::new(per_mtok),
-        cache_read_per_mtok: Nanos::ZERO,
-        output_per_mtok: Nanos::new(per_mtok),
-    }
+    Price::per_mtok(
+        "test",
+        Nanos::new(per_mtok),
+        Nanos::ZERO,
+        Nanos::new(per_mtok),
+    )
 }
 
 /// `nanos` billionths of a dollar.
