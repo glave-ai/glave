@@ -71,7 +71,7 @@ glave --permissions full-access "…"                   # no sandbox, nothing as
 
 A command the model keeps running in the background (a dev server, a watcher, `computers.md`, "Background commands") runs in the sandbox it started in for its whole life, as any command does: started there with `background`, or moved there at its timeout, still confined. One let out of the sandbox (*Letting one command out*) stays out for its life, so the person is asked for it as for any. A server it starts listens on loopback, which the sandbox allows with the network on, and the person opens it beside the thread at its own address (`session.md`, "Previews"); one in a sandbox without the network, in a namespace of its own on Linux, is reached by no one outside it, so it has none.
 
-A person's computer in the cloud holds all their work, so it keeps this sandbox (*On a person's computer*). Per-thread workers, whose container was their wall, were removed before v0.1 (owner, 2026-11-08).
+A person's computer in the cloud holds all their work, so it keeps this sandbox (*On a person's computer*).
 
 **It fails closed when a policy asks for it.** A policy that leaves no full access (`[permissions] highest` below it, or `[sandbox] network = false`) requires the sandbox: where it cannot run, glave refuses to start and says why. A person's own Auto or Ask first gives way to asking instead, as glave's default does, since nothing then runs unconfined without asking.
 
@@ -325,8 +325,6 @@ Decided 2026-10-31 (#1115). A person's computer in the cloud (`computers.md`, de
 
 ## Later, decided separately
 
-- **A judge model** for Auto that approves or flags each action (issue #13).
-- **Undo**, if it proves worth it. Locally, git is the safety net; in cloud Computers, undo is restoring a snapshot.
 - **Turning off letting one command out**, for an organization that wants every command in the sandbox, as Claude Code's `allowUnsandboxedCommands: false` does. Where its policy takes the network, `ask_network = false` already turns it off.
 - **Granting a folder** to a thread, so commands may write it without leaving the sandbox (#307).
 - **A domain allowlist** for the network, through a filtering proxy, which also withholds cloud metadata from commands (*Cloud metadata*).
