@@ -277,19 +277,15 @@ fn the_lowest_highest_mode_holds_and_below_full_access_the_sandbox_is_required()
     assert_eq!(highest, Permissions::Ask);
     assert_eq!(rule.unwrap().from, Path::new(PROJECT_POLICY));
     assert_eq!(
-        rules.permissions_allowed(),
-        [Permissions::Plan, Permissions::Ask]
-    );
-    assert_eq!(
         rules.sandbox_required().unwrap().to_string(),
         format!("[permissions] highest = \"ask\" in {PROJECT_POLICY}")
     );
     let open = constraints("version = 1\n[permissions]\nhighest = \"full-access\"\n");
-    assert_eq!(open.permissions_allowed(), Permissions::ALL);
+    assert_eq!(open.highest_permissions().0, Permissions::FullAccess);
     assert!(open.sandbox_required().is_none(), "full access needs none");
     assert_eq!(
-        Constraints::default().permissions_allowed(),
-        Permissions::ALL
+        Constraints::default().highest_permissions().0,
+        Permissions::FullAccess
     );
     let error = files::policy(
         "version = 1\n[approval]\nmodes = [\"ask\"]\n",

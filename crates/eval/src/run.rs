@@ -390,7 +390,7 @@ async fn wire(
         .map(|memory| memory as Arc<dyn glave_ports::memories::Memory>);
     Ok(Harness::new(parts, settings)
         .with_tools(tools)
-        .with_memory_if(memory))
+        .with_memory(memory))
 }
 
 /// What one attempt left: each thread's events as JSON Lines, in the order they ran, a readable

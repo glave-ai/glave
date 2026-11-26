@@ -197,7 +197,13 @@ fn files_of(layers: &[Layer]) -> Vec<PathBuf> {
 
 /// The policy files that exist at `locations`, organization first.
 pub async fn policies(locations: &Locations) -> crate::Result<Vec<(PathBuf, PolicyFile)>> {
-    policy_files(&locations.policies).await
+    let mut policies = Vec::new();
+    for path in &locations.policies {
+        if let Some(text) = read(path).await? {
+            policies.push((path.clone(), files::policy(&text, path)?));
+        }
+    }
+    Ok(policies)
 }
 
 /// The rules of one policy file, `text`, as if it were at `path`.
@@ -206,17 +212,6 @@ pub fn constraints(text: &str, path: &Path) -> crate::Result<Constraints> {
         path.to_owned(),
         files::policy(text, path)?,
     )]))
-}
-
-/// The files of `paths` that exist, read as policies, in order.
-pub(crate) async fn policy_files(paths: &[PathBuf]) -> crate::Result<Vec<(PathBuf, PolicyFile)>> {
-    let mut policies = Vec::new();
-    for path in paths {
-        if let Some(text) = read(path).await? {
-            policies.push((path.clone(), files::policy(&text, path)?));
-        }
-    }
-    Ok(policies)
 }
 
 /// Reads the config files at `locations` under the choices of `flags` and `env`, with the
