@@ -5,7 +5,7 @@
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use glave_ports::auth::safe_to_send;
+use glave_ports::auth::{BodyError, read_body, safe_to_send};
 use jiff::{SignedDuration, Timestamp};
 use jsonwebtoken::jwk::{AlgorithmParameters, EllipticCurve, Jwk, KeyAlgorithm, PublicKeyUse};
 use jsonwebtoken::{Algorithm, DecodingKey};
@@ -177,13 +177,14 @@ impl Keys {
         if !response.status().is_success() {
             return Err(self.failed(format!("{said} answered {}", response.status())));
         }
-        let mut body = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(failed)? {
-            if body.len().saturating_add(chunk.len()) > MOST_BYTES {
-                return Err(self.failed(format!("{said} sent more than {MOST_BYTES} bytes")));
-            }
-            body.extend_from_slice(&chunk);
-        }
+        let body = read_body(&mut response, MOST_BYTES)
+            .await
+            .map_err(|error| match error {
+                BodyError::Read(error) => failed(error),
+                BodyError::TooLarge => {
+                    self.failed(format!("{said} sent more than {MOST_BYTES} bytes"))
+                }
+            })?;
         serde_json::from_slice(&body).map_err(|e| self.failed(format!("{said}: {e}")))
     }
 

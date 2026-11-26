@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use glave_ports::auth::{
-    Auth, CONNECT_TIMEOUT, KeyHeader, Outgoing, credential_header, not_encoded, not_json,
-    request_failed, send_signed,
+    Auth, BodyError, IDLE_TIMEOUT, KeyHeader, Outgoing, credential_header, not_encoded, not_json,
+    provider_client, read_body, request_failed, send_signed,
 };
 use glave_ports::{Completion, Delta, EndUser, ModelProvider, ModelRequest, ProviderError};
 use reqwest::header::CONTENT_TYPE;
@@ -20,9 +20,6 @@ pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 
 /// The largest answer [`Anthropic::get`] reads.
 const MOST_LISTED: usize = 8 << 20;
-
-/// The default idle timeout, the same as the OpenAI-compatible provider's.
-pub const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Where and how to reach the Messages API.
 #[derive(Clone)]
@@ -68,12 +65,7 @@ pub struct Anthropic {
 
 impl Anthropic {
     pub fn new(config: Config) -> Result<Self, ProviderError> {
-        let http = reqwest::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            // Each read may wait this long: for the first token, and between the rest.
-            .read_timeout(config.idle_timeout)
-            .build()
-            .map_err(|e| ProviderError::Transport(e.to_string()))?;
+        let http = provider_client(config.idle_timeout)?;
         if let Some(key) = config.auth.fixed_key() {
             credential_header("x-api-key", key.expose())?;
         }
@@ -184,16 +176,15 @@ impl Anthropic {
         let call = self.http.get(&url).header("anthropic-version", version);
         let sent = self.auth.headers(&outgoing).await?;
         let mut response = send_signed(call, &sent, self.idle_timeout).await?;
-        let mut body = Vec::new();
-        while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
-            if body.len().saturating_add(bytes.len()) > MOST_LISTED {
-                return Err(ProviderError::Protocol(format!(
+        let body = read_body(&mut response, MOST_LISTED)
+            .await
+            .map_err(|error| match error {
+                BodyError::Read(error) => self.failed(error),
+                BodyError::TooLarge => ProviderError::Protocol(format!(
                     "{} answered with more than {MOST_LISTED} bytes",
                     glave_ports::host::shown(&url)
-                )));
-            }
-            body.extend_from_slice(&bytes);
-        }
+                )),
+            })?;
         serde_json::from_slice(&body).map_err(|e| not_json(&url, &e))
     }
 

@@ -19,5 +19,5 @@ pub mod fake;
 mod wire;
 
 pub use api::Api;
-pub use client::{Anthropic, Config, DEFAULT_BASE_URL, IDLE_TIMEOUT};
+pub use client::{Anthropic, Config, DEFAULT_BASE_URL};
 pub use wire::EFFORTS;

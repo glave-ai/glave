@@ -15,6 +15,45 @@ use crate::spoken;
 /// The longest a connection to the provider may take to open, its TLS handshake included.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long a provider may send nothing, before or during its answer, unless set otherwise: as
+/// Codex sets it, long enough for a local model to read a long prompt before its first token.
+pub const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// A model provider's HTTP client: a connection within [`CONNECT_TIMEOUT`], and each read
+/// waiting up to `idle`, for the first token and between the rest.
+pub fn provider_client(idle: Duration) -> Result<reqwest::Client, ProviderError> {
+    reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(idle)
+        .build()
+        .map_err(|e| ProviderError::Transport(e.to_string()))
+}
+
+/// Why a body was not read whole.
+#[derive(Debug)]
+pub enum BodyError {
+    /// The connection failed while it was read.
+    Read(reqwest::Error),
+    /// It runs past the most that may be read.
+    TooLarge,
+}
+
+/// The whole of `response`'s body, refused once it would run past `most` bytes, so an answer
+/// of any size is never held.
+pub async fn read_body(
+    response: &mut reqwest::Response,
+    most: usize,
+) -> Result<Vec<u8>, BodyError> {
+    let mut body = Vec::new();
+    while let Some(bytes) = response.chunk().await.map_err(BodyError::Read)? {
+        if body.len().saturating_add(bytes.len()) > most {
+            return Err(BodyError::TooLarge);
+        }
+        body.extend_from_slice(&bytes);
+    }
+    Ok(body)
+}
+
 /// `call` sent with the headers `sent` prove who is calling with, each never shown: its answer,
 /// or the provider's refusal read from the start of it with `sent` taken out, or what the
 /// failure means, a silence past `idle` among them.

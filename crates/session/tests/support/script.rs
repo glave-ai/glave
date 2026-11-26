@@ -1,9 +1,7 @@
 //! The answers tests script the model with, and what it was sent.
 
-use glave_event::{
-    Arguments, Cost, Currency, ModelRef, Money, Nanos, Part, StopReason, TokenCounts, Usage,
-};
-use glave_ports::{Completion, RequestedCall};
+use glave_event::{Cost, Currency, Money, Nanos, StopReason, TokenCounts, Usage};
+use glave_ports::Completion;
 
 pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
 
@@ -28,35 +26,17 @@ pub(crate) async fn asked(seen: &Seen, calls: usize) {
 
 /// An answer saying `text`, or calling a tool with arguments.
 pub(crate) fn answer(text: Option<&str>, call: Option<(&str, serde_json::Value)>) -> Completion {
-    Completion {
-        model: ModelRef {
-            provider: "script".into(),
-            name: "test-model".into(),
-        },
-        response_id: None,
-        parts: text
-            .map(|t| Part::Text { text: t.into() })
-            .into_iter()
-            .collect(),
-        tool_calls: call
-            .map(|(tool, args)| RequestedCall {
-                provider_call_id: None,
-                tool: tool.into(),
-                arguments: Arguments::Json(args.as_object().unwrap().clone()),
-            })
-            .into_iter()
-            .collect(),
-        stop: if text.is_some() {
-            StopReason::EndTurn
-        } else {
-            StopReason::ToolUse
-        },
-        provider_stop: None,
-        usage: Usage::new(TokenCounts::default(), false, None).unwrap(),
-        cost: None,
-        served: None,
-        upstream: None,
+    let mut answer = glave_ports::testing::answer(text, call.into_iter().collect()).unwrap();
+    for call in &mut answer.tool_calls {
+        call.provider_call_id = None;
     }
+    answer.stop = if text.is_some() {
+        StopReason::EndTurn
+    } else {
+        StopReason::ToolUse
+    };
+    answer.usage = Usage::new(TokenCounts::default(), false, None).unwrap();
+    answer
 }
 
 /// `completion`, having used `input` and `output` tokens and cost `nanos`.

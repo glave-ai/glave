@@ -4,7 +4,6 @@
 # a change that shares a copy takes its line out, and one that edits or moves a listed copy puts
 # the line the check prints in its place. Nothing is added here but that.
 00244d63d16a6b84 34 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
-010ee3b4bae24c7f 14 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
 04879cd549cea09e 7 crates/cli/src/memory.rs crates/cli/src/threads.rs
 090ee4c561993ff7 6 crates/session/tests/listing.rs crates/session/tests/standing.rs
 104f93b401311b5c 7 crates/store-postgres/src/store.rs crates/store-sqlite/src/store.rs
@@ -22,7 +21,6 @@
 3a6f88c56187a776 9 crates/eval/tests/attempt.rs crates/eval/tests/attempt.rs
 3b6e34fd48a5a87f 29 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 4fac0a7d959a48c2 13 crates/session/tests/list_watching.rs crates/session/tests/subagents.rs
-55b7dc4aa2df1119 9 crates/harness/tests/support/script.rs crates/memory/tests/support/kit.rs
 560cf54430deb382 6 web/app/src/app/components/connections/connections.component.spec.ts web/app/src/app/components/passkeys/passkeys.component.spec.ts
 5730335cee541409 6 crates/session/src/held.rs crates/session/src/held.rs
 6b61e6143887a11d 8 crates/cli/src/computer.rs crates/cli/src/threads.rs crates/cli/src/worktrees.rs
@@ -40,7 +38,6 @@ aab82f086101a3df 6 crates/provider-anthropic/src/client.rs crates/provider-opena
 9e0deedec0a616b8 11 crates/cli/src/memory.rs crates/cli/src/threads.rs
 a0516b39583ad5d6 7 web/e2e/languages.e2e.ts web/e2e/support.ts
 a2cf4b2ad208ace5 7 web/app/src/app/services/projects.service.spec.ts web/app/src/app/services/projects.service.spec.ts web/app/src/app/services/projects.service.spec.ts
-a3d85a8380144aef 12 crates/harness/tests/support/script.rs crates/memory/tests/support/kit.rs
 a3e4b5de28fa9b4d 12 crates/cli/src/worktrees/cleanup/tests.rs crates/computer/src/worktrees/tests.rs
 a4ace85663d85cab 7 web/glaze/src/components/menu-button/menu-button.component.spec.ts web/glaze/src/components/menu-select/menu-select.component.spec.ts
 a4c6e50cee13806d 11 crates/store-postgres/src/blobs.rs crates/store-postgres/src/blobs.rs
@@ -49,7 +46,6 @@ a8649abdfb794d0a 7 crates/harness/src/commands.rs crates/harness/src/skills.rs
 a9f65d4fb272be59 8 crates/harness/tests/project_folders.rs crates/session/tests/choices.rs
 ad1bfdee27617df5 15 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 afa24c0018395dcb 13 crates/keys/src/conformance.rs crates/ports/src/conformance.rs
-afb23fe741d3fd70 7 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
 2e2e396f5b1d8803 8 web/app/src/app/components/connections/connections.component.spec.ts web/app/src/app/components/connections/connections.component.spec.ts
 bbb0d4e47b13c4ec 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
 bbd73ee3de4c9b51 8 crates/computer/src/local/confinement_tests.rs crates/computer/src/local/confinement_tests.rs

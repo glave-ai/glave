@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use glave_ports::auth::{BodyError, read_body};
 use http::{Request, Response};
 use reqwest::StatusCode;
 use reqwest::header::{ACCEPT, CONTENT_TYPE, WWW_AUTHENTICATE};
@@ -69,13 +70,17 @@ impl Guarded {
         for (name, value) in answer.headers() {
             response = response.header(name, value);
         }
-        let mut body = Vec::new();
-        while let Some(chunk) = answer.chunk().await? {
-            if chunk.len() > MOST_BYTES.saturating_sub(body.len()) {
-                return Err(format!("its answer is over {MOST_BYTES} bytes").into());
-            }
-            body.extend_from_slice(&chunk);
-        }
+        let body =
+            read_body(&mut answer, MOST_BYTES)
+                .await
+                .map_err(|error| -> OAuthHttpClientError {
+                    match error {
+                        BodyError::Read(error) => Box::new(error),
+                        BodyError::TooLarge => {
+                            format!("its answer is over {MOST_BYTES} bytes").into()
+                        }
+                    }
+                })?;
         Ok(response.body(body)?)
     }
 }
