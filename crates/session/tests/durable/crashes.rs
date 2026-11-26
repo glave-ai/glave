@@ -1,4 +1,4 @@
-//! A turn stopped at every event boundary (`specs/one-server.md`, "Durable turns"): its
+//! A turn stopped at every event boundary (`specs/one-server.md`, "The pull requests", 5): its
 //! server stops after its first `n` appends, and nothing it appends after lands, for every `n`
 //! up to what a whole run makes; a server started on the same store finds each turn waiting or
 //! closes it `interrupted`, and answering what waits then takes every turn to its end. A turn
