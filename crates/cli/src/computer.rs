@@ -1,9 +1,8 @@
 //! `glave computer serve`: this machine as a computer for a harness elsewhere, over the
-//! computer protocol (`specs/computers.md`) on stdio, over TLS at any address, or on a Unix
-//! socket; and `glave computer bridge`, which carries one connection between its standard
+//! computer protocol (`specs/computers.md`) on stdio or on a Unix socket; and `glave computer bridge`, which carries one connection between its standard
 //! input and output and that socket (how a computer in a Pod is reached, through an exec).
 
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -11,14 +10,12 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::Context as _;
 use glave_computer::{
-    Identity, Idle, Keeper, Largest, LocalComputers, Tokens, bridge, listen_socket, serve,
-    serve_socket, serve_tls,
+    Idle, Keeper, Largest, LocalComputers, Tokens, bridge, listen_socket, serve, serve_socket,
 };
 use glave_ports::computer::Computers;
 use glave_ports::{Clock as _, SystemClock};
 use glave_process::Processes;
-use tokio::io::{AsyncReadExt as _, BufReader};
-use tokio::net::TcpListener;
+use tokio::io::BufReader;
 
 use crate::home;
 
@@ -30,21 +27,15 @@ glave computer: this machine as a computer for a harness elsewhere
 Usage:
   glave computer serve --stdio       serve the computer protocol (JSON-RPC 2.0, one message
                                      per line) to the program that started glave
-  glave computer serve --tls <host:port> [--until-input-ends]
-                                     serve it over TLS on any address, with cert.pem, key.pem
-                                     and token in $GLAVE_HOME/computer-tls, which no command
-                                     in the sandbox can read or change (the token file: the
-                                     secret, then how many seconds it opens connections,
-                                     counted on this machine's clock from when glave first
-                                     reads it; read again for each connection, so it can be
-                                     renewed). With --until-input-ends, it ends when its
-                                     standard input does, as it ends with the program that
-                                     started it
   glave computer serve --socket <path> <folder> [--idle <minutes>] [--keep-disk]
                        [--fence <address:port>]
                                      serve it on a Unix socket at <path>, open to this user
                                      alone, to clients that first send the token in <folder>
-                                     (as for --tls); how a computer in a Pod is reached. With
+                                     (its file: the secret, then how many seconds it opens
+                                     connections, counted on this machine's clock from when
+                                     glave first reads it; read again for each connection, so
+                                     it can be renewed), which no command in the sandbox can
+                                     read; how a computer in a Pod is reached. With
                                      --idle, it ends once no request has run and no command
                                      has run in the background for that many minutes, as a
                                      person's computer in the cloud does. With --keep-disk,
@@ -64,12 +55,6 @@ Usage:
 Copies of repositories are kept in $GLAVE_HOME/workspaces. Commands get glave's environment
 without anything named like a key, token, secret or password.";
 
-/// The folder in glave's own that `serve --tls` reads its identity and token from: glave's
-/// folder is one no sandboxed command reads or changes (`specs/invariants.md`, 23), so none can
-/// read the token, or replace it with its own, to connect and open a terminal outside every
-/// sandbox (#1502).
-const TLS: &str = "computer-tls";
-
 /// What `glave computer` was asked to do.
 #[derive(Debug, PartialEq, Eq)]
 enum Asked {
@@ -83,8 +68,6 @@ enum Asked {
 #[derive(Debug, PartialEq, Eq)]
 enum Transport {
     Stdio,
-    /// The address, and until when it serves; the identity and token are in [`TLS`].
-    Tls(SocketAddr, Until),
     /// The socket's path, the folder of the token, and how a person's computer runs.
     Socket(PathBuf, PathBuf, Person),
 }
@@ -97,15 +80,6 @@ struct Person {
     idle: Option<u32>,
     keep_disk: bool,
     fence: Option<SocketAddr>,
-}
-
-/// Until when glave serving over TLS serves.
-#[derive(Debug, PartialEq, Eq)]
-enum Until {
-    /// Until accepting fails, or it is stopped.
-    Stopped,
-    /// Until its standard input ends, as it ends with the program that started it.
-    InputEnds,
 }
 
 /// What follows `--socket <path> <folder>`: `--idle <minutes>`, `--keep-disk` and
@@ -140,27 +114,10 @@ fn person(mut rest: &[String]) -> Result<Person, String> {
     }
 }
 
-fn address(text: &str, flag: &str) -> Result<SocketAddr, String> {
-    match text.parse::<u16>() {
-        Ok(port) => Ok(SocketAddr::from((Ipv4Addr::LOCALHOST, port))),
-        Err(_) => text
-            .parse()
-            .map_err(|_| format!("{flag} {text:?} is not a port or host:port")),
-    }
-}
-
 fn parse(arguments: &[String]) -> Result<Asked, String> {
     let serving = |transport| Ok(Asked::Serve(transport));
     match arguments {
         [serve, stdio] if serve == "serve" && stdio == "--stdio" => serving(Transport::Stdio),
-        [serve, tls, at, rest @ ..] if serve == "serve" && tls == "--tls" => {
-            let until = match rest {
-                [] => Until::Stopped,
-                [flag] if flag == "--until-input-ends" => Until::InputEnds,
-                [other, ..] => return Err(format!("{other:?} is not an option of serve --tls")),
-            };
-            serving(Transport::Tls(address(at, "--tls")?, until))
-        }
         [serve, socket, path, folder, rest @ ..] if serve == "serve" && socket == "--socket" => {
             serving(Transport::Socket(
                 PathBuf::from(path),
@@ -170,7 +127,7 @@ fn parse(arguments: &[String]) -> Result<Asked, String> {
         }
         [bridge, path] if bridge == "bridge" => Ok(Asked::Bridge(PathBuf::from(path))),
         _ => Err(
-            "expected: glave computer serve --stdio, --tls <host:port> [--until-input-ends], or --socket <path> <folder> [--idle <minutes>] [--keep-disk]; \
+            "expected: glave computer serve --stdio, or --socket <path> <folder> [--idle <minutes>] [--keep-disk]; \
              or glave computer bridge <path>"
                 .into(),
         ),
@@ -227,13 +184,6 @@ pub(crate) fn main(arguments: &[String]) -> ExitCode {
     }
 }
 
-async fn read(folder: &Path, name: &str) -> anyhow::Result<String> {
-    let path = folder.join(name);
-    tokio::fs::read_to_string(&path)
-        .await
-        .with_context(|| format!("could not read {}", path.display()))
-}
-
 async fn run(transport: Transport) -> anyhow::Result<()> {
     let home = home::folder()?;
     // `glave computer serve` writes no log of its own: it says things plainly.
@@ -244,13 +194,12 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
         glave: home.clone(),
         largest: largest.clone(),
     };
-    // The token a computer serves with, and its TLS key, are its own and no command's to read:
-    // with the token, a sandboxed command with the network could connect and open a terminal
-    // outside every sandbox (#1502). Nor is the socket, which such a command may otherwise reach.
-    // Hidden here whatever a command's sandbox names as glave's folder.
+    // The token a computer serves with is its own and no command's to read: with it, a
+    // sandboxed command with the network could connect and open a terminal outside every
+    // sandbox (#1502). Nor is the socket, which such a command may otherwise reach. Hidden here
+    // whatever a command's sandbox names as glave's folder.
     let hidden: Vec<PathBuf> = match &transport {
         Transport::Socket(path, folder, _) => vec![folder.clone(), path.clone()],
-        Transport::Tls(..) => vec![home.join(TLS)],
         Transport::Stdio => Vec::new(),
     };
     let computers = crate::helpers::with_helper(
@@ -269,27 +218,6 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
             serve(computers, input, tokio::io::stdout(), None)
                 .await
                 .context("serving on stdio")
-        }
-        Transport::Tls(address, until) => {
-            let folder = home.join(TLS);
-            let tls = Identity::acceptor(
-                &read(&folder, "cert.pem").await?,
-                &read(&folder, "key.pem").await?,
-            )?;
-            let token = tokens(&folder).await?;
-            let listener = TcpListener::bind(address)
-                .await
-                .with_context(|| format!("could not listen on {address}"))?;
-            let serving = serve_tls(computers, listener, tls, token);
-            if until == Until::Stopped {
-                return serving
-                    .await
-                    .with_context(|| format!("serving TLS on {address}"));
-            }
-            tokio::select! {
-                served = serving => served.with_context(|| format!("serving TLS on {address}")),
-                () = input_ends() => Ok(()),
-            }
         }
         Transport::Socket(path, folder, person) => {
             let busy = {
@@ -368,13 +296,6 @@ async fn tokens(folder: &Path) -> anyhow::Result<Tokens> {
     Ok(token)
 }
 
-/// Reads standard input to its end, or to an error, discarding what it reads.
-async fn input_ends() {
-    let mut input = tokio::io::stdin();
-    let mut read = [0_u8; 256];
-    while matches!(input.read(&mut read).await, Ok(n) if n > 0) {}
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,27 +311,9 @@ mod tests {
             Ok(Asked::Serve(Transport::Stdio))
         );
         assert!(parse(&words("serve --tcp 7070")).is_err());
-        assert_eq!(
-            parse(&words("serve --tls 0.0.0.0:7070")),
-            Ok(Asked::Serve(Transport::Tls(
-                "0.0.0.0:7070".parse().unwrap(),
-                Until::Stopped
-            )))
-        );
-        assert_eq!(
-            parse(&words("serve --tls 0.0.0.0:7070 --until-input-ends")),
-            Ok(Asked::Serve(Transport::Tls(
-                "0.0.0.0:7070".parse().unwrap(),
-                Until::InputEnds
-            )))
-        );
-        // Its identity and token are in glave's folder, never one named.
-        assert!(parse(&words("serve --tls 0.0.0.0:7070 /tmp/tls")).is_err());
-        assert!(parse(&words("serve --tls 0.0.0.0:7070 --idle 15")).is_err());
-        assert!(parse(&words("serve --tls 0.0.0.0:7070 --other")).is_err());
-        assert!(parse(&words("serve --tls")).is_err());
+        assert!(parse(&words("serve --tls 0.0.0.0:7070")).is_err());
         assert!(parse(&words("serve")).is_err());
-        assert!(parse(&words("serve --stdio --tls 1")).is_err());
+        assert!(parse(&words("serve --stdio --socket a b")).is_err());
         assert!(parse(&words("run")).is_err());
     }
 

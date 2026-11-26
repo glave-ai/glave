@@ -20,15 +20,12 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _,
-    BufReader,
 };
-use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
-use tokio_rustls::TlsAcceptor;
 
 use crate::cancel::CancelSwitch;
-use crate::token::{Token, Tokens};
+use crate::token::Token;
 use crate::wire::{self, Chunk, MAX_LINE, OUTPUT, Request, code};
 use asking::{Asking, Asks};
 pub use idle::Idle;
@@ -39,11 +36,10 @@ pub use socket::{bridge, listen_socket, serve_socket};
 const WRITE_AHEAD: usize = 256;
 /// Requests one connection may have running at once; more wait their turn.
 const MAX_IN_FLIGHT: usize = 64;
-/// Connections one TCP listener serves at once.
+/// Connections one listener serves at once.
 const MAX_CONNECTIONS: usize = 32;
-/// How long a client has for each part of its handshake, its TLS and then signing in, before
-/// it is dropped: a connection that never signs in would otherwise hold one of the few
-/// [`MAX_CONNECTIONS`] for good.
+/// How long a client has to sign in before it is dropped: a connection that never signs in
+/// would otherwise hold one of the few [`MAX_CONNECTIONS`] for good.
 const HANDSHAKE: Duration = Duration::from_secs(10);
 /// Request ids one connection remembers, so a request delivered twice runs once.
 const SEEN: usize = 4096;
@@ -569,66 +565,5 @@ impl Output for Forward<'_> {
         Box::pin(async move {
             let _ = self.lines.send(wire::notify(OUTPUT, &chunk)).await;
         })
-    }
-}
-
-/// Serves `computers` on a TCP listener on this machine's loopback address, to clients that
-/// first present `token`. Connections from other machines need TLS ([`serve_tls`]), so a
-/// listener on any other address is refused. Runs until accepting fails.
-pub async fn serve_tcp<C: Computers + 'static>(
-    computers: Arc<C>,
-    listener: TcpListener,
-    token: String,
-) -> std::io::Result<()> {
-    let address = listener.local_addr()?;
-    if !address.ip().is_loopback() {
-        return Err(std::io::Error::other(format!(
-            "{address} is not a loopback address; serving computers across machines needs TLS"
-        )));
-    }
-    let mut connections = JoinSet::new();
-    loop {
-        while connections.len() >= MAX_CONNECTIONS {
-            connections.join_next().await;
-        }
-        let (stream, _) = listener.accept().await?;
-        let _ = stream.set_nodelay(true);
-        let (read, write) = stream.into_split();
-        let (computers, token) = (Arc::clone(&computers), Token::lasting(token.clone()));
-        connections.spawn(serve(computers, BufReader::new(read), write, Some(token)));
-        while connections.try_join_next().is_some() {}
-    }
-}
-
-/// Serves `computers` over TLS on a TCP listener at any address, to clients that first present
-/// the token `tokens` holds, before it expires: how a worker on Docker is reached from the
-/// harness. A client that fails the handshake is dropped without an answer. Runs until
-/// accepting fails.
-pub async fn serve_tls<C: Computers + 'static>(
-    computers: Arc<C>,
-    listener: TcpListener,
-    tls: TlsAcceptor,
-    tokens: impl Into<Tokens>,
-) -> std::io::Result<()> {
-    let tokens = tokens.into();
-    let mut connections = JoinSet::new();
-    loop {
-        while connections.len() >= MAX_CONNECTIONS {
-            connections.join_next().await;
-        }
-        let (stream, _) = listener.accept().await?;
-        let _ = stream.set_nodelay(true);
-        let (computers, tokens, tls) = (Arc::clone(&computers), tokens.clone(), tls.clone());
-        connections.spawn(async move {
-            let handshake = tokio::time::timeout(HANDSHAKE, tls.accept(stream));
-            let Ok(Ok(stream)) = handshake.await else {
-                return Ok(());
-            };
-            // The token as it is now: the side that minted it may have renewed it.
-            let token = tokens.current(SystemTime::from(SystemClock.now())).await?;
-            let (read, write) = tokio::io::split(stream);
-            serve(computers, BufReader::new(read), write, Some(token)).await
-        });
-        while connections.try_join_next().is_some() {}
     }
 }

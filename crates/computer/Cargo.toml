@@ -30,8 +30,6 @@ k8s-openapi = { workspace = true, optional = true }
 kube = { workspace = true, optional = true }
 # Walking a workspace the way git sees it, leaving out what it ignores.
 ignore.workspace = true
-# A self-signed certificate for a computer served over TLS, whose fingerprint the harness pins.
-rcgen.workspace = true
 # The expressions files/search looks for.
 regex.workspace = true
 # Resolving every path one name at a time from an open handle on the workspace root
@@ -39,12 +37,9 @@ regex.workspace = true
 # Process calls on Linux: the Landlock helper's own session and the user id that names the
 # sandbox's folder and tmux's.
 rustix = { workspace = true, features = ["process", "pty", "termios"] }
-# TLS between the harness and a computer served across machines (already in the tree via reqwest).
-rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "signal", "sync", "time"] }
-tokio-rustls.workspace = true
 # A computer running another version of glave than the server's, said in the server's log.
 tracing.workspace = true
 uuid.workspace = true

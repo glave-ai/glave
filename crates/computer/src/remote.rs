@@ -84,7 +84,7 @@ impl Drop for Waiting<'_> {
 }
 
 impl RemoteComputers {
-    /// Speaks the protocol over `input` and `output`: a child's stdio, or a TCP stream.
+    /// Speaks the protocol over `input` and `output`: a child's stdio, or a bridge to a socket.
     pub fn connect<R, W>(input: R, output: W) -> Self
     where
         R: AsyncRead + Unpin + Send + 'static,
@@ -111,7 +111,7 @@ impl RemoteComputers {
         self.shared.ended()
     }
 
-    /// Presents the token a TCP server asks for; the first call on such a connection.
+    /// Presents the token a server on a socket asks for; the first call on such a connection.
     pub async fn authenticate(&self, token: &str) -> Result<(), ComputerError> {
         let request = Request::Authenticate {
             token: token.to_owned(),

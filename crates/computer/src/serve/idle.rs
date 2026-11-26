@@ -1,4 +1,4 @@
-//! When a computer served over TLS ends on its own (`specs/computers.md`, "A person's computer
+//! When a computer served on a socket ends on its own (`specs/computers.md`, "A person's computer
 //! in the cloud", 4 and 5): once no request has been answered or running for its limit and
 //! nothing runs there in the background. A connection held open counts for nothing: a server
 //! that keeps a computer awake asks it something at least once a minute.

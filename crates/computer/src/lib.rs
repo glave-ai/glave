@@ -13,7 +13,6 @@ mod disk;
 mod local;
 mod remote;
 mod serve;
-mod tls;
 mod token;
 mod waking;
 mod wire;
@@ -28,8 +27,7 @@ pub use local::{
     sandbox_helper, terminal_helper,
 };
 pub use remote::RemoteComputers;
-pub use serve::{Idle, bridge, listen_socket, serve, serve_socket, serve_tcp, serve_tls};
-pub use tls::{Fingerprint, Identity, connect_tls};
+pub use serve::{Idle, bridge, listen_socket, serve, serve_socket};
 pub use token::{Token, Tokens};
 pub use waking::{Grow, Lost, Peek, Short, Wake, Waking};
 #[cfg(feature = "kubernetes")]

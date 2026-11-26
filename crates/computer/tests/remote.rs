@@ -1,26 +1,24 @@
 //! A computer across the protocol passes the same suite as one in-process: over an
-//! in-memory pipe, over TCP on 127.0.0.1 with a token, over TLS with the certificate pinned
-//! and a token that expires, and through bridges to a Unix socket; and one serving with an
-//! idle limit ends on its own.
+//! in-memory pipe, and through bridges to a Unix socket with a token that expires; and one
+//! serving with an idle limit ends on its own.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use glave_computer::{
-    Fingerprint, Identity, Idle, LocalComputers, RemoteComputers, Token, bridge, connect_tls,
-    listen_socket, serve, serve_socket, serve_tcp, serve_tls,
+    Idle, LocalComputers, RemoteComputers, Token, Tokens, bridge, listen_socket, serve,
+    serve_socket,
 };
 use glave_ports::auth::Secret;
 use glave_ports::computer::{
-    Command, ComputerError, ComputerId, Computers, Environment, Freed, TerminalId, TerminalSize,
+    Command, ComputerError, Computers, Environment, Freed, TerminalId, TerminalSize,
 };
 use glave_ports::testing::{SocketPath, any_secret};
 use glave_ports::{Clock as _, SystemClock, block_on, conformance};
-use tokio::io::{AsyncBufReadExt as _, BufReader};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 
 fn scratch(name: &str) -> (glave_ports::testing::TempDir, PathBuf, PathBuf) {
     let dir = glave_ports::testing::TempDir::new(&format!("remote-{name}")).unwrap();
@@ -106,7 +104,6 @@ const PROTOCOL: &str = "2026-11-12";
 
 /// What checking a computer that answers `server/discover` with `info` says.
 fn discovered(info: serde_json::Value) -> Result<(), ComputerError> {
-    use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
     block_on!(async {
         let (client, server) = tokio::io::duplex(64 * 1024);
         let answering = tokio::spawn(async move {
@@ -132,39 +129,6 @@ fn discovered(info: serde_json::Value) -> Result<(), ComputerError> {
         answering.await.unwrap();
         checked
     })
-}
-
-#[test]
-fn a_computer_over_tcp_passes_the_suite_once_signed_in() {
-    let (_dir, work, copies) = scratch("tcp");
-    block_on!(async {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let token = any_secret();
-        let serving = tokio::spawn(serve_tcp(local(&copies), listener, token.clone()));
-
-        let (read, write) = TcpStream::connect(address).await.unwrap().into_split();
-        let stranger = RemoteComputers::connect(read, write);
-        let refused = stranger.authenticate("guess").await;
-        assert!(
-            matches!(refused, Err(ComputerError::Unreachable(_))),
-            "{:?}",
-            refused.err()
-        );
-        let after = stranger
-            .status(ComputerId::from_uuid(uuid::Uuid::nil()))
-            .await;
-        assert!(after.is_err(), "a refused connection is closed");
-
-        let (read, write) = TcpStream::connect(address).await.unwrap().into_split();
-        let remote = RemoteComputers::connect(read, write);
-        remote.authenticate(&token).await.unwrap();
-        remote.check_protocol().await.unwrap();
-        let verdict =
-            conformance::computers(&remote, &Environment::host(), &work.to_string_lossy()).await;
-        assert_eq!(verdict, Ok(()));
-        serving.abort();
-    });
 }
 
 /// Names of secret variables in every case, set to one value no command may print.
@@ -210,12 +174,12 @@ fn across_a_pipe(
 }
 
 /// What `script` printed, run on a new computer of `remote` in `work`.
-async fn printed<C: Computers>(remote: &C, work: &std::path::Path, script: &str) -> String {
+async fn printed<C: Computers>(remote: &C, work: &Path, script: &str) -> String {
     printed_by(remote, work, &Command::new(script)).await
 }
 
 /// What `command` prints on `remote` in `work`.
-async fn printed_by<C: Computers>(remote: &C, work: &std::path::Path, command: &Command) -> String {
+async fn printed_by<C: Computers>(remote: &C, work: &Path, command: &Command) -> String {
     use glave_ports::computer::Sources;
     let made = remote.create(&Environment::host()).await.unwrap();
     let path = work.to_string_lossy().into_owned();
@@ -231,7 +195,7 @@ async fn printed_by<C: Computers>(remote: &C, work: &std::path::Path, command: &
 
 /// Runs `env` on `remote` in `work`: ordinary settings come through, the computer's secrets
 /// never do, and a secret the person added, sent with the command, does.
-async fn secrets_stay_out<C: Computers>(remote: &C, work: &std::path::Path, secret: &str) {
+async fn secrets_stay_out<C: Computers>(remote: &C, work: &Path, secret: &str) {
     let added = any_secret();
     let mut command = Command::new("env");
     command.env.insert("STRIPE_KEY".into(), Secret::new(&added));
@@ -285,34 +249,14 @@ fn a_computer_across_a_pipe_keeps_secret_variables_from_commands() {
     });
 }
 
-#[test]
-fn a_computer_over_tcp_keeps_secret_variables_from_commands() {
-    let (_dir, work, copies) = scratch("secrets-tcp");
-    block_on!(async {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let (secret, token) = (any_secret(), any_secret());
-        let computers = with_secrets(&copies, &secret);
-        let serving = tokio::spawn(serve_tcp(computers, listener, token.clone()));
-        let (read, write) = TcpStream::connect(address).await.unwrap().into_split();
-        let remote = RemoteComputers::connect(read, write);
-        remote.authenticate(&token).await.unwrap();
-        secrets_stay_out(&remote, &work, &secret).await;
-        serving.abort();
-    });
-}
-
-/// A TLS listener on 127.0.0.1 serving `copies`, with a fresh identity and `token`.
-async fn tls(copies: &PathBuf, token: Token) -> (std::net::SocketAddr, Identity, JoinHandle) {
-    let identity = Identity::mint().unwrap();
-    let acceptor = Identity::acceptor(&identity.certificate, &identity.key).unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let serving = tokio::spawn(serve_tls(local(copies), listener, acceptor, token));
-    (address, identity, serving)
-}
-
 type JoinHandle = tokio::task::JoinHandle<std::io::Result<()>>;
+
+/// `token` written to the file at `path`, as the harness writes a computer's, for a listener to
+/// read.
+fn in_a_file(path: &Path, token: &Token) -> Tokens {
+    std::fs::write(path, token.to_file()).unwrap();
+    Tokens::file(path)
+}
 
 /// A runtime on paused time: a limit passes without waiting for it.
 fn paused() -> tokio::runtime::Runtime {
@@ -341,7 +285,7 @@ fn a_computer_serving_with_an_idle_limit_ends_once_nothing_runs_for_that_long() 
         let mut serving = tokio::spawn(serve_socket(
             local(&copies),
             listener,
-            token,
+            in_a_file(&dir.join("token"), &token),
             Some(idle),
             None,
         ));
@@ -380,7 +324,7 @@ fn a_computer_whose_terminals_are_only_looked_at_ends_once_idle() {
         let mut serving = tokio::spawn(serve_socket(
             local(&copies),
             listener,
-            token,
+            in_a_file(&dir.join("token"), &token),
             Some(idle),
             None,
         ));
@@ -414,7 +358,7 @@ fn a_computer_whose_terminals_are_only_looked_at_ends_once_idle() {
 
 /// A bridge to the socket at `socket`, carried over an in-memory pipe as an exec's standard
 /// input and output would carry it, and the connection through it, not yet signed in.
-fn bridged(socket: &std::path::Path) -> (RemoteComputers, JoinHandle) {
+fn bridged(socket: &Path) -> (RemoteComputers, JoinHandle) {
     let (ours, theirs) = tokio::io::duplex(64 * 1024);
     let (read, write) = tokio::io::split(theirs);
     let socket = socket.to_owned();
@@ -441,7 +385,7 @@ fn a_computer_through_bridges_to_its_socket_passes_the_suite_and_outlives_each_b
         let serving = tokio::spawn(serve_socket(
             local(&copies),
             listener,
-            token.clone(),
+            in_a_file(&dir.join("token"), &token),
             None,
             None,
         ));
@@ -486,46 +430,29 @@ fn a_bridge_with_no_computer_to_reach_says_so() {
     });
 }
 
-#[test]
-fn a_computer_over_tls_passes_the_suite_with_its_certificate_pinned() {
-    let (_dir, work, copies) = scratch("tls");
-    block_on!(async {
-        let token = Token::mint(
-            SystemTime::from(SystemClock.now()),
-            Duration::from_secs(600),
-        )
-        .unwrap();
-        let (address, identity, serving) = tls(&copies, token.clone()).await;
-        let remote = connect_tls(address, &identity.fingerprint, token.secret())
-            .await
-            .unwrap();
-        let verdict =
-            conformance::computers(&remote, &Environment::host(), &work.to_string_lossy()).await;
-        assert_eq!(verdict, Ok(()));
-
-        let stranger = Identity::mint().unwrap();
-        let refused = connect_tls(address, &stranger.fingerprint, token.secret()).await;
-        assert!(
-            matches!(&refused, Err(ComputerError::Unreachable(m)) if m.contains("handshake")),
-            "another certificate is never trusted: {:?}",
-            refused.err()
-        );
-        let guessed = connect_tls(address, &identity.fingerprint, "guess").await;
-        assert!(guessed.is_err(), "a wrong token is refused");
-        serving.abort();
-    });
+/// `copies` served over an in-memory pipe to a client that must first present `token`: the
+/// client's end of the pipe, and the serving.
+fn signing_in(copies: &PathBuf, token: Token) -> (tokio::io::DuplexStream, JoinHandle) {
+    let (client, server) = tokio::io::duplex(64 * 1024);
+    let (read, write) = tokio::io::split(server);
+    let serving = tokio::spawn(serve(
+        local(copies),
+        BufReader::new(read),
+        write,
+        Some(token),
+    ));
+    (client, serving)
 }
 
 #[test]
 fn a_client_that_never_signs_in_is_told_so_and_let_go_in_seconds() {
-    let (_dir, _, copies) = scratch("tcp-silent");
+    let (_dir, _, copies) = scratch("silent");
     block_on!(async {
         // The clock jumps to each limit as soon as nothing else can run.
         tokio::time::pause();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let serving = tokio::spawn(serve_tcp(local(&copies), listener, any_secret()));
-        let mut silent = BufReader::new(TcpStream::connect(address).await.unwrap());
+        let token = Token::mint(UNIX_EPOCH, Duration::from_secs(600)).unwrap();
+        let (client, serving) = signing_in(&copies, token);
+        let mut silent = BufReader::new(client);
         let started = tokio::time::Instant::now();
         let mut said = String::new();
         silent.read_line(&mut said).await.unwrap();
@@ -541,48 +468,27 @@ fn a_client_that_never_signs_in_is_told_so_and_let_go_in_seconds() {
             0,
             "it is closed"
         );
-        serving.abort();
-    });
-}
-
-#[test]
-fn a_computer_that_takes_the_connection_and_says_nothing_is_given_up_in_seconds() {
-    block_on!(async {
-        tokio::time::pause();
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        // It takes the connection and says nothing, as a stuck computer would.
-        let stuck = tokio::spawn(async move {
-            let _held = listener.accept().await;
-            std::future::pending::<()>().await;
-        });
-        let fingerprint = Fingerprint::parse(&"ab".repeat(32)).unwrap();
-        let started = tokio::time::Instant::now();
-        let tried = connect_tls(address, &fingerprint, &any_secret()).await;
-        // On a paused clock the limit on reaching the port may pass first; either says so.
-        assert!(
-            matches!(&tried, Err(ComputerError::Unreachable(m)) if m.ends_with("within 10 seconds")),
-            "{:?}",
-            tried.err()
-        );
-        assert!(started.elapsed() < Duration::from_secs(21));
-        stuck.abort();
+        serving.await.unwrap().unwrap();
     });
 }
 
 #[test]
 fn an_expired_token_opens_no_connection() {
-    let (_dir, _, copies) = scratch("tls-expired");
+    let (_dir, _, copies) = scratch("expired");
     block_on!(async {
         // It expired the moment it was made, at the start of Unix time.
         let token = Token::mint(UNIX_EPOCH, Duration::from_secs(1)).unwrap();
-        let (address, identity, serving) = tls(&copies, token.clone()).await;
-        let refused = connect_tls(address, &identity.fingerprint, token.secret()).await;
+        let secret = token.secret().to_owned();
+        let (client, serving) = signing_in(&copies, token);
+        let (read, write) = tokio::io::split(client);
+        let remote = RemoteComputers::connect(read, write);
+        let refused = remote.authenticate(&secret).await;
         assert!(
             matches!(&refused, Err(ComputerError::Unreachable(m)) if m.contains("valid token")),
             "{:?}",
             refused.err()
         );
-        serving.abort();
+        drop(remote);
+        serving.await.unwrap().unwrap();
     });
 }

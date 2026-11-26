@@ -1,60 +1,57 @@
-//! A computer's token in glave's folder, where `glave computer serve --tls` keeps it with its
-//! key (`computer-tls`), under the real sandbox: a command that read it, or put its own in its
-//! place, could connect and open a terminal outside every sandbox (#1502). It does neither, nor
-//! read the key; the same commands outside the sandbox do, so the test cannot pass by being
-//! broken.
+//! A computer's token in a folder of glave's own, hidden as `glave computer serve` hides the
+//! folder of its token, under the real sandbox: a command that read it, or put its own in its
+//! place, could connect and open a terminal outside every sandbox (#1502). It does neither; the
+//! same commands outside the sandbox do, so the test cannot pass by being broken.
 
 use super::*;
 
-/// The folder in glave's own that `glave computer serve --tls` serves from.
-const TLS: &str = "computer-tls";
+/// The folder in glave's own that holds the token.
+const FOLDER: &str = "computer-token";
 
 /// `computers` as `glave computer serve` makes them, hiding the folder of its token too.
 pub(in crate::local::sandbox) fn serving(
     computers: LocalComputers,
     glave_home: &Path,
 ) -> LocalComputers {
-    computers.with_hidden([glave_home.join(TLS)])
+    computers.with_hidden([glave_home.join(FOLDER)])
 }
 
-/// What a command runs to take the token from `tls`, in glave's folder `home`: reads it and the
-/// key, then replaces the token by writing it, by moving it aside, by moving its folder aside
-/// for another, and by moving glave's folder aside.
-fn takes(tls: &Path, home: &Path) -> String {
+/// What a command runs to take the token from `folder`, in glave's folder `home`: reads it,
+/// then replaces it by writing it, by moving it aside, by moving its folder aside for another,
+/// and by moving glave's folder aside.
+fn takes(folder: &Path, home: &Path) -> String {
     format!(
-        "cat '{tls}/token' '{tls}/key.pem'; printf forged > '{tls}/token'; \
-         mv '{tls}/token' '{tls}/old'; printf forged > '{tls}/token'; \
-         mkdir -p aside && mv '{tls}' aside/tls; mkdir -p '{tls}' && printf forged > '{tls}/token'; \
-         mv '{home}' aside/home; mkdir -p '{tls}' && printf forged > '{tls}/token'; echo tried",
-        tls = tls.display(),
+        "cat '{folder}/token'; printf forged > '{folder}/token'; \
+         mv '{folder}/token' '{folder}/old'; printf forged > '{folder}/token'; \
+         mkdir -p aside && mv '{folder}' aside/folder; mkdir -p '{folder}' && printf forged > '{folder}/token'; \
+         mv '{home}' aside/home; mkdir -p '{folder}' && printf forged > '{folder}/token'; echo tried",
+        folder = folder.display(),
         home = home.display(),
     )
 }
 
-/// In `workspace`, under `sandbox`, a command tries to take the token and key kept in glave's
-/// folder as [`serving`] keeps them: it reads neither, and both stay as they were. Outside the
-/// sandbox the same reads see both, and the first way to replace the token works.
+/// In `workspace`, under `sandbox`, a command tries to take the token kept in glave's folder as
+/// [`serving`] keeps it: it does not read it, and it stays as it was. Outside the sandbox the
+/// same read sees it, and the first way to replace it works.
 pub(in crate::local::sandbox) async fn kept_from_a_command(
     computers: &LocalComputers,
     workspace: WorkspaceId,
     sandbox: &Sandbox,
 ) {
     let home = sandbox.glave_home.clone().unwrap();
-    let tls = home.join(TLS);
-    std::fs::create_dir_all(&tls).unwrap();
-    std::fs::write(tls.join("token"), "canary-token\n").unwrap();
-    std::fs::write(tls.join("key.pem"), "canary-key\n").unwrap();
-    let (ending, said) = run(computers, workspace, sandbox, &takes(&tls, &home)).await;
+    let folder = home.join(FOLDER);
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("token"), "canary-token\n").unwrap();
+    let (ending, said) = run(computers, workspace, sandbox, &takes(&folder, &home)).await;
     assert_eq!(ending, Ending::Exited { code: 0 }, "{said}");
     assert!(said.contains("tried"), "{said}");
     assert!(!said.contains("canary"), "{said}");
-    let kept = |name: &str| std::fs::read_to_string(tls.join(name)).unwrap_or_default();
+    let kept = |name: &str| std::fs::read_to_string(folder.join(name)).unwrap_or_default();
     assert_eq!(kept("token"), "canary-token\n", "{said}");
-    assert_eq!(kept("key.pem"), "canary-key\n", "{said}");
     // Outside, the reads and a write, leaving glave's folder in place.
     let outside = Command::new(format!(
-        "cat '{0}/token' '{0}/key.pem'; printf forged > '{0}/token'",
-        tls.display()
+        "cat '{0}/token'; printf forged > '{0}/token'",
+        folder.display()
     ));
     let output = Collect::default();
     let finished = computers
@@ -63,10 +60,7 @@ pub(in crate::local::sandbox) async fn kept_from_a_command(
         .unwrap();
     let said = output.0.lock().unwrap().clone();
     assert_eq!(finished.ending, Ending::Exited { code: 0 }, "{said}");
-    assert!(
-        said.contains("canary-token") && said.contains("canary-key"),
-        "{said}"
-    );
+    assert!(said.contains("canary-token"), "{said}");
     assert_eq!(kept("token"), "forged");
 }
 

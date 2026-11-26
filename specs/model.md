@@ -35,7 +35,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 ## Two roles: the server and the computer
 
-- **The server** holds history, projects, sign-ins and keys, reads the configuration files ("Configuration is files"), runs the harness and the gateway, and answers every client: the web app, the CLI and outside agents. **The computer** holds files and runs commands. They talk through the computer protocol (`computers.md`): in-process on a laptop, over TLS elsewhere.
+- **The server** holds history, projects, sign-ins and keys, reads the configuration files ("Configuration is files"), runs the harness and the gateway, and answers every client: the web app, the CLI and outside agents. **The computer** holds files and runs commands. They talk through the computer protocol (`computers.md`): in-process on a laptop, through a bridge to its socket elsewhere.
 - **A computer is made from an environment:** this machine as it is, or the image the server's `[computers]` names for a person's computer in the cloud. An environment belongs to no project or organization, and how much of the network a computer reaches is policy's and the person's, never the environment's (`computers.md`, "Environments").
 - **One server for a person on a laptop; one organization's server (replicated) in a company or on Glave Cloud.** No server is tied to the folder it started in, and nothing runs once per folder.
 - **History never lives only on a computer,** so a computer can sleep, be reset or be replaced without losing a thread.
