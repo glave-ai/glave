@@ -171,13 +171,6 @@ pub(super) const BOUNDED: &[(&str, &str, usize, &str)] = &[
         "the connections, aborted the line before",
     ),
     (
-        "crates/computer/src/serve.rs",
-        "connections.join_next().await;",
-        2,
-        "room for one more connection at the cap: one that signs in lasts while its harness \
-         is connected, and one that does not is let go at its handshake's limit",
-    ),
-    (
         "crates/computer/src/worker/kubernetes/people/grow.rs",
         "let _growing = person.growing.lock().await;",
         1,
