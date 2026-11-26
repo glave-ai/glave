@@ -6,13 +6,11 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use glave_event::{Body, CostKind, Principal};
-use glave_gateway::{Credits, Gateway, Routes, WebSearch};
-use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
-use glave_ports::{
-    EventLog as _, ModelProvider, Payer, ProviderError, Purpose, Scope, SearchAsk, Unpaid,
-};
+use glave_gateway::{Gateway, Routes, WebSearch};
+use glave_ports::testing::FaultyLog;
+use glave_ports::{EventLog as _, ModelProvider, ProviderError, Purpose, Scope, SearchAsk, Unpaid};
 
-use crate::support::{Fake, block_on, dollars, org, person, request};
+use crate::support::{Fake, balance, block_on, dollars, funded_on, org, paid, person, request};
 
 /// What one search costs in the tests: half a cent.
 const PRICE: i64 = 5_000_000;
@@ -24,16 +22,6 @@ fn ask() -> SearchAsk {
     }
 }
 
-/// A search request whose work is the test person's.
-fn paid() -> glave_ports::ModelRequest {
-    let mut asked = request(Purpose::WebSearch);
-    asked.payer = Some(Payer {
-        org: org(),
-        person: Some(person()),
-    });
-    asked
-}
-
 /// A gateway searching through `fake` at [`PRICE`] a search.
 fn searching(fake: &Arc<Fake>) -> Gateway {
     let routes = Routes::new(vec![Fake::new("chat").target("m")]).unwrap();
@@ -41,29 +29,6 @@ fn searching(fake: &Arc<Fake>) -> Gateway {
         handle: Arc::clone(fake) as Arc<dyn glave_gateway::Model>,
         price: dollars(PRICE),
     }))
-}
-
-/// Credits on `log`, with `nanos` added for the test's organization.
-fn funded(log: &FaultyLog, nanos: i64) -> Arc<Credits<FaultyLog>> {
-    let credits = Arc::new(Credits::new(
-        log.clone(),
-        Box::new(ManualClock::ticking(1_793_350_800_000)),
-        Box::new(CountingEntropy::starting_at(1)),
-        None,
-    ));
-    if nanos > 0 {
-        let by = Principal::person(person());
-        block_on!(credits.add(org(), dollars(nanos), "order-1", by)).unwrap();
-    }
-    credits
-}
-
-fn balance(credits: &Credits<FaultyLog>) -> i64 {
-    block_on!(credits.account(org()))
-        .unwrap()
-        .balance
-        .nanos
-        .get()
 }
 
 /// Each charge's kind and amount in `log`'s credits ledger, in order.
@@ -103,10 +68,10 @@ fn a_search_is_served_only_where_the_server_has_a_search_service() {
 #[test]
 fn a_search_is_held_at_its_price_charged_as_search_and_refused_when_nothing_is_left() {
     let log = FaultyLog::default();
-    let credits = funded(&log, 0);
+    let credits = funded_on(&log, 0);
     let service = Fake::new("search");
     let gateway = searching(&service).with_credits(Arc::clone(&credits));
-    let out = block_on!(gateway.search(&paid(), &ask())).unwrap_err();
+    let out = block_on!(gateway.search(&paid(request(Purpose::WebSearch)), &ask())).unwrap_err();
     assert!(
         matches!(out, ProviderError::Unpaid(Unpaid::Spent)),
         "out of credits: {out:?}"
@@ -116,7 +81,7 @@ fn a_search_is_held_at_its_price_charged_as_search_and_refused_when_nothing_is_l
 
     let by = Principal::person(person());
     block_on!(credits.add(org(), dollars(PRICE * 3), "order-2", by)).unwrap();
-    block_on!(gateway.search(&paid(), &ask())).unwrap();
+    block_on!(gateway.search(&paid(request(Purpose::WebSearch)), &ask())).unwrap();
     assert_eq!(balance(&credits), PRICE * 2);
     assert_eq!(charges(&log), [(CostKind::Search, PRICE)]);
 
@@ -128,13 +93,13 @@ fn a_search_is_held_at_its_price_charged_as_search_and_refused_when_nothing_is_l
 #[test]
 fn a_search_refused_is_charged_nothing_and_one_left_unanswered_its_price() {
     let log = FaultyLog::default();
-    let credits = funded(&log, PRICE * 4);
+    let credits = funded_on(&log, PRICE * 4);
     let limited = ProviderError::Http {
         status: 429,
         body: "rate limited".into(),
     };
     let gateway = searching(&Fake::failing("search", limited)).with_credits(Arc::clone(&credits));
-    assert!(block_on!(gateway.search(&paid(), &ask())).is_err());
+    assert!(block_on!(gateway.search(&paid(request(Purpose::WebSearch)), &ask())).is_err());
     assert_eq!(
         balance(&credits),
         PRICE * 4,
@@ -142,6 +107,6 @@ fn a_search_refused_is_charged_nothing_and_one_left_unanswered_its_price() {
     );
     let silent = ProviderError::Timeout { seconds: 30 };
     let gateway = searching(&Fake::failing("search", silent)).with_credits(Arc::clone(&credits));
-    assert!(block_on!(gateway.search(&paid(), &ask())).is_err());
+    assert!(block_on!(gateway.search(&paid(request(Purpose::WebSearch)), &ask())).is_err());
     assert_eq!(balance(&credits), PRICE * 3, "it may have been billed");
 }
