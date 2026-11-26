@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::id::CallId;
 use crate::payload::principal::Principal;
 
@@ -109,23 +109,16 @@ impl Payload for ConnectorSuggested {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_connected(
+/// A connector's events, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<ConnectorConnected>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_disconnected(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ConnectorDisconnected>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_suggested(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ConnectorSuggested>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (CONNECTED, 1) => parse(data).map(Body::ConnectorConnected),
+        (DISCONNECTED, 1) => parse(data).map(Body::ConnectorDisconnected),
+        (SUGGESTED, 1) => parse(data).map(Body::ConnectorSuggested),
+        _ => return None,
+    })
 }

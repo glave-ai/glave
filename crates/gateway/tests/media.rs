@@ -7,12 +7,12 @@ use std::sync::atomic::Ordering;
 
 use glave_event::{Body, CostKind, Principal};
 use glave_gateway::{Credits, Gateway, Routes};
-use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
-use glave_ports::{EventLog as _, MediaAsk, ModelProvider, Payer, ProviderError, Purpose, Scope};
+use glave_ports::testing::FaultyLog;
+use glave_ports::{EventLog as _, MediaAsk, ModelProvider, ProviderError, Purpose, Scope};
 
 use crate::support::{
-    Fake, answer, balance, block_on, cancelled_once_sent, dollars, funded, org, person, price,
-    request,
+    Fake, answer, balance, block_on, cancelled_once_sent, dollars, funded, funded_on, org, paid,
+    person, price, request,
 };
 
 #[test]
@@ -57,12 +57,7 @@ fn a_media_call_goes_only_to_its_own_route_and_comes_back_with_what_it_made() {
 #[test]
 fn a_media_call_is_held_at_what_it_allows_and_charged_as_media() {
     let log = FaultyLog::default();
-    let credits = Arc::new(Credits::new(
-        log.clone(),
-        Box::new(ManualClock::ticking(1_793_350_800_000)),
-        Box::new(CountingEntropy::starting_at(1)),
-        None,
-    ));
+    let credits = funded_on(&log, 0);
     let images = Fake::new("images");
     let painter = images.target("painter").with_price(price(1_000_000));
     let routes = Routes::new(vec![Fake::new("chat").target("m")])
@@ -72,11 +67,7 @@ fn a_media_call_is_held_at_what_it_allows_and_charged_as_media() {
     let gateway = Gateway::new(routes).with_credits(Arc::clone(&credits));
     let by = Principal::person(person());
     block_on!(credits.add(org(), dollars(104), "order-1", by)).unwrap();
-    let mut asked = request(Purpose::ImageGenerate);
-    asked.payer = Some(Payer {
-        org: org(),
-        person: Some(person()),
-    });
+    let asked = paid(request(Purpose::ImageGenerate));
     let short = block_on!(gateway.make(&asked, &MediaAsk::default())).unwrap_err();
     assert!(
         matches!(short, ProviderError::Unpaid(_)),
@@ -114,15 +105,6 @@ fn painting(fake: &Arc<Fake>, credits: &Arc<Credits<FaultyLog>>) -> Gateway {
     Gateway::new(routes).with_credits(Arc::clone(credits))
 }
 
-fn paid() -> glave_ports::ModelRequest {
-    let mut asked = request(Purpose::ImageGenerate);
-    asked.payer = Some(Payer {
-        org: org(),
-        person: Some(person()),
-    });
-    asked
-}
-
 /// What the test request holds at a billionth of a dollar a token: what it reads and its 100
 /// tokens of images.
 const HELD: i64 = 5 + 100;
@@ -132,7 +114,10 @@ fn a_media_call_left_unanswered_is_charged_its_hold_and_one_refused_nothing() {
     let credits = funded(1_000);
     let silent = ProviderError::Timeout { seconds: 300 };
     let gateway = painting(&Fake::failing("images", silent), &credits);
-    assert!(block_on!(gateway.make(&paid(), &MediaAsk::default())).is_err());
+    assert!(
+        block_on!(gateway.make(&paid(request(Purpose::ImageGenerate)), &MediaAsk::default()))
+            .is_err()
+    );
     assert_eq!(
         balance(&credits),
         1_000 - HELD,
@@ -143,7 +128,10 @@ fn a_media_call_left_unanswered_is_charged_its_hold_and_one_refused_nothing() {
         body: "Generation failed".into(),
     };
     let gateway = painting(&Fake::failing("images", refused), &credits);
-    assert!(block_on!(gateway.make(&paid(), &MediaAsk::default())).is_err());
+    assert!(
+        block_on!(gateway.make(&paid(request(Purpose::ImageGenerate)), &MediaAsk::default()))
+            .is_err()
+    );
     assert_eq!(
         balance(&credits),
         1_000 - HELD,
@@ -159,7 +147,11 @@ fn a_media_answer_that_says_nothing_of_what_it_used_is_charged_its_hold() {
         .lock()
         .unwrap()
         .push_back(Ok(answer("images", "painter", 0, 0)));
-    block_on!(painting(&fake, &credits).make(&paid(), &MediaAsk::default())).unwrap();
+    block_on!(
+        painting(&fake, &credits)
+            .make(&paid(request(Purpose::ImageGenerate)), &MediaAsk::default())
+    )
+    .unwrap();
     assert_eq!(balance(&credits), 1_000 - HELD, "never nothing");
 }
 
@@ -184,7 +176,7 @@ fn a_media_call_that_never_reached_its_provider_is_charged_nothing_and_its_fallb
         .with_route(Purpose::ImageGenerate, painters)
         .unwrap();
     let gateway = Gateway::new(routes).with_credits(Arc::clone(&credits));
-    block_on!(gateway.make(&paid(), &MediaAsk::default())).unwrap();
+    block_on!(gateway.make(&paid(request(Purpose::ImageGenerate)), &MediaAsk::default())).unwrap();
     assert_eq!(
         balance(&credits),
         1_000 - 110,
@@ -199,7 +191,11 @@ fn a_media_call_dropped_once_sent_is_charged_its_hold() {
     let gateway = Arc::new(painting(&fake, &credits));
     block_on!(async {
         let making = Arc::clone(&gateway);
-        let call = tokio::spawn(async move { making.make(&paid(), &MediaAsk::default()).await });
+        let call = tokio::spawn(async move {
+            making
+                .make(&paid(request(Purpose::ImageGenerate)), &MediaAsk::default())
+                .await
+        });
         cancelled_once_sent(&fake, call).await;
     });
     assert_eq!(balance(&credits), 1_000 - HELD);

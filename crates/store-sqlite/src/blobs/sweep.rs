@@ -4,14 +4,15 @@
 
 use std::collections::BTreeSet;
 
+use glave_keys::forget_sealed;
 use glave_ports::{BlobError, OrgId, ProjectId, Scope, Swept, UNREFERENCED_FOR_MS};
 use rusqlite::params;
 use uuid::Uuid;
 
-use super::{SqliteBlobs, storage};
+use super::{SqliteRecords, storage};
 use crate::store::run;
 
-impl SqliteBlobs {
+impl SqliteRecords {
     pub(super) async fn sweep_now(&self, org: OrgId) -> Result<Swept, BlobError> {
         let before = self
             .clock
@@ -43,7 +44,7 @@ impl SqliteBlobs {
         let mut swept = Swept::default();
         for (project, object) in gone {
             if let Some(scope) = scope_of(org, &project) {
-                self.forget(scope, &object).await;
+                forget_sealed(self, scope, &object).await;
                 swept.blobs += 1;
             }
         }

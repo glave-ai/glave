@@ -3,7 +3,7 @@ import type { ServerInfo } from '@glave/client';
 import type { Answers } from './fake-records';
 
 /** The fake server's id, which `server/discover` answers and the sessions it makes name. */
-export const FAKE_SERVER = '01900000-0000-7000-8000-0000000005e7';
+const FAKE_SERVER = '01900000-0000-7000-8000-0000000005e7';
 
 /**
  * What the fake glave says it is (`server/discover`), at `version`: its own, unless a test

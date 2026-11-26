@@ -24,8 +24,9 @@ conformance = [
 # (`host::Lookup`): the one resolver web_fetch, remote tool servers and pushes share.
 lookup = ["dep:reqwest", "dep:tokio", "tokio/net"]
 # What every model provider's HTTP client shares (`auth::http`): the header that proves who is
-# calling, what a failed request means, and an answer it cannot read.
-http = ["dep:reqwest"]
+# calling, what a failed request means, and an answer it cannot read; a cloud's token exchanged
+# and read from its file.
+http = ["dep:reqwest", "dep:tokio", "tokio/fs"]
 
 [dependencies]
 # The operating system's randomness, for the random part of new ids.

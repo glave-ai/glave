@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::envelope::At;
 use crate::id::CredentialId;
 use crate::payload::principal::Principal;
@@ -100,16 +100,15 @@ impl Payload for CredentialRemoved {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_connected(
+/// A credential's events, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<CredentialConnected>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_removed(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<CredentialRemoved>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (CONNECTED, 1) => parse(data).map(Body::CredentialConnected),
+        (REMOVED, 1) => parse(data).map(Body::CredentialRemoved),
+        _ => return None,
+    })
 }

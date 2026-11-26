@@ -4,7 +4,9 @@ import { type Page } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
 import {
+  type Box,
   SIGNED_IN,
+  boxOf,
   byTestId,
   expect,
   expectAccessible,
@@ -123,25 +125,6 @@ test('a browser set to en-XA reads every word of the app in it, plurals too', as
   await expectAccessible(page);
   expect(problems()).toEqual([]);
 });
-
-/** A box on the screen, as Playwright measures it. */
-interface Box {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
-
-/** The box of the element with `testId`, which shows; fails when it has none. */
-async function boxOf(page: Page, testId: string): Promise<Box> {
-  const element = byTestId(page, testId);
-  await expect(element).toBeVisible();
-  const box = await element.boundingBox();
-  if (box === null) {
-    throw new Error(`${testId} has no box`);
-  }
-  return box;
-}
 
 /** Whether `one` lies wholly left of `other`, give or take a pixel of rounding. */
 function leftOf(one: Box, other: Box): boolean {

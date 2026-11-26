@@ -148,12 +148,3 @@ fn pruned(document: &mut Document) {
     let kept = reachable(document);
     document.objects.retain(|id, _| kept.contains(id));
 }
-
-/// `count` of a thing, its plural when it isn't one: `1 page`, `3 pages`.
-fn counted(count: usize, one: &str, many: &str) -> String {
-    if count == 1 {
-        format!("1 {one}")
-    } else {
-        format!("{count} {many}")
-    }
-}

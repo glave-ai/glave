@@ -16,4 +16,4 @@ mod title;
 
 pub use brave::{Brave, BraveError};
 pub use fetch::{FetchError, Fetcher, Limits, Page};
-pub use source::{WEB_FETCH, Web, WebSettings};
+pub use source::{Web, WebSettings};

@@ -327,60 +327,10 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
     }
     let header = raw.header();
     let version = raw.v.get();
-    let data = &raw.data;
-    let known = match raw.kind.as_str() {
-        thread::TYPE => thread::decode(version, data).map(|r| r.map(Body::ThreadStarted)),
-        thread::COMPACTED => {
-            thread::decode_compacted(version, data).map(|r| r.map(Body::ThreadCompacted))
-        }
-        fork::TYPE => fork::decode(version, data).map(|r| r.map(Body::ThreadForked)),
-        standing::ARCHIVED => {
-            standing::decode_archived(version, data).map(|r| r.map(Body::ThreadArchived))
-        }
-        standing::UNARCHIVED => {
-            standing::decode_unarchived(version, data).map(|r| r.map(Body::ThreadUnarchived))
-        }
-        standing::DELETED => {
-            standing::decode_deleted(version, data).map(|r| r.map(Body::ThreadDeleted))
-        }
-        standing::RENAMED => {
-            standing::decode_renamed(version, data).map(|r| r.map(Body::ThreadRenamed))
-        }
-        turn::STARTED => turn::decode_started(version, data).map(|r| r.map(Body::TurnStarted)),
-        message::TYPE => message::decode(version, data).map(|r| r.map(Body::MessageAdded)),
-        tool::REQUESTED => {
-            tool::decode_requested(version, data).map(|r| r.map(Body::ToolCallRequested))
-        }
-        tool::STARTED => tool::decode_started(version, data).map(|r| r.map(Body::ToolCallStarted)),
-        tool::COMPLETED => {
-            tool::decode_completed(version, data).map(|r| r.map(Body::ToolCallCompleted))
-        }
-        model::TYPE => model::decode(version, data).map(|r| r.map(Body::ModelResponded)),
-        turn::ENDED => turn::decode_ended(version, data).map(|r| r.map(Body::TurnEnded)),
-        approval::REQUESTED => {
-            approval::decode_requested(version, data).map(|r| r.map(Body::ApprovalRequested))
-        }
-        approval::DECIDED => {
-            approval::decode_decided(version, data).map(|r| r.map(Body::ApprovalDecided))
-        }
-        service::ASKED => service::decode_asked(version, data).map(|r| r.map(Body::ServiceAsked)),
-        service::ANSWERED => {
-            service::decode_answered(version, data).map(|r| r.map(Body::ServiceAnswered))
-        }
-        connector::SUGGESTED => {
-            connector::decode_suggested(version, data).map(|r| r.map(Body::ConnectorSuggested))
-        }
-        workspace::BOUND => workspace::decode(version, data).map(|r| r.map(Body::WorkspaceBound)),
-        workspace::REMOVED => {
-            workspace::decode_removed(version, data).map(|r| r.map(Body::WorkspaceRemoved))
-        }
-        hook::TYPE => hook::decode(version, data).map(|r| r.map(Body::HookRan)),
-        task::STARTED => task::decode_started(version, data).map(|r| r.map(Body::TaskStarted)),
-        task::ENDED => task::decode_ended(version, data).map(|r| r.map(Body::TaskEnded)),
-        other => {
-            decode_schedules(other, version, data).or_else(|| decode_others(other, version, data))
-        }
-    };
+    let kind = raw.kind.as_str();
+    let known = DECODERS
+        .iter()
+        .find_map(|decode| decode(kind, version, &raw.data));
     let body = match known {
         Some(Ok(body)) => body,
         Some(Err(source)) => {
@@ -532,142 +482,55 @@ impl Unknown {
     }
 }
 
-/// A connection's or a connector's event, of the type `kind`.
-fn decode_connection(
-    kind: &str,
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<Body>> {
-    match kind {
-        connection::CONNECTED => {
-            connection::decode_connected(version, data).map(|r| r.map(Body::ConnectionConnected))
-        }
-        connection::REMOVED => {
-            connection::decode_removed(version, data).map(|r| r.map(Body::ConnectionRemoved))
-        }
-        connector::CONNECTED => {
-            connector::decode_connected(version, data).map(|r| r.map(Body::ConnectorConnected))
-        }
-        _ => connector::decode_disconnected(version, data)
-            .map(|r| r.map(Body::ConnectorDisconnected)),
-    }
-}
-
-/// Decodes a schedule's events, and the schedules' index's, by their type; `None` for any other
-/// type.
-fn decode_schedules(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
-    match kind {
-        task::CREATED => task::decode_created(version, data).map(|r| r.map(Body::ScheduleCreated)),
-        task::DELETED => task::decode_deleted(version, data).map(|r| r.map(Body::ScheduleDeleted)),
-        task::SKIPPED => task::decode_skipped(version, data).map(|r| r.map(Body::ScheduleSkipped)),
-        task::PAUSED => task::decode_paused(version, data).map(|r| r.map(Body::SchedulePaused)),
-        task::PLACED => task::decode_placed(version, data).map(|r| r.map(Body::SchedulePlaced)),
-        task::UNPLACED => {
-            task::decode_unplaced(version, data).map(|r| r.map(Body::ScheduleUnplaced))
-        }
-        _ => None,
-    }
-}
-
-/// Decodes commands in the background, the choices made for a thread, its plan, and the memory, accounts
-/// and project ledgers' types;
-/// `None` for any type that is not one of them.
-fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
-    match kind {
-        command::STARTED => {
-            command::decode_started(version, data).map(|r| r.map(Body::CommandStarted))
-        }
-        command::ENDED => command::decode_ended(version, data).map(|r| r.map(Body::CommandEnded)),
-        chosen::TYPE => chosen::decode(version, data).map(|r| r.map(Body::ModelChosen)),
-        chosen::EFFORT => chosen::decode_effort(version, data).map(|r| r.map(Body::EffortChosen)),
-        chosen::PERMISSIONS => {
-            chosen::decode_permissions(version, data).map(|r| r.map(Body::PermissionsChosen))
-        }
-        plan::UPDATED => plan::decode_updated(version, data).map(|r| r.map(Body::PlanUpdated)),
-        plan::APPROVED => plan::decode_approved(version, data).map(|r| r.map(Body::PlanApproved)),
-        memory::SAVED => memory::decode_saved(version, data).map(|r| r.map(Body::MemorySaved)),
-        memory::EDITED => memory::decode_edited(version, data).map(|r| r.map(Body::MemoryEdited)),
-        memory::FORGOTTEN => {
-            memory::decode_forgotten(version, data).map(|r| r.map(Body::MemoryForgotten))
-        }
-        memory::RESTORED => {
-            memory::decode_restored(version, data).map(|r| r.map(Body::MemoryRestored))
-        }
-        memory::TIDIED => memory::decode_tidied(version, data).map(|r| r.map(Body::MemoryTidied)),
-        provider::CONNECTED => {
-            provider::decode_connected(version, data).map(|r| r.map(Body::ProviderConnected))
-        }
-        provider::REMOVED => {
-            provider::decode_removed(version, data).map(|r| r.map(Body::ProviderRemoved))
-        }
-        credential::CONNECTED => {
-            credential::decode_connected(version, data).map(|r| r.map(Body::CredentialConnected))
-        }
-        credential::REMOVED => {
-            credential::decode_removed(version, data).map(|r| r.map(Body::CredentialRemoved))
-        }
-        connection::CONNECTED
-        | connection::REMOVED
-        | connector::CONNECTED
-        | connector::DISCONNECTED => decode_connection(kind, version, data),
-        project::FOLDER_SET => {
-            project::decode_folder_set(version, data).map(|r| r.map(Body::ProjectFolderSet))
-        }
-        project::REMOVED => {
-            project::decode_removed(version, data).map(|r| r.map(Body::ProjectRemoved))
-        }
-        instructions::READ => {
-            instructions::decode_read(version, data).map(|r| r.map(Body::InstructionsRead))
-        }
-        trust::DECIDED => trust::decode_decided(version, data).map(|r| r.map(Body::TrustDecided)),
-        browser::SIGNED_IN => {
-            browser::decode_signed_in(version, data).map(|r| r.map(Body::BrowserSignedIn))
-        }
-        browser::USED => browser::decode_used(version, data).map(|r| r.map(Body::BrowserUsed)),
-        browser::SIGNED_OUT => {
-            browser::decode_signed_out(version, data).map(|r| r.map(Body::BrowserSignedOut))
-        }
-        catalog::REFRESHED => {
-            catalog::decode_refreshed(version, data).map(|r| r.map(Body::CatalogRefreshed))
-        }
-        certificate::REGISTERED => {
-            certificate::decode_registered(version, data).map(|r| r.map(Body::AcmeRegistered))
-        }
-        certificate::ISSUED => {
-            certificate::decode_issued(version, data).map(|r| r.map(Body::CertificateIssued))
-        }
-        passkey::ADDED => passkey::decode_added(version, data).map(|r| r.map(Body::PasskeyAdded)),
-        passkey::USED => passkey::decode_used(version, data).map(|r| r.map(Body::PasskeyUsed)),
-        passkey::REMOVED => {
-            passkey::decode_removed(version, data).map(|r| r.map(Body::PasskeyRemoved))
-        }
-        awake::SET => awake::decode_set(version, data).map(|r| r.map(Body::AwakeSet)),
-        search::SET => search::decode_set(version, data).map(|r| r.map(Body::SearchSet)),
-        language::SET => language::decode_set(version, data).map(|r| r.map(Body::LanguageSet)),
-        zone::SET => zone::decode_set(version, data).map(|r| r.map(Body::ZoneSet)),
-        grouping::SET => grouping::decode_set(version, data).map(|r| r.map(Body::GroupingSet)),
-        filters::SET => filters::decode_set(version, data).map(|r| r.map(Body::FiltersSet)),
-        remembering::SET => remembering::decode_set(version, data).map(|r| r.map(Body::MemorySet)),
-        _ => LEDGERS
-            .iter()
-            .find_map(|decode| decode(kind, version, data)),
-    }
-}
-
 /// Decodes one kind of event at one version; `None` for one it does not know.
 type Decoder = fn(&str, u32, &RawValue) -> Option<serde_json::Result<Body>>;
 
-/// The decoders of the ledgers whose events are not named one by one above.
-const LEDGERS: [Decoder; 9] = [
+/// Every payload module's decoder, one for each module. Decoding walks them in order, so those
+/// most of a thread's history is made of come first.
+const DECODERS: [Decoder; 43] = [
+    message::decode,
+    tool::decode,
+    model::decode,
+    turn::decode,
+    approval::decode,
+    made::decode,
+    command::decode,
+    thread::decode,
+    chosen::decode,
+    standing::decode,
+    fork::decode,
+    plan::decode,
+    hook::decode,
+    service::decode,
+    connector::decode,
+    instructions::decode,
+    workspace::decode,
+    task::decode,
+    memory::decode,
+    provider::decode,
+    credential::decode,
+    connection::decode,
+    secrets::decode,
+    project::decode,
+    trust::decode,
+    browser::decode,
+    catalog::decode,
+    certificate::decode,
+    passkey::decode,
+    awake::decode,
+    search::decode,
+    language::decode,
+    zone::decode,
+    grouping::decode,
+    filters::decode,
+    remembering::decode,
+    appearance::decode,
     people::decode,
     signup::decode,
     credits::decode,
-    appearance::decode,
-    secrets::decode,
     push::decode,
     library::decode,
     share::decode,
-    made::decode,
 ];
 
 /// Parses a payload's bytes as one specific version of one type.
@@ -772,6 +635,20 @@ mod tests {
                 matches!(decode(raw), Err(DecodeError::Payload { .. })),
                 "{data}"
             );
+        }
+    }
+
+    /// Decoding takes the first decoder that claims an event, so two that claimed one would
+    /// decide it by their order in the table: each known version has exactly one.
+    #[test]
+    fn exactly_one_decoder_claims_each_known_version() {
+        let data = RawValue::from_string("{}".to_owned()).unwrap();
+        for (kind, version) in KNOWN_VERSIONS {
+            let claims = DECODERS
+                .iter()
+                .filter(|decode| decode(kind, *version, &data).is_some())
+                .count();
+            assert_eq!(claims, 1, "{kind} v{version}");
         }
     }
 

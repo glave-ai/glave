@@ -3,7 +3,7 @@
 
 use super::Part;
 use crate::error::OfficeError;
-use crate::package::{CONTENT_TYPES, content_type, resolved};
+use crate::package::{CONTENT_TYPES, content_type, relationships};
 use crate::xml::{self, Element};
 
 /// That `parts` tie together: each has a content type, and each part `[Content_Types].xml` or
@@ -41,17 +41,12 @@ pub(super) fn tied(parts: &[Part]) -> Result<(), OfficeError> {
         let Some(folder) = relating(&part.name) else {
             continue;
         };
-        let list = parsed(parts, &part.name)?;
-        for relationship in list
-            .elements()
-            .filter(|element| element.name == "Relationship")
-        {
-            if relationship.attribute("TargetMode") == Some("External") {
+        for relationship in relationships(&parsed(parts, &part.name)?, folder) {
+            let Some(target) = relationship.target else {
                 continue;
-            }
-            let target = resolved(folder, relationship.attribute("Target").unwrap_or_default());
+            };
             if missing(&target) {
-                let id = relationship.attribute("Id").unwrap_or_default();
+                let id = relationship.id;
                 return Err(untied(&format!(
                     "{} points {id} to {target}, which is not in the folder: take out the \
                      relationship and what uses {id}, or put the part back",

@@ -114,23 +114,10 @@ impl<'a> Package<'a> {
         } else {
             format!("{folder}/_rels/{file}.rels")
         };
-        let Some(list) = self.xml(&rels)? else {
-            return Ok(Vec::new());
-        };
-        Ok(list
-            .elements()
-            .filter(|element| element.name == "Relationship")
-            .map(|relationship| {
-                let kind = relationship.attribute("Type").unwrap_or_default();
-                let target = relationship.attribute("Target").unwrap_or_default();
-                let external = relationship.attribute("TargetMode") == Some("External");
-                Relationship {
-                    id: relationship.attribute("Id").unwrap_or_default().to_owned(),
-                    kind: kind.rsplit('/').next().unwrap_or_default().to_owned(),
-                    target: (!external).then(|| resolved(folder, target)),
-                }
-            })
-            .collect())
+        Ok(self
+            .xml(&rels)?
+            .map(|list| relationships(&list, folder))
+            .unwrap_or_default())
     }
 
     /// The part the first of `related` of `kind` points to, read as XML.
@@ -212,9 +199,27 @@ pub(crate) fn content_type<'a>(types: &'a Element, name: &str) -> Option<&'a str
     given("Override", "PartName", Some(&part)).or_else(|| given("Default", "Extension", extension))
 }
 
+/// The relationships in `list`, a relationships part, in the order written: their targets
+/// named from the package's root, given the `folder` they are named from.
+pub(crate) fn relationships(list: &Element, folder: &str) -> Vec<Relationship> {
+    list.elements()
+        .filter(|element| element.name == "Relationship")
+        .map(|relationship| {
+            let kind = relationship.attribute("Type").unwrap_or_default();
+            let target = relationship.attribute("Target").unwrap_or_default();
+            let external = relationship.attribute("TargetMode") == Some("External");
+            Relationship {
+                id: relationship.attribute("Id").unwrap_or_default().to_owned(),
+                kind: kind.rsplit('/').next().unwrap_or_default().to_owned(),
+                target: (!external).then(|| resolved(folder, target)),
+            }
+        })
+        .collect()
+}
+
 /// A relationship's target as a part's name from the package's root: `slides/slide1.xml` from
 /// `ppt` is `ppt/slides/slide1.xml`, and `/word/a.xml` or `../word/a.xml` are `word/a.xml`.
-pub(crate) fn resolved(folder: &str, target: &str) -> String {
+fn resolved(folder: &str, target: &str) -> String {
     let mut parts: Vec<&str> = if target.starts_with('/') {
         Vec::new()
     } else {

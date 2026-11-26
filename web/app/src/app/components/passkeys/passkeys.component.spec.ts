@@ -6,6 +6,7 @@ import type { Authenticator } from '../../lib/passkeys';
 import { AUTHENTICATOR, passkeyRefused } from '../../services/passkeys.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { MADE_PASSKEY, PASSKEY_OPTIONS } from '../../testing/fixtures';
+import { settle } from '../../testing/links';
 import { PasskeysComponent } from './passkeys.component';
 
 const PHONE: PasskeySummary = {
@@ -20,14 +21,6 @@ const LAPTOP: PasskeySummary = { id: 'p2', name: 'Laptop', added: '2026-10-22T09
 const OPTIONS = PASSKEY_OPTIONS;
 
 const MADE = MADE_PASSKEY;
-
-/** Lets the component's promises and the page settle. */
-async function settle(fixture: { whenStable(): Promise<unknown> }): Promise<void> {
-  for (let turn = 0; turn < 5; turn += 1) {
-    await new Promise((resolve) => setTimeout(resolve));
-  }
-  await fixture.whenStable();
-}
 
 function click(root: ParentNode, testId: string): void {
   root.querySelector<HTMLElement>(`[data-testid="${testId}"]`)?.click();

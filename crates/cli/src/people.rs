@@ -95,9 +95,7 @@ mod tests {
 
     #[test]
     fn an_id_a_provider_reports_leads_back_to_its_person_and_organization() {
-        let root = std::sync::Arc::new(glave_keys::InMemoryRoot::new().unwrap());
-        let keys = glave_keys::KeySettings::new(root);
-        let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
+        let store = Data::in_memory().unwrap();
         glave_ports::block_on!(async {
             let now = SystemClock.now();
             let joined = PrincipalId::new(now, [2; 10]).unwrap();

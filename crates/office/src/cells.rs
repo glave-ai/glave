@@ -107,6 +107,11 @@ pub(crate) fn listed(named: &[String], count: usize) -> String {
     }
 }
 
+/// `count` of a thing, its plural when it isn't one: `1 page`, `3 pages`.
+pub(crate) fn counted(count: usize, one: &str, many: &str) -> String {
+    format!("{count} {}", if count == 1 { one } else { many })
+}
+
 /// A cell's name from its row and column: `A1` for (0, 0).
 pub(crate) fn cell_name(row: u32, column: u32) -> String {
     format!("{}{}", column_name(column), u64::from(row) + 1)

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 
 pub(crate) const SIGNED_IN: &str = "browser.signed_in";
 pub(crate) const USED: &str = "browser.used";
@@ -55,23 +55,16 @@ impl Payload for BrowserSignedOut {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_signed_in(
+/// A browser's sign-in events, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<BrowserSignedIn>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_used(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<BrowserUsed>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_signed_out(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<BrowserSignedOut>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (SIGNED_IN, 1) => parse(data).map(Body::BrowserSignedIn),
+        (USED, 1) => parse(data).map(Body::BrowserUsed),
+        (SIGNED_OUT, 1) => parse(data).map(Body::BrowserSignedOut),
+        _ => return None,
+    })
 }

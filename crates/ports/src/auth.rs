@@ -18,8 +18,9 @@ pub use cache::{Fresh, Refreshing};
 pub use glave_event::Secret;
 #[cfg(feature = "http")]
 pub use http::{
-    BodyError, CONNECT_TIMEOUT, IDLE_TIMEOUT, credential_header, not_encoded, not_json,
-    provider_client, read_body, request_failed, send_signed,
+    BodyError, CONNECT_TIMEOUT, IDLE_TIMEOUT, TokenResponse, credential_header, credentials_client,
+    exchange_token, not_encoded, not_json, parse_answer, provider_client, read_body,
+    read_token_file, request_failed, send_for_body, send_signed,
 };
 
 /// The header a fixed key goes in.

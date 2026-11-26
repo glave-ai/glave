@@ -11,7 +11,7 @@ use rusqlite::{Batch, Connection, params_from_iter};
 
 use crate::command::usage;
 use crate::error::OfficeError;
-use crate::read::{general, quoted as field};
+use crate::read::{csv_line, general};
 use load::Source;
 use table::{Table, quoted};
 
@@ -252,13 +252,9 @@ fn shown(rows: &Rows) -> String {
 
 /// The answer as CSV, its columns' names first.
 fn as_csv(rows: &Rows) -> String {
-    let line = |fields: &[String]| {
-        let fields: Vec<String> = fields.iter().map(|value| field(value)).collect();
-        fields.join(",") + "\n"
-    };
-    let mut out = line(&rows.columns);
+    let mut out = csv_line(&rows.columns);
     for row in &rows.rows {
-        out.push_str(&line(&row.iter().map(text).collect::<Vec<_>>()));
+        out.push_str(&csv_line(row.iter().map(text)));
     }
     out
 }
