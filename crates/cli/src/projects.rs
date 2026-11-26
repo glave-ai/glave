@@ -13,11 +13,6 @@ use glave_ports::{
 use crate::data::Data;
 use crate::system::new_uuid_v7;
 
-/// The store's one organization.
-async fn org(store: &Data) -> anyhow::Result<OrgId> {
-    store.org().await
-}
-
 /// A new project record, owned by `owner`, made now.
 fn new_project(kind: ProjectKind, name: String, owner: Principal) -> anyhow::Result<Project> {
     let now = At::from(SystemClock.now());
@@ -52,7 +47,7 @@ pub(crate) async fn here(
     folder: &Path,
     person: PrincipalId,
 ) -> anyhow::Result<Scope> {
-    let org = org(store).await?;
+    let org = store.org().await?;
     let owner = Principal::person(person);
     let (canonical, keys) = keys(folder).await;
     let name = canonical.file_name().map_or_else(
@@ -80,7 +75,7 @@ async fn keys(folder: &Path) -> (PathBuf, Vec<FolderKey>) {
 
 /// The scope of `person`'s personal project, made the first time.
 pub(crate) async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope> {
-    personal_in(store, org(store).await?, person).await
+    personal_in(store, store.org().await?, person).await
 }
 
 /// The most of a person's projects looked through for their personal project, which is made

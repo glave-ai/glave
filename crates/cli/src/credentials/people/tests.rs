@@ -6,10 +6,9 @@ use std::sync::Arc;
 use glave_event::{CredentialConnected, Forge, Principal, PrincipalId, Secret};
 use glave_ports::computer::CredentialAsk;
 use glave_ports::testing::fake_secret;
-use glave_ports::{Clock as _, OrgId, SystemClock};
+use glave_ports::{Clock as _, Entropy as _, OrgId, OsEntropy, SystemClock};
 
 use super::*;
-use crate::accounts::random;
 
 fn block_on<T>(future: impl Future<Output = T>) -> T {
     tokio::runtime::Builder::new_current_thread()
@@ -20,7 +19,7 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
 }
 
 fn someone() -> PrincipalId {
-    PrincipalId::new(SystemClock.now(), random().unwrap()).unwrap()
+    PrincipalId::new(SystemClock.now(), OsEntropy.bytes().unwrap()).unwrap()
 }
 
 /// `person`'s sign-in to GitHub, with `token`.

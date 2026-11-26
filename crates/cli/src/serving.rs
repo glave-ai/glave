@@ -35,7 +35,7 @@ use crate::args::Args;
 use crate::client::Glave;
 use crate::data::Data;
 use crate::said::Said;
-use crate::system::random_uuid;
+use crate::system::{random, random_uuid};
 
 mod https;
 
@@ -72,7 +72,7 @@ pub(crate) async fn open(args: &Args, listening: Listening, reach: &Reach) -> an
     let Listening { listener, beside } = listening;
     let bound = listener.local_addr()?;
     within_reach(bound, reach.behind())?;
-    let token = LocalToken::new(random()?);
+    let token = LocalToken::new(random::<LOCAL_BYTES>()?);
     let signin = if args.issuers.is_empty() {
         SignIn::local(token.clone(), Box::new(SystemClock))
     } else {
@@ -390,14 +390,6 @@ async fn first_setup(server: &Glave) -> anyhow::Result<Option<String>> {
         return Ok(None);
     };
     Ok(Some(format!("{origin}/#setup={}", code.expose())))
-}
-
-/// Random bytes for the local token, from the operating system.
-fn random() -> anyhow::Result<[u8; LOCAL_BYTES]> {
-    let mut bytes = [0u8; LOCAL_BYTES];
-    getrandom::fill(&mut bytes)
-        .map_err(|e| anyhow::anyhow!("could not get random bytes for the local token: {e}"))?;
-    Ok(bytes)
 }
 
 /// Writes `contents` to `path`, readable and writable only by you, replacing any earlier one
