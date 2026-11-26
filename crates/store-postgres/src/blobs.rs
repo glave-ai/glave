@@ -9,30 +9,26 @@ use std::future::Future;
 use std::sync::Arc;
 
 use deadpool_postgres::Pool;
-use glave_event::{BlobRef, Sha256, ThreadId};
-use glave_keys::{KeyError, Opened, seal_into};
-use glave_ports::{Blob, BlobError, BlobStore, Chunks, Clock, Objects, OrgId, Scope, Swept};
+use glave_event::ThreadId;
+use glave_keys::{BlobRecord, BlobRecords, SealedBlobs};
+use glave_ports::{BlobError, Clock, Objects, OrgId, Scope, Swept};
 
+use crate::keys::PostgresKeys;
 use crate::store::{PostgresKeyring, StoreError, connection, database};
 
 /// The blob store in the database and the deployment's objects.
+pub type PostgresBlobs = SealedBlobs<PostgresRecords>;
+
+/// The blob store's records in the database, and the keys and objects beside them.
 #[derive(Clone)]
-pub struct PostgresBlobs {
+pub struct PostgresRecords {
     pool: Pool,
     keys: Arc<PostgresKeyring>,
     objects: Arc<dyn Objects>,
     clock: Arc<dyn Clock>,
 }
 
-/// A blob's record, as the `blobs` table keeps it.
-struct Record {
-    media_type: String,
-    size: u64,
-    key_id: String,
-    object: String,
-}
-
-impl PostgresBlobs {
+impl PostgresRecords {
     pub(crate) fn new(
         pool: Pool,
         keys: Arc<PostgresKeyring>,
@@ -46,20 +42,28 @@ impl PostgresBlobs {
             clock,
         }
     }
+}
 
-    /// Records `record` under `name`, `thread` referring to it when given, unless content of
-    /// the same name is kept already: then that is kept and `thread` refers to it. An upload
-    /// (no thread) is kept a day from now, as one no thread referred to since, even when one
-    /// did before. The record kept. Its row is locked until the
-    /// reference is in, so a sweep running at once either sees the reference or deletes the
-    /// record first.
+impl BlobRecords for PostgresRecords {
+    type Storage = PostgresKeys;
+
+    fn keys(&self) -> &PostgresKeyring {
+        &self.keys
+    }
+
+    fn objects(&self) -> &dyn Objects {
+        self.objects.as_ref()
+    }
+
+    /// The record's row is locked until the reference is in, so a sweep running at once
+    /// either sees the reference or deletes the record first.
     async fn record(
         &self,
         scope: Scope,
-        name: &str,
+        name: String,
         thread: Option<ThreadId>,
-        record: Record,
-    ) -> Result<Record, BlobError> {
+        record: BlobRecord,
+    ) -> Result<BlobRecord, BlobError> {
         let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
         let now = self.clock.now().as_millisecond();
         let mut client = connection(&self.pool, scope.org())
@@ -95,7 +99,7 @@ impl PostgresBlobs {
             .await
             .map_err(database(BlobError::Storage))?;
         let size: i64 = row.try_get(2).map_err(database(BlobError::Storage))?;
-        let kept = Record {
+        let kept = BlobRecord {
             object: row.try_get(0).map_err(database(BlobError::Storage))?,
             media_type: row.try_get(1).map_err(database(BlobError::Storage))?,
             size: u64::try_from(size).unwrap_or_default(),
@@ -118,76 +122,7 @@ impl PostgresBlobs {
         Ok(kept)
     }
 
-    /// Deletes an object no record names: one a refused or failed write left, a second copy, or
-    /// one whose record went.
-    async fn forget(&self, scope: Scope, object: &str) {
-        if let Err(error) = self.objects.delete(scope, object).await {
-            tracing::warn!(%error, "a blob's bytes could not be removed");
-        }
-    }
-
-    async fn put_now(
-        &self,
-        scope: Scope,
-        thread: Option<ThreadId>,
-        media_type: String,
-        limit: u64,
-        mut bytes: Box<dyn Chunks>,
-    ) -> Result<BlobRef, BlobError> {
-        let sealer = self
-            .keys
-            .blob_sealer(&scope)
-            .await
-            .map_err(|e| sealing(&e))?;
-        let (object, key_id) = (sealer.object().to_owned(), sealer.key_id().to_owned());
-        let mut writer = self.objects.create(scope, &object).await?;
-        let finished = match seal_into(sealer, limit, bytes.as_mut(), writer.as_mut()).await {
-            Ok(finished) => finished,
-            Err(error) => {
-                if let Err(abandoned) = writer.abort().await {
-                    tracing::warn!(error = %abandoned, "an unfinished blob could not be abandoned");
-                }
-                return Err(error);
-            }
-        };
-        writer.finish().await?;
-        let name = match self.keys.blob_name(&scope, &finished.sha256).await {
-            Ok(Some(name)) => name,
-            named => {
-                self.forget(scope, &object).await;
-                return Err(BlobError::Storage(format!(
-                    "the project's key is gone, so a blob cannot be named: {named:?}"
-                )));
-            }
-        };
-        let record = Record {
-            media_type,
-            size: finished.size,
-            key_id,
-            object: object.clone(),
-        };
-        let kept = self.record(scope, &name, thread, record).await;
-        if kept.as_ref().map_or(true, |kept| kept.object != object) {
-            self.forget(scope, &object).await;
-        }
-        let kept = kept?;
-        Ok(BlobRef {
-            sha256: finished.sha256,
-            bytes: kept.size,
-            media_type: kept.media_type,
-        })
-    }
-
-    async fn get_now(&self, scope: Scope, sha256: Sha256) -> Result<Option<Blob>, BlobError> {
-        // A project with no key yet (or an erased one) has nothing that can be found.
-        let name = self
-            .keys
-            .blob_name(&scope, &sha256)
-            .await
-            .map_err(|e| sealing(&e))?;
-        let Some(name) = name else {
-            return Ok(None);
-        };
+    async fn find(&self, scope: Scope, name: String) -> Result<Option<BlobRecord>, BlobError> {
         let client = connection(&self.pool, scope.org())
             .await
             .map_err(|e| storage(&e))?;
@@ -205,48 +140,16 @@ impl PostgresBlobs {
             return Ok(None);
         };
         let size: i64 = row.try_get(1).map_err(database(BlobError::Storage))?;
-        let record = Record {
+        Ok(Some(BlobRecord {
             media_type: row.try_get(0).map_err(database(BlobError::Storage))?,
             size: u64::try_from(size).unwrap_or_default(),
             key_id: row.try_get(2).map_err(database(BlobError::Storage))?,
             object: row.try_get(3).map_err(database(BlobError::Storage))?,
-        };
-        let opener = self
-            .keys
-            .blob_opener(&scope, &record.key_id, &record.object, &sha256)
-            .await
-            .map_err(|e| sealing(&e))?;
-        let sealed = self
-            .objects
-            .read(scope, &record.object)
-            .await?
-            .ok_or_else(|| BlobError::Storage("a blob's bytes are missing".into()))?;
-        Ok(Some(Blob {
-            reference: BlobRef {
-                sha256,
-                bytes: record.size,
-                media_type: record.media_type,
-            },
-            bytes: Box::new(Opened::new(sealed, opener)),
         }))
     }
-
     /// The record's row is locked by the update, so a sweep that locked it first has deleted
     /// it by the time this reads it, and one that comes after sees the reference.
-    async fn refer_now(
-        &self,
-        scope: Scope,
-        sha256: Sha256,
-        thread: ThreadId,
-    ) -> Result<bool, BlobError> {
-        let name = self
-            .keys
-            .blob_name(&scope, &sha256)
-            .await
-            .map_err(|e| sealing(&e))?;
-        let Some(name) = name else {
-            return Ok(false);
-        };
+    async fn refer(&self, scope: Scope, name: String, thread: ThreadId) -> Result<bool, BlobError> {
         let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
         let mut client = connection(&self.pool, scope.org())
             .await
@@ -279,7 +182,7 @@ impl PostgresBlobs {
         Ok(found == 1)
     }
 
-    async fn release_now(&self, scope: Scope, thread: ThreadId) -> Result<(), BlobError> {
+    async fn release(&self, scope: Scope, thread: ThreadId) -> Result<(), BlobError> {
         let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
         let client = connection(&self.pool, scope.org())
             .await
@@ -293,44 +196,6 @@ impl PostgresBlobs {
             .map(drop)
             .map_err(database(BlobError::Storage))
     }
-}
-
-impl BlobStore for PostgresBlobs {
-    fn put(
-        &self,
-        scope: &Scope,
-        thread: Option<ThreadId>,
-        media_type: &str,
-        limit: u64,
-        bytes: Box<dyn Chunks>,
-    ) -> impl Future<Output = Result<BlobRef, BlobError>> + Send {
-        self.put_now(*scope, thread, media_type.to_owned(), limit, bytes)
-    }
-
-    fn get(
-        &self,
-        scope: &Scope,
-        sha256: &Sha256,
-    ) -> impl Future<Output = Result<Option<Blob>, BlobError>> + Send {
-        self.get_now(*scope, sha256.clone())
-    }
-
-    fn refer(
-        &self,
-        scope: &Scope,
-        sha256: &Sha256,
-        thread: ThreadId,
-    ) -> impl Future<Output = Result<bool, BlobError>> + Send {
-        self.refer_now(*scope, sha256.clone(), thread)
-    }
-
-    fn release(
-        &self,
-        scope: &Scope,
-        thread: ThreadId,
-    ) -> impl Future<Output = Result<(), BlobError>> + Send {
-        self.release_now(*scope, thread)
-    }
 
     fn sweep(&self, org: OrgId) -> impl Future<Output = Result<Swept, BlobError>> + Send {
         self.sweep_now(org)
@@ -339,8 +204,4 @@ impl BlobStore for PostgresBlobs {
 
 fn storage(error: &StoreError) -> BlobError {
     BlobError::Storage(error.to_string())
-}
-
-fn sealing(error: &KeyError) -> BlobError {
-    BlobError::Storage(format!("a blob could not be sealed or opened: {error}"))
 }
