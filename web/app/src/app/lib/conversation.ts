@@ -1,4 +1,4 @@
-import type { RawEvent, Update } from '@glave/client';
+import { isRecord, type JsonObject, type RawEvent, type Update } from '@glave/client';
 import type {
   GlzDecision,
   GlzQuestion,
@@ -172,12 +172,6 @@ export interface Draft {
 
 export const NO_DRAFT: Draft = { text: '', reasoning: '', thought: NO_THOUGHT };
 
-type Data = Readonly<Record<string, unknown>>;
-
-function isRecord(value: unknown): value is Data {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
@@ -275,7 +269,7 @@ export function questionsOf(argumentsValue: unknown): readonly GlzQuestion[] {
 }
 
 /** The kind of a field as `service.asked` records it, as the card draws it. */
-function fieldKindOf(kind: Data): GlzServiceField['kind'] {
+function fieldKindOf(kind: JsonObject): GlzServiceField['kind'] {
   const choices = Array.isArray(kind['options']) ? (kind['options'] as readonly unknown[]) : [];
   const given = kind['default'];
   switch (kind['type']) {
@@ -345,7 +339,7 @@ function isDecision(value: unknown): value is GlzDecision {
  * from (`repeating`), whatever its question says. Its lines, typed (`lines`), else its `detail`,
  * a line each; `null` for any other approval.
  */
-function repeatOf(data: Data): RepeatAsk | null {
+function repeatOf(data: JsonObject): RepeatAsk | null {
   if (!isRecord(data['repeating'])) {
     return null;
   }
@@ -359,14 +353,14 @@ function repeatOf(data: Data): RepeatAsk | null {
 }
 
 /** The chat a `schedule` call's result says it made (`structured`, `chat`), if it made one. */
-function chatOf(data: Data): string | null {
+function chatOf(data: JsonObject): string | null {
   const structured = data['structured'];
   const chat = data['is_error'] === true || !isRecord(structured) ? '' : text(structured['chat']);
   return chat === '' ? null : chat;
 }
 
 /** Whether glave wrote a message the person's side of the conversation holds, such as a note. */
-export function byGlave(data: Data): boolean {
+export function byGlave(data: JsonObject): boolean {
   const author = data['author'];
   return isRecord(author) && author['kind'] === 'glave';
 }

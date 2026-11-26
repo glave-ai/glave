@@ -4,6 +4,8 @@
  * way. These turn one into what `navigator.credentials` takes, and its answer back.
  */
 
+import { isRecord, type JsonObject } from '@glave/client';
+
 /** `bytes` in base64url, without padding. */
 export function toBase64url(bytes: ArrayBuffer | ArrayBufferView): string {
   const view =
@@ -31,15 +33,9 @@ export function fromBase64url(text: string): Uint8Array<ArrayBuffer> | null {
   }
 }
 
-type Json = Readonly<Record<string, unknown>>;
-
-function isJson(value: unknown): value is Json {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /** The `publicKey` options of glave's JSON `options`, `null` when they are not that. */
-function publicKeyOf(options: unknown): Json | null {
-  return isJson(options) && isJson(options['publicKey']) ? options['publicKey'] : null;
+function publicKeyOf(options: unknown): JsonObject | null {
+  return isRecord(options) && isRecord(options['publicKey']) ? options['publicKey'] : null;
 }
 
 /** Each credential `{type, id}` of `listed`, its id as bytes. */
@@ -48,7 +44,8 @@ function credentialsOf(listed: unknown): PublicKeyCredentialDescriptor[] {
     return [];
   }
   return listed.flatMap((entry: unknown) => {
-    const id = isJson(entry) && typeof entry['id'] === 'string' ? fromBase64url(entry['id']) : null;
+    const id =
+      isRecord(entry) && typeof entry['id'] === 'string' ? fromBase64url(entry['id']) : null;
     return id === null ? [] : [{ type: 'public-key' as const, id }];
   });
 }
@@ -56,7 +53,7 @@ function credentialsOf(listed: unknown): PublicKeyCredentialDescriptor[] {
 /** What `navigator.credentials.create` takes for glave's options to make a passkey. */
 export function creationOptions(options: unknown): CredentialCreationOptions | null {
   const publicKey = publicKeyOf(options);
-  const user = publicKey !== null && isJson(publicKey['user']) ? publicKey['user'] : null;
+  const user = publicKey !== null && isRecord(publicKey['user']) ? publicKey['user'] : null;
   const challenge =
     typeof publicKey?.['challenge'] === 'string' ? fromBase64url(publicKey['challenge']) : null;
   const userId = typeof user?.['id'] === 'string' ? fromBase64url(user['id']) : null;
@@ -103,7 +100,7 @@ export interface Authenticator {
 export async function made(
   authenticator: Authenticator | null,
   options: unknown,
-): Promise<Json | null> {
+): Promise<JsonObject | null> {
   const asked = creationOptions(options);
   const answer = asked === null ? null : await answered(() => authenticator?.create(asked));
   return isPublicKeyCredential(answer) ? createdJson(answer) : null;
@@ -116,7 +113,7 @@ export async function made(
 export async function used(
   authenticator: Authenticator | null,
   options: unknown,
-): Promise<Json | null> {
+): Promise<JsonObject | null> {
   const asked = requestOptions(options);
   const answer = asked === null ? null : await answered(() => authenticator?.get(asked));
   return isPublicKeyCredential(answer) ? assertedJson(answer) : null;
@@ -139,7 +136,7 @@ function isPublicKeyCredential(value: unknown): value is PublicKeyCredential {
 }
 
 /** A new passkey's answer, as glave takes it. */
-export function createdJson(credential: PublicKeyCredential): Json {
+export function createdJson(credential: PublicKeyCredential): JsonObject {
   const response = credential.response as AuthenticatorAttestationResponse;
   return {
     id: credential.id,
@@ -155,7 +152,7 @@ export function createdJson(credential: PublicKeyCredential): Json {
 }
 
 /** A passkey's answer to sign in, as glave takes it. */
-export function assertedJson(credential: PublicKeyCredential): Json {
+export function assertedJson(credential: PublicKeyCredential): JsonObject {
   const response = credential.response as AuthenticatorAssertionResponse;
   return {
     id: credential.id,
