@@ -13,7 +13,9 @@ import type {
   Sort,
   TokenPrice,
 } from '@glave/client';
+import { listFormat, numberFormat } from '@glave/glaze';
 
+import { perMillion } from './models';
 import { plural } from './plural';
 
 /** Between the parts of a line. */
@@ -144,7 +146,7 @@ export function whereText(endpoint: EndpointInfo, locale: string): string {
   if (places.every((place) => place === home)) {
     return $localize`:@@serving.based:Based in ${based}:COUNTRY:`;
   }
-  const runs = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+  const runs = listFormat(locale, { type: 'conjunction' }).format(
     places.map((place) => countryName(place, locale)),
   );
   return $localize`:@@serving.basedRuns:Based in ${based}:COUNTRY:, runs in ${runs}:PLACES:`;
@@ -166,20 +168,13 @@ export function providerDetail(endpoint: EndpointInfo, locale: string): string {
 
 /** A price per million tokens, in and out, as `locale` writes dollars: `$0.12 in · $0.50 out`. */
 export function priceLine(price: TokenPrice, locale: string): string {
-  const dollars = new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 3,
-  });
-  const input = dollars.format(price.input / 1_000_000_000);
-  const output = dollars.format(price.output / 1_000_000_000);
+  const { input, output } = perMillion(price, locale);
   return $localize`:@@serving.price:${input}:INPUT: in · ${output}:OUTPUT: out`;
 }
 
 /** A speed in tokens a second, for `locale`. */
 export function speedLine(speed: number, locale: string): string {
-  const count = new Intl.NumberFormat(locale).format(speed);
+  const count = numberFormat(locale).format(speed);
   return $localize`:@@serving.speed:${count}:COUNT: tokens a second`;
 }
 
@@ -208,7 +203,7 @@ function hiddenWhy(endpoint: EndpointInfo, by: Hides, locale: string): string {
 
 /** The providers the filters hide, each with why: `DeepSeek (based in China)`. */
 function hiddenText(endpoints: readonly EndpointInfo[], locale: string): string {
-  const reasons = new Intl.ListFormat(locale, { type: 'unit' });
+  const reasons = listFormat(locale, { type: 'unit' });
   const each = endpoints.map((endpoint) => {
     const provider = endpoint.provider;
     const why = reasons.format(
@@ -216,7 +211,7 @@ function hiddenText(endpoints: readonly EndpointInfo[], locale: string): string 
     );
     return $localize`:@@serving.hiddenOne:${provider}:PROVIDER: (${why}:WHY:)`;
   });
-  return new Intl.ListFormat(locale, { type: 'conjunction' }).format(each);
+  return listFormat(locale, { type: 'conjunction' }).format(each);
 }
 
 /**
@@ -225,7 +220,7 @@ function hiddenText(endpoints: readonly EndpointInfo[], locale: string): string 
  */
 export function hiddenLine(endpoints: readonly EndpointInfo[], locale: string): string {
   if (endpoints.every((endpoint) => (endpoint.hidden_by ?? []).every((by) => by === 'server'))) {
-    const names = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+    const names = listFormat(locale, { type: 'conjunction' }).format(
       endpoints.map((endpoint) => endpoint.provider),
     );
     return $localize`:@@serving.hiddenByServer:This server doesn’t use ${names}:PROVIDERS:.`;

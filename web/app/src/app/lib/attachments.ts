@@ -1,4 +1,5 @@
 import type { AttachedFile } from '@glave/client';
+import { numberFormat } from '@glave/glaze';
 
 /**
  * The largest file the composer sends to be kept, in bytes: what a message carries on every
@@ -39,7 +40,7 @@ export function shown(mediaType: string): boolean {
 /** `bytes` as a person in `locale` reads a size: `512 bytes`, `214 kB`, `3.4 MB`. */
 export function sizeOf(bytes: number, locale: string): string {
   const unit = (value: number, name: string, digits: number): string =>
-    new Intl.NumberFormat(locale, {
+    numberFormat(locale, {
       style: 'unit',
       unit: name,
       unitDisplay: name === 'byte' ? 'long' : 'short',
