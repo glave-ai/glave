@@ -41,15 +41,7 @@ impl Project {
 
     /// The same, let out of the sandbox.
     fn let_out(&self, script: &str) {
-        let output = Collect::default();
-        let finished = block_on!(self.computers.run(
-            self.workspace,
-            &Command::new(script),
-            &output,
-            &CancelSwitch::default()
-        ))
-        .unwrap();
-        assert_eq!(finished.ending, Ending::Exited { code: 0 });
+        block_on!(crate::testing::ran(&self.computers, self.workspace, script));
     }
 
     /// `path` as glave's file tools write it, in the sandbox.

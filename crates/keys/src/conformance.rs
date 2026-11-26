@@ -7,32 +7,14 @@ use glave_event::{
     MemoryScope, Outcome, Principal, ProviderConnected, ProviderId, ProviderKind, RawEvent, Secret,
     Seq, ThreadId, TurnResult, encode,
 };
+use glave_ports::conformance::{Verdict, ensure, uuid_v7};
 use glave_ports::testing::any_secret;
 use glave_ports::{Erasable, Eraser, OrgId, ProjectId, Scope};
-use uuid::{Builder, Uuid};
 
 use crate::error::KeyError;
 use crate::key_id::{KeyId, Period};
 use crate::keys::{EventFields, Keys};
 use crate::storage::KeyStorage;
-
-type Verdict = Result<(), String>;
-
-fn ensure(condition: bool, violation: &str) -> Verdict {
-    if condition {
-        Ok(())
-    } else {
-        Err(violation.to_owned())
-    }
-}
-
-fn uuid_v7(n: u64) -> Uuid {
-    let mut random = [0u8; 10];
-    for (slot, byte) in random.iter_mut().zip(n.to_be_bytes()) {
-        *slot = byte;
-    }
-    Builder::from_unix_timestamp_millis(1_791_000_000_000, &random).into_uuid()
-}
 
 fn scope(n: u64) -> Scope {
     Scope::glaves_own(

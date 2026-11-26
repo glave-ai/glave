@@ -48,7 +48,6 @@ a55f04d0fc470d9f 11 crates/session/src/answers.rs crates/session/src/turn.rs
 a8649abdfb794d0a 7 crates/harness/src/commands.rs crates/harness/src/skills.rs
 a9f65d4fb272be59 8 crates/harness/tests/project_folders.rs crates/session/tests/choices.rs
 ad1bfdee27617df5 15 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
-afa24c0018395dcb 13 crates/keys/src/conformance.rs crates/ports/src/conformance.rs
 afb23fe741d3fd70 7 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
 2e2e396f5b1d8803 8 web/app/src/app/components/connections/connections.component.spec.ts web/app/src/app/components/connections/connections.component.spec.ts
 bbb0d4e47b13c4ec 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs

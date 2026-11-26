@@ -2,12 +2,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use glave_ports::block_on;
 use glave_ports::computer::{
-    Command, CommandId, ComputerId, Computers, Ending, Finished, Output, RunsFor, WorkspaceId,
-    WorkspaceInfo,
+    Command, CommandId, ComputerId, Computers, Ending, Finished, RunsFor, WorkspaceId,
 };
 use glave_ports::testing::TempDir;
-use glave_ports::{BoxFuture, NeverCancelled, block_on};
 use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 
@@ -17,6 +16,7 @@ use super::{
 };
 use crate::LocalComputers;
 use crate::local::new_id;
+use crate::testing::ran;
 
 fn folder(name: &str) -> TempDir {
     TempDir::new(&format!("background-{name}")).unwrap()
@@ -26,30 +26,6 @@ fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
     std::env::vars_os()
         .filter(|(name, _)| name == "PATH" || name == "HOME")
         .collect()
-}
-
-#[derive(Default)]
-struct Collect(Mutex<String>);
-
-impl Output for Collect {
-    fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
-        self.0.lock().unwrap().push_str(text);
-        Box::pin(std::future::ready(()))
-    }
-}
-
-/// Runs `script` in the foreground and says whether it exited 0.
-async fn succeeds(computers: &LocalComputers, here: &WorkspaceInfo, script: &str) -> bool {
-    let finished = computers
-        .run(
-            here.id,
-            &Command::new(script),
-            &Collect::default(),
-            &NeverCancelled,
-        )
-        .await
-        .unwrap();
-    finished.ending == Ending::Exited { code: 0 }
 }
 
 /// Polls in the shell, so no test sleeps: true once the process in `file` is gone.
@@ -83,10 +59,8 @@ fn a_command_nothing_reads_is_stopped_once_idle() {
         let finished = finished.expect("it went idle while it was only listed");
         assert_eq!(finished.ending, Ending::Idle { after_secs: 1 });
         assert!(finished.millis >= 1000, "{finished:?}");
-        assert!(
-            succeeds(&computers, &here, GONE).await,
-            "its child is stopped too"
-        );
+        // Its child is stopped too.
+        ran(computers.as_ref(), here.id, GONE).await;
     });
 }
 
@@ -107,10 +81,8 @@ fn every_command_still_running_is_stopped_when_the_computers_go() {
         }
         drop(computers);
         let (computers, here) = LocalComputers::here(&dir, environment()).await.unwrap();
-        assert!(
-            succeeds(&computers, &here, GONE).await,
-            "nothing it started is left"
-        );
+        // Nothing it started is left.
+        ran(computers.as_ref(), here.id, GONE).await;
     });
 }
 
@@ -131,7 +103,7 @@ fn a_command_that_ends_takes_what_it_left_running_with_it() {
             Some(Ending::Exited { code: 0 }),
             "{printed:?}"
         );
-        assert!(succeeds(&computers, &here, GONE).await);
+        ran(computers.as_ref(), here.id, GONE).await;
     });
 }
 
