@@ -312,10 +312,8 @@ pub(crate) fn texts(message: &Message) -> Vec<String> {
     };
     parts
         .iter()
-        .filter_map(|part| match part {
-            Part::Text { text } => Some(text.clone()),
-            _ => None,
-        })
+        .filter_map(Part::text)
+        .map(str::to_owned)
         .collect()
 }
 
@@ -324,10 +322,7 @@ pub(crate) fn results(messages: &[Message]) -> Vec<String> {
     messages
         .iter()
         .filter_map(|message| match message {
-            Message::Tool { output, .. } => output.iter().find_map(|part| match part {
-                Part::Text { text } => Some(text.clone()),
-                _ => None,
-            }),
+            Message::Tool { output, .. } => output.iter().find_map(Part::text).map(str::to_owned),
             _ => None,
         })
         .collect()
@@ -340,13 +335,7 @@ pub(crate) fn text_of(message: &Message) -> String {
         | Message::Tool { output: parts, .. }
         | Message::Assistant { parts, .. } => parts,
     };
-    parts
-        .iter()
-        .filter_map(|part| match part {
-            Part::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect()
+    parts.iter().filter_map(Part::text).collect()
 }
 
 #[expect(clippy::too_many_lines, reason = "one arm for each kind of event")]

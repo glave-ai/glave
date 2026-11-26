@@ -38,6 +38,14 @@ impl Part {
             Self::Text { .. } | Self::Reasoning { .. } => None,
         }
     }
+
+    /// The text of a text part.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            Self::Text { text } => Some(text),
+            Self::Reasoning { .. } | Self::File { .. } => None,
+        }
+    }
 }
 
 /// Provider data that must be sent back byte for byte, such as a reasoning signature or

@@ -13,7 +13,6 @@
 164d700574459588 9 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 1bc560fe8419ed5b 8 crates/identity/src/signin/browsers/passkeys/tests.rs crates/identity/src/signin/browsers/tests.rs
 1c3c0adb8bac6fcc 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
-21324c4068197f18 7 crates/harness/src/resume.rs crates/harness/src/waits.rs
 237d79407a4200b6 7 web/e2e/attachments.e2e.ts web/e2e/attachments.e2e.ts
 23b41c206c1cac43 10 crates/session/tests/server.rs crates/session/tests/server.rs
 25a502a12f8d717f 6 crates/cli/src/worktrees/cleanup/tests.rs crates/computer/src/worktrees/tests.rs
@@ -45,7 +44,6 @@ a3e4b5de28fa9b4d 12 crates/cli/src/worktrees/cleanup/tests.rs crates/computer/sr
 a4ace85663d85cab 7 web/glaze/src/components/menu-button/menu-button.component.spec.ts web/glaze/src/components/menu-select/menu-select.component.spec.ts
 a4c6e50cee13806d 11 crates/store-postgres/src/blobs.rs crates/store-postgres/src/blobs.rs
 a55f04d0fc470d9f 11 crates/session/src/answers.rs crates/session/src/turn.rs
-a8649abdfb794d0a 7 crates/harness/src/commands.rs crates/harness/src/skills.rs
 a9f65d4fb272be59 8 crates/harness/tests/project_folders.rs crates/session/tests/choices.rs
 ad1bfdee27617df5 15 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 afa24c0018395dcb 13 crates/keys/src/conformance.rs crates/ports/src/conformance.rs

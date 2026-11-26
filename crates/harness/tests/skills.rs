@@ -84,10 +84,7 @@ fn with_skills_only_the_skill_tool_is_added_and_loading_one_never_asks() {
         expected.insert(expected.len() - 1, "skill".to_owned());
         assert_eq!(names(&after), expected);
         let loaded = thread.messages().iter().find_map(|message| match message {
-            Message::Tool { output, .. } => output.iter().find_map(|part| match part {
-                Part::Text { text } => Some(text.clone()),
-                _ => None,
-            }),
+            Message::Tool { output, .. } => output.iter().find_map(Part::text).map(str::to_owned),
             _ => None,
         });
         assert!(

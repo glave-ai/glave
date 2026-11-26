@@ -17,7 +17,8 @@ use glave_ports::{BlobStore, EventLog, ModelProvider};
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, Thread};
-use crate::skills::frontmatter::{self, Value};
+use crate::skills::files_in;
+use crate::skills::frontmatter;
 
 /// The folders in a project, and in the person's home, that hold commands: glave's own, then
 /// Claude Code's.
@@ -187,7 +188,12 @@ pub async fn find_commands(folders: &[PathBuf], personal: &[PathBuf]) -> FoundCo
     let mut found = FoundCommands::default();
     let mut names: HashMap<String, PathBuf> = HashMap::new();
     for folder in folders {
-        for file in markdown_files(folder, &mut found.warnings).await {
+        let markdown = |file: PathBuf| {
+            file.extension()
+                .is_some_and(|ext| ext == "md")
+                .then_some(file)
+        };
+        for file in files_in(folder, &mut found.warnings, markdown).await {
             let command = match read(&file).await {
                 Ok(command) => Command {
                     own: personal.contains(folder),
@@ -217,44 +223,6 @@ pub async fn find_commands(folders: &[PathBuf], personal: &[PathBuf]) -> FoundCo
     found
 }
 
-/// The `.md` files directly in `folder`, in name order.
-async fn markdown_files(folder: &Path, warnings: &mut Vec<String>) -> Vec<PathBuf> {
-    let mut entries = match tokio::fs::read_dir(folder).await {
-        Ok(entries) => entries,
-        Err(err)
-            if matches!(
-                err.kind(),
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-            ) =>
-        {
-            return Vec::new();
-        }
-        Err(err) => {
-            warnings.push(format!("could not read {}: {err}", folder.display()));
-            return Vec::new();
-        }
-    };
-    let mut files = Vec::new();
-    loop {
-        match entries.next_entry().await {
-            Ok(Some(entry)) => {
-                let path = entry.path();
-                let markdown = path.extension().is_some_and(|ext| ext == "md");
-                if markdown && tokio::fs::metadata(&path).await.is_ok_and(|m| m.is_file()) {
-                    files.push(path);
-                }
-            }
-            Ok(None) => break,
-            Err(err) => {
-                warnings.push(format!("could not read {}: {err}", folder.display()));
-                break;
-            }
-        }
-    }
-    files.sort();
-    files
-}
-
 /// The command in `file`, or why it cannot be one.
 async fn read(file: &Path) -> Result<Command, String> {
     let name = file
@@ -278,10 +246,10 @@ async fn read(file: &Path) -> Result<Command, String> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
     let (description, argument_hint, body) = if text.starts_with("---") {
         let document = frontmatter::parse(text)?;
-        let field = |key: &str| match document.fields.get(key) {
-            Some(Value::Text(text)) => Ok(Some(text.trim().to_owned()).filter(|t| !t.is_empty())),
-            Some(Value::Other) => Err(format!("{key} must be text")),
-            None => Ok(None),
+        let field = |key: &str| {
+            document
+                .text(key)
+                .map(|text| text.filter(|text| !text.is_empty()))
         };
         (
             field("description")?,

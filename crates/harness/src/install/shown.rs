@@ -99,11 +99,9 @@ fn start(text: &str, most: usize) -> (String, bool) {
     let shown = if text.len() <= most {
         text
     } else {
-        let mut end = most;
-        while !text.is_char_boundary(end) {
-            end = end.saturating_sub(1);
-        }
-        let head = text.get(..end).unwrap_or_default();
+        let head = text
+            .get(..text.floor_char_boundary(most))
+            .unwrap_or_default();
         head.rfind('\n')
             .map_or(head, |at| head.get(..at).unwrap_or(head))
     };

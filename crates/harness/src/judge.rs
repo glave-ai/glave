@@ -98,14 +98,7 @@ pub async fn judge<P: ModelProvider>(
     };
     match provider.complete(&request, &mut |_| {}).await {
         Ok(completion) => {
-            let text: String = completion
-                .parts
-                .iter()
-                .filter_map(|part| match part {
-                    Part::Text { text } => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect();
+            let text: String = completion.parts.iter().filter_map(Part::text).collect();
             (read(&text), Some(completion))
         }
         Err(err) => (

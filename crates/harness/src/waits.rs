@@ -446,17 +446,7 @@ pub(crate) fn by(view: &ThreadView, person: Option<PrincipalId>) -> Option<Princ
 
 /// Whether `events` hold a call with no result outside any open turn.
 fn dangling(events: &[Event]) -> bool {
-    let completed: HashSet<&CallId> = events
-        .iter()
-        .filter_map(|event| match &event.body {
-            Body::ToolCallCompleted(done) => Some(&done.call_id),
-            _ => None,
-        })
-        .collect();
-    events.iter().any(|event| match &event.body {
-        Body::ToolCallRequested(call) => !completed.contains(&call.call_id),
-        _ => false,
-    })
+    !crate::resume::dangling_calls(events).is_empty()
 }
 
 /// What the latest turn in `events` did by itself: its model calls, tool calls, commands that

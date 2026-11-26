@@ -313,10 +313,7 @@ pub(crate) fn within(text: &str, limit: usize) -> (&str, bool) {
     if text.len() <= limit {
         return (text, false);
     }
-    let end = (0..=limit)
-        .rev()
-        .find(|end| text.is_char_boundary(*end))
-        .unwrap_or(0);
+    let end = text.floor_char_boundary(limit);
     (text.get(..end).unwrap_or_default(), true)
 }
 

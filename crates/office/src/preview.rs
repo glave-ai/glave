@@ -68,10 +68,7 @@ fn bounded(mut markdown: String, cut: bool) -> Preview {
     if markdown.len() <= MOST_MARKDOWN {
         return Preview { markdown, cut };
     }
-    let mut end = MOST_MARKDOWN;
-    while !markdown.is_char_boundary(end) {
-        end = end.saturating_sub(1);
-    }
+    let end = markdown.floor_char_boundary(MOST_MARKDOWN);
     let end = markdown
         .get(..end)
         .and_then(|kept| kept.rfind('\n'))

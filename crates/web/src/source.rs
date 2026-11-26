@@ -76,10 +76,7 @@ fn page_text(page: &Page, most: usize) -> String {
         let _ = writeln!(text, "Title: {title}");
     }
     text.push('\n');
-    let mut end = most.min(total);
-    while !page.text.is_char_boundary(end) {
-        end = end.saturating_sub(1);
-    }
+    let end = page.text.floor_char_boundary(most.min(total));
     text.push_str(page.text.get(..end).unwrap_or_default());
     if total > most {
         let _ = write!(
