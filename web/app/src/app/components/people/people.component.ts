@@ -7,6 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import {
+  dateTimeFormat,
   GlzAvatarComponent,
   GlzButtonComponent,
   GlzCardComponent,
@@ -57,7 +58,7 @@ export class PeopleComponent {
   protected readonly confirming = signal(false);
   private readonly removing = signal<PersonRow | null>(null);
 
-  private readonly days = new Intl.DateTimeFormat(this.locale, { dateStyle: 'medium' });
+  private readonly days = dateTimeFormat(this.locale, { dateStyle: 'medium' });
   protected readonly rows = computed(() =>
     this.peopleService
       .people()

@@ -8,12 +8,12 @@
 
 use std::collections::BTreeMap;
 
-use glave_ports::auth::{AuthError, Fresh, Secret, safe_to_send, signs_in};
+use glave_ports::auth::{AuthError, Fresh, Secret, parse_answer, safe_to_send, signs_in};
 use jiff::Timestamp;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::Deserialize;
 
-use crate::token::{exchange, parse, send};
+use crate::token::{exchange, send};
 
 const GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:token-exchange";
 const ACCESS_TOKEN: &str = "urn:ietf:params:oauth:token-type:access_token";
@@ -106,7 +106,7 @@ impl ExternalAccount {
             )
             .body(body.to_string());
         let from = "Google IAM Credentials (service account impersonation)";
-        let answer: Impersonated = parse(&send(request, from).await?, from)?;
+        let answer: Impersonated = parse_answer(&send(request, from).await?, from)?;
         let expires = answer.expire_time.trim().parse().map_err(|_| {
             AuthError::unreachable(format!("{from} sent an expireTime glave could not read"))
         })?;
@@ -159,7 +159,7 @@ impl ExternalAccount {
                         )
                     })?;
                 let json: serde_json::Value =
-                    parse(&text, "the external account's subject token source")?;
+                    parse_answer(&text, "the external account's subject token source")?;
                 json.get(field)
                     .and_then(serde_json::Value::as_str)
                     .map(str::to_owned)

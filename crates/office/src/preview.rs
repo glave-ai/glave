@@ -8,13 +8,12 @@ use std::io::Cursor;
 
 use calamine::{Data, Reader, Xlsx};
 
-use crate::command::office;
+use crate::command::{office, reader};
 use crate::error::OfficeError;
-use crate::package::Kind;
 use crate::reach::{Budget, values};
 use crate::read::{chosen, open, shown};
 use crate::shared::shared_strings;
-use crate::{data, document, presentation, table};
+use crate::{data, table};
 
 /// The rows shown of each sheet, or of a CSV file: a preview, not the whole file.
 const ROWS: u32 = 200;
@@ -49,13 +48,10 @@ pub fn preview(bytes: &[u8], media_type: &str) -> Result<Preview, OfficeError> {
         (table::lines(&within(rows)).join("\n"), cut)
     } else {
         match office(bytes) {
-            Some((mut package, main, Kind::Word)) => {
-                (body(&document::read(&mut package, &main, NAME)?), false)
-            }
-            Some((mut package, main, Kind::PowerPoint)) => {
-                (body(&presentation::read(&mut package, &main, NAME)?), false)
-            }
-            Some((_, _, Kind::Workbook)) => streamed(bytes).or_else(|_| sheets(bytes))?,
+            Some((mut package, main, kind)) => match reader(kind) {
+                Some(read) => (body(&read(&mut package, &main, NAME)?), false),
+                None => streamed(bytes).or_else(|_| sheets(bytes))?,
+            },
             None => sheets(bytes)?,
         }
     };

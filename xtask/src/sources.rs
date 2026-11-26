@@ -1,24 +1,46 @@
-//! The Rust sources the source checks read (`spawns`, `waits`): the tracked files under some
-//! folders, tests aside (`tests/`, `benches/`, `tests.rs`, `*_tests.rs`, an inline `mod tests`
-//! to the end of its file, and the test doubles in `testing.rs` and `testing/`), which may do
-//! what they like.
+//! The tracked files the source checks read (`duplicates`, `file-sizes`, `secrets`, `spawns`,
+//! `unused-pub`, `waits`), and which Rust sources are not tests' (`tests/`, `benches/`,
+//! `tests.rs`, `*_tests.rs`, an inline `mod tests` to the end of its file, and the test doubles
+//! in `testing.rs` and `testing/`), which may do what they like.
+
+use std::collections::BTreeSet;
+use std::io::ErrorKind;
 
 use crate::{cmd, workspace};
+
+/// Each file git tracks under `pathspecs` (every one when there are none) that `keep` takes, by
+/// its path from the workspace root, with its text, in path order. A file that holds no text
+/// (binary, a submodule's folder, or deleted but not yet staged) is left out.
+pub(crate) fn tracked(
+    pathspecs: &[&str],
+    keep: impl Fn(&str) -> bool,
+) -> Result<Vec<(String, String)>, String> {
+    let root = workspace::root()?;
+    let listed = cmd::query("git", &[&["ls-files", "-z", "--"], pathspecs].concat())?;
+    // Once each: a file with a merge's conflict is listed once for each side.
+    let paths: BTreeSet<&str> = listed
+        .split('\0')
+        .filter(|path| !path.is_empty() && keep(path))
+        .collect();
+    let mut read = Vec::with_capacity(paths.len());
+    for path in paths {
+        match std::fs::read_to_string(root.join(path)) {
+            Ok(text) => read.push((path.to_owned(), text)),
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    ErrorKind::InvalidData | ErrorKind::NotFound | ErrorKind::IsADirectory
+                ) => {}
+            Err(err) => return Err(format!("could not read {path}: {err}")),
+        }
+    }
+    Ok(read)
+}
 
 /// Each non-test Rust source tracked under `folders`, by its path from the workspace root,
 /// with its text.
 pub(crate) fn read(folders: &[&str]) -> Result<Vec<(String, String)>, String> {
-    let root = workspace::root()?;
-    let listed = cmd::query("git", &[&["ls-files", "-z", "--"], folders].concat())?;
-    listed
-        .split('\0')
-        .filter(|path| non_test(path))
-        .map(|path| {
-            std::fs::read_to_string(root.join(path))
-                .map(|text| (path.to_owned(), text))
-                .map_err(|err| format!("could not read {path}: {err}"))
-        })
-        .collect()
+    tracked(folders, non_test)
 }
 
 /// Whether `path` is a Rust source that is not a test's.

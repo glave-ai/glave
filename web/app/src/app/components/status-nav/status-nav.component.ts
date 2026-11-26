@@ -7,7 +7,7 @@ import {
   input,
   output,
 } from '@angular/core';
-import { GlzBadgeComponent, GlzNavListComponent } from '@glave/glaze';
+import { GlzBadgeComponent, GlzNavListComponent, numberFormat } from '@glave/glaze';
 
 import { statusSections, threadsWords } from '../../lib/nav';
 import { ProjectsService } from '../../services/projects.service';
@@ -47,7 +47,7 @@ export class StatusNavComponent {
       reader: { locale: this.locale },
     });
     // How many wait, shown alone and read to screen readers in words.
-    const count = new Intl.NumberFormat(this.locale).format(waiting.length);
+    const count = numberFormat(this.locale).format(waiting.length);
     return [
       {
         testId: 'nav-needs-you',

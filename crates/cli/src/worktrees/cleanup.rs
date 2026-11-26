@@ -20,12 +20,12 @@ pub(super) const IDLE: SignedDuration = SignedDuration::from_hours(30 * 24);
 /// What a cleanup works with: the log the threads are in, the environment git runs with and
 /// the processes it runs as, the Trash, and the moment it runs.
 pub(crate) struct Cleanup<'a, L> {
-    pub log: &'a L,
-    pub environment: &'a [(OsString, OsString)],
-    pub processes: &'a Processes,
-    pub trash: Option<&'a Trash>,
-    pub now: Timestamp,
-    pub entropy: &'a dyn Entropy,
+    pub(crate) log: &'a L,
+    pub(crate) environment: &'a [(OsString, OsString)],
+    pub(crate) processes: &'a Processes,
+    pub(crate) trash: Option<&'a Trash>,
+    pub(crate) now: Timestamp,
+    pub(crate) entropy: &'a dyn Entropy,
 }
 
 /// The reason as `workspace.removed` and a hold name it.

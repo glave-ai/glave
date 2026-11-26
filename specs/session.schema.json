@@ -4193,27 +4193,6 @@
       ],
       "type": "object"
     },
-    "Show": {
-      "description": "Which threads `thread/list` shows.",
-      "oneOf": [
-        {
-          "enum": [
-            "archived"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "active",
-          "description": "Threads that are neither archived nor deleted.",
-          "type": "string"
-        },
-        {
-          "const": "deleted",
-          "description": "Deleted threads, waiting for their content to be erased: for the operator that does it.",
-          "type": "string"
-        }
-      ]
-    },
     "ShownInvite": {
       "description": "What an invite's link opens, for whoever holds it: never its code, nor whom it was sent to.",
       "properties": {
@@ -4340,7 +4319,7 @@
         },
         {
           "const": "deleted",
-          "description": "Hidden for good, and waiting for its content to be erased.",
+          "description": "Hidden for good, and waiting for its content to be erased by the operator that does it.",
           "type": "string"
         }
       ]
@@ -9681,7 +9660,7 @@
           "show": {
             "anyOf": [
               {
-                "$ref": "#/$defs/Show"
+                "$ref": "#/$defs/Standing"
               },
               {
                 "type": "null"

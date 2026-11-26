@@ -8,14 +8,14 @@ use deadpool_postgres::{
     Manager, ManagerConfig, Object, Pool, PoolError, RecyclingMethod, Runtime, TimeoutType,
 };
 use glave_event::PrincipalId;
-use glave_keys::{KeySettings, Keys};
+use glave_keys::{KeySettings, Keys, SealedBlobs};
 use glave_ports::search::{MOST_CACHED, SearchCache};
 use glave_ports::{Clock, Objects, OrgId};
 use thiserror::Error;
 use tokio_postgres::Config;
 use tokio_postgres::error::SqlState;
 
-use crate::blobs::PostgresBlobs;
+use crate::blobs::{PostgresBlobs, PostgresRecords};
 use crate::directory::PostgresDirectory;
 use crate::keys::PostgresKeys;
 use crate::leases::PostgresLeases;
@@ -154,12 +154,12 @@ impl Store {
     }
 
     pub fn blobs(&self) -> PostgresBlobs {
-        PostgresBlobs::new(
+        SealedBlobs::new(PostgresRecords::new(
             self.pool.clone(),
             Arc::clone(&self.keys),
             Arc::clone(&self.objects),
             Arc::clone(&self.clock),
-        )
+        ))
     }
 
     /// The projects: their records, and the folders that lead to them.

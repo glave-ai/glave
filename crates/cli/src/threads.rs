@@ -7,7 +7,7 @@ use std::process::ExitCode;
 use glave_event::{Body, Seq, ThreadId, decode};
 use glave_harness::Change;
 use glave_ports::Standing;
-use glave_session::protocol::{Reply, Request, Show};
+use glave_session::protocol::{Reply, Request};
 use uuid::Uuid;
 
 use crate::client::read_events;
@@ -91,11 +91,6 @@ async fn run(command: Command) -> anyhow::Result<()> {
 async fn through(server: &mut Reached, command: Command) -> anyhow::Result<()> {
     match command {
         Command::List(standing) => {
-            let show = match standing {
-                Standing::Active => Show::Active,
-                Standing::Archived => Show::Archived,
-                Standing::Deleted => Show::Deleted,
-            };
             let folder = std::env::current_dir()?;
             let project = match crate::turns::found(server.session(), &folder).await? {
                 Here::Project(project) => Some(project),
@@ -105,7 +100,7 @@ async fn through(server: &mut Reached, command: Command) -> anyhow::Result<()> {
             let listed = Request::ThreadList {
                 project,
                 limit: Some(MOST_LISTED),
-                show: Some(show),
+                show: Some(standing),
                 cursor: None,
             };
             let Reply::Threads { threads, .. } = server.request(listed).await? else {

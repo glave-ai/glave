@@ -1,4 +1,12 @@
-import type { Money, Outcome, RawEvent, ThreadSummary, TurnResult } from '@glave/client';
+import {
+  isRecord,
+  type JsonObject,
+  type Money,
+  type Outcome,
+  type RawEvent,
+  type ThreadSummary,
+  type TurnResult,
+} from '@glave/client';
 
 import { NO_THOUGHT, type ThreadItem, byGlave, threadItems } from './conversation';
 import { madeLeftOf, madeOf } from './made';
@@ -45,12 +53,6 @@ export interface Turn {
   readonly ended: { readonly seq: number; readonly at: string } | null;
 }
 
-type Data = Readonly<Record<string, unknown>>;
-
-function isRecord(value: unknown): value is Data {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function isOutcome(value: unknown): value is Outcome {
   return typeof value === 'string' && OUTCOMES.includes(value);
 }
@@ -65,7 +67,7 @@ function isMoney(value: unknown): value is Money {
  * The server's result of a turn, as its `turn.ended` records it: what a client that ran the turn
  * is answered with. A count it does not hold is none; `null` when it says no outcome.
  */
-function resultOf(data: Data): TurnResult | null {
+function resultOf(data: JsonObject): TurnResult | null {
   const outcome = data['outcome'];
   if (!isOutcome(outcome)) {
     return null;
@@ -142,7 +144,7 @@ export interface Due {
 }
 
 /** When a schedule's run was due, as its `turn.started` data records it; else `null`. */
-function dueOf(data: Readonly<Record<string, unknown>> | undefined): Due | null {
+function dueOf(data: JsonObject | undefined): Due | null {
   const [at, zone] = [data?.['scheduled'], data?.['zone']];
   if (typeof at !== 'string' || at === '') {
     return null;

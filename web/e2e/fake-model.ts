@@ -20,7 +20,7 @@ export const RAN = 'Ran it.';
  * What it searches for when asked to find an app (`tool_search`): DeepWiki, of glave's
  * catalog, which asks no one to sign in.
  */
-export const APP_SEARCHED = 'deepwiki';
+const APP_SEARCHED = 'deepwiki';
 
 /** What it says once its search has a result. */
 export const CONNECT_FIRST = 'Connect DeepWiki and I will look it up.';

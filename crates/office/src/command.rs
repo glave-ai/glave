@@ -181,7 +181,7 @@ type ReadParts = fn(&mut Package<'_>, &str, &str) -> Result<String, OfficeError>
 
 /// How a kind of Office file is read from its parts; `None` for workbooks, which calamine
 /// reads whole.
-fn reader(kind: Kind) -> Option<ReadParts> {
+pub(crate) fn reader(kind: Kind) -> Option<ReadParts> {
     match kind {
         Kind::Word => Some(document::read),
         Kind::PowerPoint => Some(presentation::read),

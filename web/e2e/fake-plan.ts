@@ -9,14 +9,14 @@ import { type Answers, call, done, event } from './fake-records';
 export const PLANNING = '01900000-0000-7000-8000-000000000121';
 
 /** The plan it proposed. */
-export const PROPOSED: readonly PlanStep[] = [
+const PROPOSED: readonly PlanStep[] = [
   { step: 'Read how src/args.rs parses flags', status: 'pending' },
   { step: 'Add --verbose to Args and print each step it takes', status: 'pending' },
   { step: 'Run cargo test', status: 'pending' },
 ];
 
 /** What the server says of `steps`, proposed or being built. */
-export function planOf(steps: readonly PlanStep[], proposed: boolean): PlanInfo {
+function planOf(steps: readonly PlanStep[], proposed: boolean): PlanInfo {
   const done = steps.filter((step) => step.status === 'completed').length;
   const count = (n: number): string => (n === 1 ? '1 step' : `${String(n)} steps`);
   const sentence = proposed

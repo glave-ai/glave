@@ -21,7 +21,7 @@ use crate::book::Book;
 /// Hits one recall returns when the model does not say.
 pub(crate) const DEFAULT_HITS: usize = 5;
 /// Hits one recall returns at most.
-pub const MOST_HITS: usize = 10;
+const MOST_HITS: usize = 10;
 /// Characters of a past conversation one hit shows, at most.
 const SNIPPET_CHARS: usize = 400;
 /// Characters shown before the first matching word.
@@ -59,7 +59,7 @@ pub struct Recalled {
 }
 
 impl<L: EventLog + 'static> Memories<L> {
-    /// What `query` finds for a thread of `on`, at most `limit` (at most [`MOST_HITS`]): those
+    /// What `query` finds for a thread of `on`, at most `limit` (at most ten): those
     /// sharing the most of its words first; among equals, memories (newest first), then this
     /// project's conversations, then the person's (best match first). The thread asking, and
     /// every deleted chat, is left out.

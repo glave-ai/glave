@@ -218,44 +218,44 @@ pub(crate) enum Action {
     reason = "independent command-line flags, each a yes or no"
 )]
 pub(crate) struct Args {
-    pub action: Action,
-    pub model: Option<String>,
+    pub(crate) action: Action,
+    pub(crate) model: Option<String>,
     /// What the agent may do; chosen elsewhere, or Workspace, when not given.
-    pub permissions: Option<Permissions>,
+    pub(crate) permissions: Option<Permissions>,
     /// Whether sandboxed commands may use the network; chosen elsewhere, or on, when not given.
-    pub network: Option<bool>,
+    pub(crate) network: Option<bool>,
     /// Work in a worktree of the repository of its own, on a new branch.
-    pub worktree: bool,
+    pub(crate) worktree: bool,
     /// Model calls one turn may make; no limit when not given.
-    pub max_steps: Option<u32>,
+    pub(crate) max_steps: Option<u32>,
     /// Continue the most recent thread in this folder instead of starting one.
-    pub resume: bool,
-    pub events: Option<PathBuf>,
+    pub(crate) resume: bool,
+    pub(crate) events: Option<PathBuf>,
     /// Append glave's spans and metrics to this file.
-    pub log: Option<PathBuf>,
+    pub(crate) log: Option<PathBuf>,
     /// Be a client of the session server at this URL.
-    pub server: Option<String>,
+    pub(crate) server: Option<String>,
     /// The one-shot prompt; empty starts an interactive session.
-    pub prompt: String,
+    pub(crate) prompt: String,
     /// Serve over HTTP on this address, rather than stdio.
-    pub http: Option<SocketAddr>,
+    pub(crate) http: Option<SocketAddr>,
     /// Serve HTTPS of glave's own on this address, rather than port 443 of every address.
-    pub https: Option<SocketAddr>,
+    pub(crate) https: Option<SocketAddr>,
     /// The identity providers whose tokens sign clients in over HTTP.
-    pub issuers: Vec<String>,
+    pub(crate) issuers: Vec<String>,
     /// The audience those tokens must name.
-    pub audience: Option<String>,
+    pub(crate) audience: Option<String>,
     /// The built web app to serve over HTTP, rather than the one built into glave or beside it.
-    pub web: Option<PathBuf>,
+    pub(crate) web: Option<PathBuf>,
     /// Run the turn as a task in the person's server, with no one attached.
-    pub background: bool,
+    pub(crate) background: bool,
     /// With `background`, tokens the turn may use.
-    pub budget: Option<u64>,
+    pub(crate) budget: Option<u64>,
     /// Serve the program that started glave, over stdin and stdout.
-    pub stdio: bool,
+    pub(crate) stdio: bool,
     /// As the person's server started in the background: a session of its own first
     /// (`crate::server::start` passes it).
-    pub own_session: bool,
+    pub(crate) own_session: bool,
 }
 
 impl Args {

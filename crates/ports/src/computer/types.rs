@@ -1,7 +1,6 @@
 //! What computers and workspaces are called, what is asked of them, and what they answer.
 
 use std::collections::BTreeMap;
-use std::fmt;
 
 use glave_event::Secret;
 use serde::{Deserialize, Serialize};
@@ -12,6 +11,7 @@ use super::bytes::Bytes;
 use super::environment::{Environment, Size};
 use super::refusal::Reason;
 use super::sandbox::Sandbox;
+use crate::uuid_id::uuid_id;
 
 /// Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it).
 #[derive(
@@ -70,26 +70,6 @@ pub struct CommandId(Uuid);
 )]
 #[serde(transparent)]
 pub struct TerminalId(Uuid);
-
-macro_rules! uuid_id {
-    ($id:ident) => {
-        impl $id {
-            pub fn from_uuid(uuid: Uuid) -> Self {
-                Self(uuid)
-            }
-
-            pub fn as_uuid(self) -> Uuid {
-                self.0
-            }
-        }
-
-        impl fmt::Display for $id {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                self.0.fmt(f)
-            }
-        }
-    };
-}
 
 uuid_id!(ComputerId);
 uuid_id!(WorkspaceId);

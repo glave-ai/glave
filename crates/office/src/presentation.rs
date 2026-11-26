@@ -4,6 +4,7 @@
 
 use std::fmt::Write as _;
 
+use crate::cells::counted;
 use crate::error::OfficeError;
 use crate::package::Package;
 use crate::table;
@@ -24,10 +25,7 @@ pub(crate) fn read(
         .into_iter()
         .map(|(_, part)| part)
         .collect();
-    let mut text = match slides.len() {
-        1 => format!("{name}: 1 slide\n"),
-        count => format!("{name}: {count} slides\n"),
-    };
+    let mut text = format!("{name}: {}\n", counted(slides.len(), "slide", "slides"));
     for (index, part) in slides.iter().enumerate() {
         let Some(slide) = package.xml(part)? else {
             continue;

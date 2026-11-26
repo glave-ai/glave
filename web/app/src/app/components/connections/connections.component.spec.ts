@@ -4,6 +4,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { SERVER } from '../../testing/fixtures';
+import { settle } from '../../testing/links';
 import { type FakeTab, announced, fakeTab, stillWaiting } from '../../testing/sign-in-tab';
 import { ConnectionsComponent } from './connections.component';
 
@@ -23,14 +24,6 @@ const PAGE = 'https://auth.example.com/authorize?state=s1';
 
 /** Words a person on their own should never meet here. */
 const ADMIN_OR_FILES = /MCP|mcp\.json|policy|organization|admin|config|toml/u;
-
-/** Lets the component's promises and the page settle. */
-async function settle(fixture: { whenStable(): Promise<unknown> }): Promise<void> {
-  for (let turn = 0; turn < 5; turn += 1) {
-    await new Promise((resolve) => setTimeout(resolve));
-  }
-  await fixture.whenStable();
-}
 
 function click(root: ParentNode, testId: string): void {
   root.querySelector<HTMLElement>(`[data-testid="${testId}"]`)?.click();
@@ -68,6 +61,23 @@ function openedTab(): FakeTab {
   const tab = fakeTab();
   vi.spyOn(window, 'open').mockReturnValue(tab.tab);
   return tab;
+}
+
+/** The page after Connect on a service whose sign-in never ends, in a fake tab. */
+async function waitingOnSignIn(): Promise<{
+  readonly fake: FakeSession;
+  readonly fixture: { whenStable(): Promise<unknown>; destroy(): void };
+  readonly root: HTMLElement;
+}> {
+  const fake = new FakeSession()
+    .answer('connection/list', { connections: [TRACKER] })
+    .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
+    .answer('connection/poll', stillWaiting);
+  openedTab();
+  const { fixture, root } = await page(fake);
+  click(root, 'connection-action');
+  await settle(fixture);
+  return { fake, fixture, root };
 }
 
 describe('ConnectionsComponent', () => {
@@ -142,14 +152,7 @@ describe('ConnectionsComponent', () => {
   });
 
   it('stops waiting when cancelled, and can connect again', async () => {
-    const fake = new FakeSession()
-      .answer('connection/list', { connections: [TRACKER] })
-      .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
-      .answer('connection/poll', stillWaiting);
-    openedTab();
-    const { fixture, root } = await page(fake);
-    click(root, 'connection-action');
-    await settle(fixture);
+    const { fake, fixture, root } = await waitingOnSignIn();
     expect(root.querySelector('[data-testid="connection-waiting"]')).not.toBeNull();
 
     click(root, 'connection-action');
@@ -188,14 +191,7 @@ describe('ConnectionsComponent', () => {
   });
 
   it('stops waiting when the page is left', async () => {
-    const fake = new FakeSession()
-      .answer('connection/list', { connections: [TRACKER] })
-      .answer('connection/start', { sign_in: { flow: 'f1', url: PAGE } })
-      .answer('connection/poll', stillWaiting);
-    openedTab();
-    const { fixture, root } = await page(fake);
-    click(root, 'connection-action');
-    await settle(fixture);
+    const { fake, fixture } = await waitingOnSignIn();
     fixture.destroy();
     const polled = fake.paramsOf('connection/poll').length;
     await settle(fixture);

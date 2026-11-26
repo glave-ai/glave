@@ -35,7 +35,7 @@ pub enum Standing {
     Active,
     /// Hidden from lists and kept in the log; `unarchive` brings it back.
     Archived,
-    /// Hidden for good, and waiting for its content to be erased.
+    /// Hidden for good, and waiting for its content to be erased by the operator that does it.
     Deleted,
 }
 

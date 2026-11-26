@@ -401,11 +401,9 @@ fn a_question_about_a_repository_never_fetches_what_the_config_names() {
     let asked = ["rev-list", "HEAD", "--not", "--remotes"];
     assert!(!plain(&planted, &planted.repo, &asked).status.success());
     assert!(planted.take_ran(), "plain git never ran it");
-    let said = block_on!(ask_repository(
-        &Processes::unrecorded(),
-        &planted.repo,
-        &asked
-    ));
+    let environment: Vec<(OsString, OsString)> = std::env::vars_os().collect();
+    let processes = Processes::unrecorded();
+    let said = block_on!(Git::at(&processes, &environment, &planted.repo).must(&asked));
     assert!(said.is_err(), "{said:?}");
     assert!(
         !planted.ran.exists(),

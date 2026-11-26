@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::id::CallId;
 
 pub(crate) const TYPE: &str = "hook.ran";
@@ -61,9 +61,11 @@ impl Payload for HookRan {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<HookRan>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
+/// `hook.ran`, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<Body>> {
+    (kind == TYPE && version == 1).then(|| parse(data).map(Body::HookRan))
 }

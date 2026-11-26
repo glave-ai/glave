@@ -23,7 +23,7 @@ impl<S: KeyStorage> Keys<S> {
     /// keyed hash under the project key's naming half, so the same query finds the same words
     /// until the project is erased, and no other project's words match. `None` when the project
     /// has no key yet (or it was erased): nothing can be found.
-    pub async fn search_terms(
+    pub(crate) async fn search_terms(
         &self,
         scope: &Scope,
         terms: &[String],
@@ -41,8 +41,8 @@ impl<S: KeyStorage> Keys<S> {
             .map(Some)
     }
 
-    /// `event`'s words `terms`, hashed ([`Keys::search_terms`]) and sealed as one row of the
-    /// search index under the data key of its project and month, bound to its thread and `seq`.
+    /// `event`'s words `terms`, hashed as a query's words are, and sealed as one row of the search
+    /// index under the data key of its project and month, bound to its thread and `seq`.
     /// `None` when there are no words, or the project has no key (it was erased).
     pub async fn seal_terms(
         &self,

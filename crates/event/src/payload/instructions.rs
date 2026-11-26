@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 
 pub(crate) const READ: &str = "instructions.read";
 
@@ -51,9 +51,11 @@ impl Payload for InstructionsRead {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_read(
+/// `instructions.read`, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<InstructionsRead>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    (kind == READ && version == 1).then(|| parse(data).map(Body::InstructionsRead))
 }

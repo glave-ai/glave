@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::payload::principal::Principal;
 
 pub(crate) const ARCHIVED: &str = "thread.archived";
@@ -56,11 +56,19 @@ impl Payload for ThreadRenamed {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_renamed(
+/// A thread's standing, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<ThreadRenamed>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (ARCHIVED, 1) => parse(data).map(Body::ThreadArchived),
+        (UNARCHIVED, 1) => parse(data).map(Body::ThreadUnarchived),
+        (DELETED, 1) => parse(data).map(Body::ThreadDeleted),
+        (RENAMED, 1) => parse(data).map(Body::ThreadRenamed),
+        _ => return None,
+    })
 }
 
 impl Payload for ThreadArchived {
@@ -76,25 +84,4 @@ impl Payload for ThreadUnarchived {
 impl Payload for ThreadDeleted {
     const TYPE: &'static str = DELETED;
     const VERSION: u32 = 1;
-}
-
-pub(crate) fn decode_archived(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ThreadArchived>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_unarchived(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ThreadUnarchived>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_deleted(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ThreadDeleted>> {
-    (version == 1).then(|| parse(data))
 }

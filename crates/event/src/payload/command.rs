@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::id::CallId;
 use crate::payload::principal::Principal;
 
@@ -77,16 +77,15 @@ impl Payload for CommandEnded {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_started(
+/// A background command's events, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<CommandStarted>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_ended(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<CommandEnded>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (STARTED, 1) => parse(data).map(Body::CommandStarted),
+        (ENDED, 1) => parse(data).map(Body::CommandEnded),
+        _ => return None,
+    })
 }

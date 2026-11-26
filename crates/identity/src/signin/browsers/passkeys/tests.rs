@@ -1,10 +1,9 @@
-use std::sync::Arc;
-
 use glave_ports::testing::ManualClock;
 use glave_ports::{OrgId, ProjectId, Scope, block_on};
-use glave_store_sqlite::{SqliteLog, Store};
+use glave_store_sqlite::SqliteLog;
 
 use super::*;
+use crate::signin::fixtures::{scope, store};
 use crate::testing::Authenticator;
 
 const START: i64 = 1_791_590_400;
@@ -13,18 +12,6 @@ const SERVER: &str = "0192f5c6-0000-7000-8000-0000000005e7";
 
 /// The person's passkey handle, which the caller keeps.
 const HANDLE: Uuid = Uuid::from_u128(0x0dd1_7e5a_5e7a_4a1d_8a2e_0000_0000_0691);
-
-fn store() -> Store {
-    let root = glave_keys::InMemoryRoot::new().unwrap();
-    Store::open_in_memory(glave_keys::KeySettings::new(Arc::new(root))).unwrap()
-}
-
-fn scope() -> Scope {
-    Scope::glaves_own(
-        OrgId::from_uuid(Uuid::from_u128(1)),
-        ProjectId::from_uuid(Uuid::from_u128(2)),
-    )
-}
 
 /// The browsers of a server reached at [`ORIGIN`], on `log`.
 async fn open(log: SqliteLog, clock: &ManualClock) -> Browsers {
