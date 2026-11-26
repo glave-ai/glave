@@ -95,7 +95,7 @@ export function modelOptions(
 }
 
 /** How many recent models the picker remembers. */
-export const RECENT_MODELS = 5;
+const RECENT_MODELS = 5;
 
 /** A stored list of recent models, read back: its model ids, at most `RECENT_MODELS`. */
 export function toRecent(value: unknown): readonly string[] {

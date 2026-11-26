@@ -6,7 +6,7 @@ import { DEFAULT_MODEL } from './fake-models';
 import { event } from './fake-records';
 
 /** The workbook the thread's turn made, as `thread/files` gives it. */
-export const BUDGET: MadeFile = {
+const BUDGET: MadeFile = {
   kind: 'spreadsheet',
   name: 'Trip budget',
   file_name: 'Trip budget.xlsx',
@@ -20,7 +20,7 @@ export const BUDGET: MadeFile = {
 };
 
 /** The PDF the same turn made. */
-export const PLAN: MadeFile = {
+const PLAN: MadeFile = {
   kind: 'pdf',
   name: 'Lisbon plan',
   file_name: 'Lisbon plan.pdf',
@@ -37,7 +37,7 @@ export const PLAN: MadeFile = {
 const PREVIEW = '## Budget\n| Item | Total |\n|---|---|\n| Flights | 780 |\n| Hotel | 580 |';
 
 /** A deck the same turn made, too large to keep, whose line says why. */
-export const PHOTOS: MadeFile = {
+const PHOTOS: MadeFile = {
   kind: 'deck',
   name: 'All the photos',
   file_name: 'All the photos.pptx',

@@ -121,7 +121,7 @@ export const NEW_THREAD = '01900000-0000-7000-8000-000000000102';
 /** The thread that waits for the person: the oldest of the project's. */
 export const WAITING = '01900000-0000-7000-8000-000000000103';
 /** The thread an agent call in `THREAD` started. */
-export const SUBAGENT = '01900000-0000-7000-8000-000000000109';
+const SUBAGENT = '01900000-0000-7000-8000-000000000109';
 
 /** The chat that read pages on the web, as the person's chats and `thread/get` show it. */
 const RESEARCHING = thread(RESEARCH, 'What changed in Tokio 2.0?', 'idle', PERSONAL, {

@@ -134,7 +134,7 @@ async function answered(
 }
 
 /** Whether `value`, what the browser's authenticator answered, is a passkey's answer. */
-export function isPublicKeyCredential(value: unknown): value is PublicKeyCredential {
+function isPublicKeyCredential(value: unknown): value is PublicKeyCredential {
   return typeof value === 'object' && value !== null && 'rawId' in value && 'response' in value;
 }
 
