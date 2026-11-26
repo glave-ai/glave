@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 
 pub(crate) const ADDED: &str = "passkey.added";
 pub(crate) const USED: &str = "passkey.used";
@@ -68,23 +68,16 @@ impl Payload for PasskeyRemoved {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_added(
+/// A passkey's events, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<PasskeyAdded>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_used(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<PasskeyUsed>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_removed(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<PasskeyRemoved>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (ADDED, 1) => parse(data).map(Body::PasskeyAdded),
+        (USED, 1) => parse(data).map(Body::PasskeyUsed),
+        (REMOVED, 1) => parse(data).map(Body::PasskeyRemoved),
+        _ => return None,
+    })
 }

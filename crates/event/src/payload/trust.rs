@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::payload::principal::Principal;
 use crate::payload::project::repository_address;
 
@@ -56,17 +56,18 @@ impl TrustDecided {
     }
 }
 
-/// `trust.decided` at `version`: version 2, whose remote names the repository alone, or
-/// version 1, upgraded to it as it is read.
-pub(crate) fn decode_decided(
+/// `trust.decided`, or `None` for a type or version that is none of them. Version 1 is upgraded as
+/// it is read to version 2, whose remote names the repository alone.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<TrustDecided>> {
-    match version {
-        1 => Some(parse(data).map(TrustDecided::from_v1)),
-        2 => Some(parse(data)),
-        _ => None,
-    }
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (DECIDED, 1) => parse(data).map(|v1| Body::TrustDecided(TrustDecided::from_v1(v1))),
+        (DECIDED, 2) => parse(data).map(Body::TrustDecided),
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -85,10 +86,14 @@ mod tests {
             .unwrap()
         };
         let signed = data("https://x-access-token:a-token@github.com/o/app.git?t=a-token");
-        let read = decode_decided(1, &signed).unwrap().unwrap();
+        let decided = |version, raw: &RawValue| match decode(DECIDED, version, raw) {
+            Some(Ok(Body::TrustDecided(read))) => read,
+            _ => panic!("a trust decided"),
+        };
+        let read = decided(1, &signed);
         let named = Some("https://github.com/o/app.git".to_owned());
         assert_eq!(read.remote, named);
-        let kept = decode_decided(2, &data("https://github.com/o/app.git"));
-        assert_eq!(kept.unwrap().unwrap().remote, named);
+        let kept = decided(2, &data("https://github.com/o/app.git"));
+        assert_eq!(kept.remote, named);
     }
 }

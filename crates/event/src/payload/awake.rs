@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 
 pub(crate) const SET: &str = "awake.set";
 
@@ -21,6 +21,11 @@ impl Payload for AwakeSet {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_set(version: u32, data: &RawValue) -> Option<serde_json::Result<AwakeSet>> {
-    (version == 1).then(|| parse(data))
+/// `awake.set`, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<Body>> {
+    (kind == SET && version == 1).then(|| parse(data).map(Body::AwakeSet))
 }

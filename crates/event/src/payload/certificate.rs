@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::envelope::At;
 use crate::secret::Secret;
 
@@ -50,16 +50,16 @@ impl Payload for CertificateIssued {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_registered(
+/// The ACME account's and certificates' events, or `None` for a type or version that is none of
+/// them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<AcmeRegistered>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_issued(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<CertificateIssued>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (REGISTERED, 1) => parse(data).map(Body::AcmeRegistered),
+        (ISSUED, 1) => parse(data).map(Body::CertificateIssued),
+        _ => return None,
+    })
 }
