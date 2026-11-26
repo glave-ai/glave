@@ -2,10 +2,10 @@
 //! account the pod's Kubernetes service account is bound to (or the workload's own federated
 //! identity); on Compute Engine, Cloud Run and GKE without it, the instance's service account.
 
-use glave_ports::auth::{AuthError, Fresh, Secret};
+use glave_ports::auth::{AuthError, Fresh, Secret, TokenResponse, parse_answer};
 use jiff::Timestamp;
 
-use crate::token::{TokenResponse, parse, send};
+use crate::token::send;
 
 /// The metadata server, unless `GCE_METADATA_HOST` names another, as Google's libraries read it.
 pub(crate) const HOST: &str = "metadata.google.internal";
@@ -49,7 +49,7 @@ pub(crate) async fn token(
             error
         }
     })?;
-    parse::<TokenResponse>(&body, FROM)?.fresh(asked, FROM)
+    parse_answer::<TokenResponse>(&body, FROM)?.fresh(asked, FROM)
 }
 
 #[cfg(test)]

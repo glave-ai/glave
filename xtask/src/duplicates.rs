@@ -16,7 +16,7 @@ mod clones;
 
 use std::collections::BTreeSet;
 
-use crate::{cmd, workspace};
+use crate::{sources, workspace};
 use clones::Copied;
 
 /// Lines of code in a row that, found twice, start a copy.
@@ -31,18 +31,7 @@ const BASELINE: &str = "xtask/src/duplicates/baseline.txt";
 /// Fails on a copy of code [`BASELINE`] does not list, and on an entry of it no longer found.
 pub(crate) fn check() -> Result<(), String> {
     let root = workspace::root()?;
-    let listed = cmd::query("git", &["ls-files", "-z", "--", "crates", "xtask", "web"])?;
-    // Once each: a file with a merge's conflict is listed once for each side.
-    let paths: BTreeSet<&str> = listed.split('\0').filter(|path| scanned(path)).collect();
-    let mut sources = Vec::new();
-    for path in paths {
-        match std::fs::read_to_string(root.join(path)) {
-            Ok(text) => sources.push((path.to_owned(), text)),
-            // A file deleted but not yet staged holds no code.
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(format!("could not read {path}: {err}")),
-        }
-    }
+    let sources = sources::tracked(&["crates", "xtask", "web"], scanned)?;
     let baseline = std::fs::read_to_string(root.join(BASELINE))
         .map_err(|err| format!("could not read {BASELINE}: {err}"))?;
     let found = clones::find(&sources, WINDOW, LEAST_TOKENS);

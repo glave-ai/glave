@@ -3,9 +3,10 @@
 //! in, and no thread starts. A summary says nothing that assumes a worker. A thread the server
 //! lets go of closes its workspace, so threads started one after another never run out of them.
 
+use glave_ports::Standing;
 use glave_ports::computer::ComputerId;
 use glave_session::Answering;
-use glave_session::protocol::{Reply, Request, Show, code};
+use glave_session::protocol::{Reply, Request, code};
 
 use crate::support::*;
 
@@ -33,7 +34,7 @@ fn a_thread_on_a_computer_of_one_s_own_is_not_available_yet() {
             .request(Request::ThreadList {
                 project: Some(scope().project()),
                 limit: None,
-                show: Some(Show::Active),
+                show: Some(Standing::Active),
                 cursor: None,
             })
             .await

@@ -10,7 +10,7 @@ export const ENGLISH = 'en';
  * and `ar-XB`, right to left. Only a browser set to one asks for it. A real language joins once
  * a speaker has read it.
  */
-export const TRANSLATED = { 'en-XA': 'ltr', 'ar-XB': 'rtl' } as const satisfies Readonly<
+const TRANSLATED = { 'en-XA': 'ltr', 'ar-XB': 'rtl' } as const satisfies Readonly<
   Record<string, Direction>
 >;
 

@@ -9,8 +9,9 @@ use glave_ports::computer::{
 use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
 
 use super::*;
+use crate::LocalComputers;
+use crate::cancel::CancelSwitch;
 use crate::local::sandbox::tests::enforced;
-use crate::{CancelSwitch, LocalComputers};
 
 fn host(url: &str, forge: Forge) -> CredentialHost {
     CredentialHost {

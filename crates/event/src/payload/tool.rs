@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use super::part::Part;
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::id::CallId;
 
 pub(crate) const REQUESTED: &str = "tool.call.requested";
@@ -82,14 +82,18 @@ impl Payload for ToolCallRequested {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_requested(
+/// A tool call's events, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<ToolCallRequested>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (REQUESTED, 1) => parse(data).map(Body::ToolCallRequested),
+        (STARTED, 1) => parse(data).map(Body::ToolCallStarted),
+        (COMPLETED, 1) => parse(data).map(Body::ToolCallCompleted),
+        _ => return None,
+    })
 }
 
 /// A call's tool is about to run: from here on it may have run, so it is never run again from
@@ -103,16 +107,6 @@ pub struct ToolCallStarted {
 impl Payload for ToolCallStarted {
     const TYPE: &'static str = STARTED;
     const VERSION: u32 = 1;
-}
-
-pub(crate) fn decode_started(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ToolCallStarted>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
 }
 
 /// A tool call finished. `is_error` marks a failure the model should see; `structured` holds
@@ -162,16 +156,6 @@ impl WebPage {
 impl Payload for ToolCallCompleted {
     const TYPE: &'static str = COMPLETED;
     const VERSION: u32 = 1;
-}
-
-pub(crate) fn decode_completed(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ToolCallCompleted>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

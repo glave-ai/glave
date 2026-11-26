@@ -261,7 +261,7 @@ fn open_world_tools_and_servers_marked_untrusted_return_untrusted_output() {
         let echoed = marked
             .call("mcp__tests__echo", &asked, &NeverCancelled)
             .await;
-        assert!(echoed.untrusted && marked.is_untrusted());
+        assert!(echoed.untrusted);
         // The server's own error is its words too; glave's are not.
         let failed = marked
             .call("mcp__tests__fail", &arguments(json!({})), &NeverCancelled)

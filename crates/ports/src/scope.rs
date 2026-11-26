@@ -7,27 +7,14 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::projects::Project;
+use crate::uuid_id::uuid_id;
 
 /// Identifies an organization. A personal computer has exactly one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct OrgId(Uuid);
 
-impl OrgId {
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
-}
-
-impl fmt::Display for OrgId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
+uuid_id!(OrgId);
 
 /// Identifies a project: the boundary for memory, history, files and policy.
 #[derive(
@@ -52,21 +39,9 @@ impl ProjectId {
     const ORGANIZATION: Self = Self(Uuid::from_u128(0x0000_0000_0000_7000_8000_0000_0000_0000));
     /// A glave account's own place ([`Scope::of_account`]), no project's either.
     const ACCOUNT: Self = Self(Uuid::from_u128(0x0000_0000_0000_7000_8000_0000_0000_0001));
-
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
 }
 
-impl fmt::Display for ProjectId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
+uuid_id!(ProjectId);
 
 /// Where a storage call reads and writes. There is no storage call without one, so code
 /// cannot reach across organizations or projects; and there is no scope without a reason to

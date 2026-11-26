@@ -62,7 +62,7 @@ impl CtrlC {
     }
 
     #[cfg(not(unix))]
-    pub fn cancels(cancel: &Cancel) -> Self {
+    pub(crate) fn cancels(cancel: &Cancel) -> Self {
         let cancel = cancel.clone();
         Self(tokio::spawn(async move {
             if tokio::signal::ctrl_c().await.is_ok() {

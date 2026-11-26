@@ -22,20 +22,6 @@ where
     T::deserialize(field).map(Some)
 }
 
-/// Which threads `thread/list` shows.
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum Show {
-    /// Threads that are neither archived nor deleted.
-    #[default]
-    Active,
-    Archived,
-    /// Deleted threads, waiting for their content to be erased: for the operator that does it.
-    Deleted,
-}
-
 /// The person's answer to an approval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]

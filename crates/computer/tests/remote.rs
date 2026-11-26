@@ -188,7 +188,7 @@ async fn printed_by<C: Computers>(remote: &C, work: &Path, command: &Command) ->
         .await
         .unwrap();
     let output = glave_ports::testing::Captured::default();
-    let never = glave_computer::CancelSwitch::default();
+    let never = glave_ports::NeverCancelled;
     remote.run(here.id, command, &output, &never).await.unwrap();
     output.text()
 }
