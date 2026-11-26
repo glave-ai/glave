@@ -5,7 +5,7 @@ use serde_json::value::RawValue;
 
 use super::part::Part;
 use super::principal::Principal;
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 
 pub(crate) const TYPE: &str = "message.added";
 
@@ -88,12 +88,18 @@ impl Payload for MessageAdded {
     const VERSION: u32 = 2;
 }
 
-pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<MessageAdded>> {
-    match version {
-        1 => Some(parse::<MessageAddedV1>(data).map(MessageAdded::from)),
-        2 => Some(parse(data)),
-        _ => None,
-    }
+/// `message.added`, version 1 upgraded as it is read, or `None` for a type or version that is none
+/// of them.
+pub(crate) fn decode(
+    kind: &str,
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (TYPE, 1) => parse::<MessageAddedV1>(data).map(|old| Body::MessageAdded(old.into())),
+        (TYPE, 2) => parse(data).map(Body::MessageAdded),
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
