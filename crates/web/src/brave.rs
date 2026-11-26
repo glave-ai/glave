@@ -100,7 +100,7 @@ impl Brave {
             .await
             .map_err(|error| match error {
                 BodyError::Read(error) => transport(error),
-                BodyError::TooLarge => {
+                BodyError::TooLarge(_) => {
                     ProviderError::Protocol("web search's answer was too large".to_owned())
                 }
             })?;

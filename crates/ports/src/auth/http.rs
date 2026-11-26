@@ -29,13 +29,16 @@ pub fn provider_client(idle: Duration) -> Result<reqwest::Client, ProviderError>
         .map_err(|e| ProviderError::Transport(e.to_string()))
 }
 
-/// Why a body was not read whole.
-#[derive(Debug)]
+/// Why a body was not read whole. Its message never shows the address, which may carry a
+/// secret; the failure underneath is its source.
+#[derive(Debug, thiserror::Error)]
 pub enum BodyError {
     /// The connection failed while it was read.
-    Read(reqwest::Error),
-    /// It runs past the most that may be read.
-    TooLarge,
+    #[error("the answer broke off")]
+    Read(#[source] reqwest::Error),
+    /// It runs past the most that may be read, this many bytes.
+    #[error("the answer is over {0} bytes")]
+    TooLarge(usize),
 }
 
 /// The whole of `response`'s body, refused once it would run past `most` bytes, so an answer
@@ -47,7 +50,7 @@ pub async fn read_body(
     let mut body = Vec::new();
     while let Some(bytes) = response.chunk().await.map_err(BodyError::Read)? {
         if body.len().saturating_add(bytes.len()) > most {
-            return Err(BodyError::TooLarge);
+            return Err(BodyError::TooLarge(most));
         }
         body.extend_from_slice(&bytes);
     }

@@ -162,7 +162,7 @@ impl OpenAiCompatible {
             .await
             .map_err(|error| match error {
                 BodyError::Read(error) => self.failed(error),
-                BodyError::TooLarge => ProviderError::Protocol(format!(
+                BodyError::TooLarge(_) => ProviderError::Protocol(format!(
                     "{} answered with more than {most} bytes",
                     glave_ports::host::shown(url)
                 )),

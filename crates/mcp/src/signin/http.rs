@@ -76,7 +76,7 @@ impl Guarded {
                 .map_err(|error| -> OAuthHttpClientError {
                     match error {
                         BodyError::Read(error) => Box::new(error),
-                        BodyError::TooLarge => {
+                        BodyError::TooLarge(_) => {
                             format!("its answer is over {MOST_BYTES} bytes").into()
                         }
                     }

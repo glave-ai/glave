@@ -181,7 +181,7 @@ impl Keys {
             .await
             .map_err(|error| match error {
                 BodyError::Read(error) => failed(error),
-                BodyError::TooLarge => {
+                BodyError::TooLarge(_) => {
                     self.failed(format!("{said} sent more than {MOST_BYTES} bytes"))
                 }
             })?;
