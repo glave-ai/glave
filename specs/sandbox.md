@@ -325,6 +325,7 @@ Decided 2026-10-31 (#1115). A person's computer in the cloud (`computers.md`, de
 
 ## Later, decided separately
 
+- **The judge seeing every action** (#13): today only actions a rule flags reach it, so one no rule flags (`rm -rf src/`, a script that sends mail) is never judged.
 - **Turning off letting one command out**, for an organization that wants every command in the sandbox, as Claude Code's `allowUnsandboxedCommands: false` does. Where its policy takes the network, `ask_network = false` already turns it off.
 - **Granting a folder** to a thread, so commands may write it without leaving the sandbox (#307).
 - **A domain allowlist** for the network, through a filtering proxy, which also withholds cloud metadata from commands (*Cloud metadata*).
