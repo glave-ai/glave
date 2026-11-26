@@ -30,7 +30,6 @@
 83355f733bf6c3cb 6 crates/store-postgres/src/store.rs crates/store-sqlite/src/store.rs
 aab82f086101a3df 6 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 9555910be626e4a7 8 crates/store-postgres/src/leases.rs crates/store-sqlite/src/leases.rs
-960f7c5d68b6557d 7 crates/aws/src/sigv4.rs crates/google/src/adc.rs
 9686706281056062 6 crates/cli/tests/computer.rs crates/computer/src/local/background/tests.rs
 9917f56ff024635e 7 crates/computer/src/local/credentials/tests.rs crates/computer/src/local/sandbox/linux/tests.rs crates/computer/src/local/sandbox/tests.rs
 9e0deedec0a616b8 11 crates/cli/src/memory.rs crates/cli/src/threads.rs

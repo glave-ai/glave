@@ -2,12 +2,14 @@
 //! kept until five minutes before they expire.
 
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use aws_credential_types::Credentials as AwsKeys;
 use aws_sigv4::http_request::{SignableBody, SignableRequest, SigningSettings, sign};
 use aws_sigv4::sign::v4;
-use glave_ports::auth::{AuthError, Header, Outgoing, Refreshing, RequestSigner, Secret};
+use glave_ports::auth::{
+    AuthError, Header, Outgoing, Refreshing, RequestSigner, Secret, credentials_client,
+};
 use glave_ports::{BoxFuture, Clock};
 use jiff::{SignedDuration, Timestamp};
 
@@ -35,11 +37,7 @@ impl SigV4 {
         endpoint: Endpoint,
         clock: Arc<dyn Clock>,
     ) -> Result<Self, AuthError> {
-        let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|e| AuthError::unreachable(format!("could not set up HTTP: {e}")))?;
+        let http = credentials_client()?;
         Ok(Self {
             source,
             region,
