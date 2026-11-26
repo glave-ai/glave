@@ -595,9 +595,7 @@ mod tests {
     #[test]
     fn the_server_and_its_sessions_are_kept_in_the_store_across_opens() {
         glave_ports::block_on!(async {
-            let root = glave_keys::InMemoryRoot::new().unwrap();
-            let keys = glave_keys::KeySettings::new(Arc::new(root));
-            let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
+            let store = Data::in_memory().unwrap();
             let person = PrincipalId::new(SystemClock.now(), [1; 10]).unwrap();
             let first = open_browsers(&store, person, None).await.unwrap();
             let code = first.link().unwrap();

@@ -31,6 +31,14 @@ pub(crate) enum Data {
 }
 
 impl Data {
+    /// A store of its own in memory, under a root of its own: for tests.
+    #[cfg(test)]
+    pub(crate) fn in_memory() -> anyhow::Result<Self> {
+        let root = glave_keys::InMemoryRoot::new()?;
+        let keys = glave_keys::KeySettings::new(Arc::new(root));
+        Ok(Self::Sqlite(sqlite::Store::open_in_memory(keys)?))
+    }
+
     /// The store `url` names, or the local SQLite file when it names none; blobs' bytes in the
     /// bucket `bucket` names, or the folder in glave's folder. What it warns of, it says as
     /// `said`.

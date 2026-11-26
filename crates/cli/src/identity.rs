@@ -78,9 +78,7 @@ mod tests {
     use super::*;
 
     fn store() -> Data {
-        let root = glave_keys::InMemoryRoot::new().unwrap();
-        let keys = glave_keys::KeySettings::new(std::sync::Arc::new(root));
-        Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap())
+        Data::in_memory().unwrap()
     }
 
     #[test]
