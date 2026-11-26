@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Body, Opened, ThreadId, decode};
-use glave_ports::{EventLog, ProjectId};
+use glave_ports::{EventLog, ProjectId, Standing};
 use glave_session::protocol::{GoneFolder, Reply, Request, code};
 use serde_json::json;
 

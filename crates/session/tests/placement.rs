@@ -3,6 +3,7 @@
 //! in, and no thread starts. A summary says nothing that assumes a worker. A thread the server
 //! lets go of closes its workspace, so threads started one after another never run out of them.
 
+use glave_ports::Standing;
 use glave_ports::computer::ComputerId;
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, code};

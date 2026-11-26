@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use glave_event::ThreadId;
-use glave_ports::{BoxFuture, EventLog, Scope};
+use glave_ports::{BoxFuture, EventLog, Scope, Standing};
 use glave_session::protocol::{Reply, Request, code};
 use glave_session::{Answering, Worktrees};
 use serde_json::json;
