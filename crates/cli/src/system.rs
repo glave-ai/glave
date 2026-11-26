@@ -19,6 +19,6 @@ pub(crate) fn new_uuid_v7() -> anyhow::Result<uuid::Uuid> {
 pub(crate) fn random<const N: usize>() -> anyhow::Result<[u8; N]> {
     let mut bytes = [0u8; N];
     getrandom::fill(&mut bytes)
-        .map_err(|e| anyhow::anyhow!("could not get random bytes for a new id: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("could not get random bytes from this computer: {e}"))?;
     Ok(bytes)
 }

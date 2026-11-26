@@ -21,7 +21,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::{cmd, workspace};
+use crate::{sources, workspace};
 use exported::{Exported, Library};
 
 /// Exported items no other crate names that stay public on purpose: the crate, the item's name,
@@ -49,7 +49,7 @@ struct Sources {
 pub(crate) fn check() -> Result<(), String> {
     let root = workspace::root()?;
     let packages = packages(&workspace::metadata()?, &root)?;
-    let sources = Sources::read(&root, &packages)?;
+    let sources = Sources::read(&packages)?;
     let mut problems = Vec::new();
     let mut allowed_found = BTreeSet::new();
     let (mut libraries, mut exported) = (0_usize, 0_usize);
@@ -127,26 +127,19 @@ fn unused(library: &Library, named: impl Fn(&str) -> bool) -> Vec<&Exported> {
 
 impl Sources {
     /// Reads every tracked Rust source in a workspace package's folder.
-    fn read(root: &Path, packages: &[Package]) -> Result<Self, String> {
-        let listed = cmd::query("git", &["ls-files", "-z", "--", "*.rs"])?;
-        let paths: Vec<String> = listed
-            .split('\0')
-            .filter(|path| {
-                packages
-                    .iter()
-                    .any(|package| path.starts_with(&package.folder))
-            })
-            .map(str::to_owned)
-            .collect();
-        let mut texts = Vec::with_capacity(paths.len());
+    fn read(packages: &[Package]) -> Result<Self, String> {
+        let (paths, texts): (Vec<String>, Vec<String>) = sources::tracked(&["*.rs"], |path| {
+            packages
+                .iter()
+                .any(|package| path.starts_with(&package.folder))
+        })?
+        .into_iter()
+        .unzip();
         let mut named_in: HashMap<String, Vec<usize>> = HashMap::new();
-        for (index, path) in paths.iter().enumerate() {
-            let text = std::fs::read_to_string(root.join(path))
-                .map_err(|err| format!("could not read {path}: {err}"))?;
-            for word in words(&text).collect::<BTreeSet<_>>() {
+        for (index, text) in texts.iter().enumerate() {
+            for word in words(text).collect::<BTreeSet<_>>() {
                 named_in.entry(word.to_owned()).or_default().push(index);
             }
-            texts.push(text);
         }
         Ok(Self {
             paths,

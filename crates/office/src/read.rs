@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use calamine::{Data, Range, Reader, Sheet, SheetType, SheetVisible, Sheets};
 
-use crate::cells::{cell_name, column_name, listed};
+use crate::cells::{cell_name, column_name, counted, listed};
 use crate::command::Answer;
 use crate::error::OfficeError;
 use crate::reach::{Budget, formulas, values};
@@ -51,11 +51,7 @@ pub(crate) fn read(bytes: Vec<u8>, name: &str, reading: &Reading) -> Result<Stri
     let chosen = chosen(&sheets, reading.sheet.as_deref())?;
     let mut text = String::new();
     let listed: Vec<String> = sheets.iter().map(describe).collect();
-    let count = if sheets.len() == 1 {
-        "1 sheet".to_owned()
-    } else {
-        format!("{} sheets", sheets.len())
-    };
+    let count = counted(sheets.len(), "sheet", "sheets");
     let _ = writeln!(text, "{name}: {count}: {}", listed.join(", "));
     // Excel's own names (`_xlnm.` and after: a filter's range, the print area) are left out.
     for (defined, refers) in book.defined_names() {
@@ -95,9 +91,7 @@ pub(crate) fn csv(bytes: Vec<u8>, sheet: Option<&str>) -> Result<Answer, OfficeE
     let values = values(&mut book, &name, &mut budget)?;
     let mut text = String::new();
     for row in values.rows() {
-        let fields: Vec<String> = row.iter().map(|value| quoted(&shown(value))).collect();
-        text.push_str(&fields.join(","));
-        text.push('\n');
+        text.push_str(&csv_line(row.iter().map(shown)));
     }
     let formulas = formulas(&mut book, &name, &mut budget)?;
     let uncomputed: Vec<String> = formulas_by_cell(&formulas)
@@ -188,9 +182,13 @@ impl Table<'_> {
             return;
         };
         let span = if first == last {
-            name(first)
+            cell_name(first.0, first.1)
         } else {
-            format!("{}:{}", name(first), name(last))
+            format!(
+                "{}:{}",
+                cell_name(first.0, first.1),
+                cell_name(last.0, last.1)
+            )
         };
         let _ = writeln!(text, "## {sheet} ({span})");
         let formulas = formulas_by_cell(self.formulas);
@@ -267,11 +265,6 @@ fn formulas_by_cell(formulas: &Range<String>) -> BTreeMap<At, String> {
         .collect()
 }
 
-/// A cell's name: `A1` for (0, 0).
-fn name((row, column): At) -> String {
-    cell_name(row, column)
-}
-
 /// A formula's value, unless it has none yet: a workbook written by a program rather than a
 /// spreadsheet app (as `glave doc write` writes one) has no results until one opens it.
 fn computed(value: Option<&Data>) -> Option<&Data> {
@@ -321,8 +314,17 @@ pub(crate) fn general(number: f64) -> String {
     format!("{rounded}")
 }
 
+/// `fields` as one line of CSV, ending in a newline.
+pub(crate) fn csv_line(fields: impl IntoIterator<Item = impl AsRef<str>>) -> String {
+    let fields: Vec<String> = fields
+        .into_iter()
+        .map(|field| quoted(field.as_ref()))
+        .collect();
+    fields.join(",") + "\n"
+}
+
 /// A field of a CSV line, quoted when it must be (RFC 4180).
-pub(crate) fn quoted(field: &str) -> String {
+fn quoted(field: &str) -> String {
     if field.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", field.replace('"', "\"\""))
     } else {

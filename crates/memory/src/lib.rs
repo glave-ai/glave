@@ -16,7 +16,7 @@ mod similar;
 
 pub use client::GlaveMemory;
 pub use memories::{
-    BUDGET_TOKENS, Housekept, MOST_HITS, Memories, Recalled, Remembering, Source, Tidied, Tidier,
-    Writer, tokens,
+    BUDGET_TOKENS, Housekept, Memories, Recalled, Remembering, Source, Tidied, Tidier, Writer,
+    tokens,
 };
 pub use rules::{Personal, Rules};

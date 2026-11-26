@@ -19,7 +19,7 @@ use glave_ports::computer::{
 use super::super::Kubernetes;
 use super::super::tests::{another_pod, cluster, key, left_behind, with_glave};
 use super::PersonComputer;
-use crate::CancelSwitch;
+use crate::cancel::CancelSwitch;
 use crate::worker::WorkerComputers;
 use crate::worker::route::Tail;
 

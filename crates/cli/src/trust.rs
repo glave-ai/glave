@@ -106,9 +106,7 @@ fn event(entry: &Entry, seq: u64) -> anyhow::Result<RawEvent> {
 impl Trust {
     /// A new person's trust ledger on a store in memory; and the store.
     pub(crate) async fn in_memory() -> anyhow::Result<(Data, Self)> {
-        let root = glave_keys::InMemoryRoot::new()?;
-        let keys = glave_keys::KeySettings::new(std::sync::Arc::new(root));
-        let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys)?);
+        let store = Data::in_memory()?;
         let person = PrincipalId::new(SystemClock.now(), OsEntropy.bytes()?)?;
         let trust = Self::open(&store, person).await?;
         Ok((store, trust))

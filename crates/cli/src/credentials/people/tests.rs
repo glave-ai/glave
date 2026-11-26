@@ -48,8 +48,7 @@ fn asked() -> CredentialAsk {
 #[test]
 fn each_person_s_commands_get_their_own_git_hosts_and_never_another_s() {
     block_on(async {
-        let keys = glave_keys::KeySettings::new(Arc::new(glave_keys::InMemoryRoot::new().unwrap()));
-        let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
+        let store = Data::in_memory().unwrap();
         let own_org = store.org().await.unwrap();
         let (here, ada, grace) = (someone(), someone(), someone());
         let own_ledger = crate::accounts::open(&store, here).await.unwrap();

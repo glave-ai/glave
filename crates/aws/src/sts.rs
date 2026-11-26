@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use glave_ports::auth::{AuthError, Fresh, Secret, safe_to_send};
+use glave_ports::auth::{AuthError, Fresh, Secret, read_token_file, safe_to_send, send_for_body};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 
 use crate::Region;
@@ -55,46 +55,25 @@ impl WebIdentity {
 
     /// Temporary keys for the role.
     pub(crate) async fn assume(&self, http: &reqwest::Client) -> Result<Fresh<Keys>, AuthError> {
-        let token = tokio::fs::read_to_string(&self.token_file)
-            .await
-            .map_err(|error| {
-                AuthError::refused(format!(
-                    "could not read the web identity token file {} \
-                     (AWS_WEB_IDENTITY_TOKEN_FILE): {error}",
-                    self.token_file.display()
-                ))
-            })?;
+        let token = read_token_file(
+            &self.token_file,
+            "the web identity token file",
+            "AWS_WEB_IDENTITY_TOKEN_FILE",
+        )
+        .await?;
         let form = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("Action", "AssumeRoleWithWebIdentity")
             .append_pair("Version", VERSION)
             .append_pair("RoleArn", &self.role_arn)
             .append_pair("RoleSessionName", &self.session_name)
-            .append_pair("WebIdentityToken", token.trim())
+            .append_pair("WebIdentityToken", &token)
             .finish();
-        let response = http
+        let request = http
             .post(&self.sts)
             .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
             .header(ACCEPT, "text/xml")
-            .body(form)
-            .send()
-            .await
-            .map_err(|error| {
-                AuthError::unreachable(format!(
-                    "could not reach AWS STS at {}: {}",
-                    glave_ports::host::shown(&self.sts),
-                    error.without_url()
-                ))
-            })?;
-        let status = response.status().as_u16();
-        let body = response.text().await.map_err(|error| {
-            AuthError::unreachable(format!(
-                "AWS STS's answer broke off: {}",
-                error.without_url()
-            ))
-        })?;
-        if !(200..300).contains(&status) {
-            return Err(refusal(status, &body));
-        }
+            .body(form);
+        let body = send_for_body(request, "AWS STS", refusal).await?;
         let field = |name: &str| {
             tag(&body, name)
                 .ok_or_else(|| AuthError::unreachable(format!("AWS STS's answer has no {name}")))

@@ -170,7 +170,7 @@ impl Fetcher {
 
     /// Whether `url` may be fetched: http or https, no credentials, a host the policy
     /// allows, and when the host is an address, one it may reach.
-    pub fn check(&self, url: &Url) -> Result<(), FetchError> {
+    fn check(&self, url: &Url) -> Result<(), FetchError> {
         match url.scheme() {
             "http" | "https" => {}
             other => return Err(FetchError::Scheme(other.to_owned())),
@@ -254,4 +254,26 @@ fn failed(error: &reqwest::Error) -> FetchError {
         return FetchError::Failed("the connection timed out".to_owned());
     }
     FetchError::Failed(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use glave_ports::host::HostPattern;
+
+    use super::*;
+
+    #[test]
+    fn a_host_denied_at_one_port_may_be_fetched_at_another() {
+        let policy = WebPolicy {
+            allow: vec![HostPattern::parse("127.0.0.1").unwrap()],
+            deny: vec![HostPattern::parse("127.0.0.1:80").unwrap()],
+            ..WebPolicy::default()
+        };
+        let fetcher = Fetcher::new(policy, Limits::default()).unwrap();
+        let here = Url::parse("http://127.0.0.1:8080/").unwrap();
+        assert!(fetcher.check(&here).is_ok(), "denied at 80 alone");
+        let anywhere = Fetcher::new(WebPolicy::default(), Limits::default()).unwrap();
+        let docs = Url::parse("https://docs.rs/").unwrap();
+        assert!(anywhere.check(&docs).is_ok());
+    }
 }

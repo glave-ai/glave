@@ -60,14 +60,14 @@ pub(crate) fn routing_if_router(target: Target, provider: &str, router: Router) 
 /// Which models a policy allows, where the main and judge models were chosen, and what they
 /// cost.
 pub(crate) struct Allowed<'a> {
-    pub constraints: &'a Constraints,
+    pub(crate) constraints: &'a Constraints,
     /// The payer's own prices over glave's list, which win over a catalog's.
-    pub prices: &'a PriceList,
+    pub(crate) prices: &'a PriceList,
     /// Where the main model was chosen, when anyone chose it.
-    pub main: Option<&'a Source>,
-    pub judge: &'a Source,
+    pub(crate) main: Option<&'a Source>,
+    pub(crate) judge: &'a Source,
     /// Where `[[models]]` was chosen.
-    pub models: &'a Source,
+    pub(crate) models: &'a Source,
 }
 
 /// The gateway over `provider` at `endpoint`, with the judge's model, when `judge` names one

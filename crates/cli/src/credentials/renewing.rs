@@ -115,9 +115,9 @@ pub(crate) enum Ended<A> {
 
 /// One renewal: what its task needs, its own.
 pub(crate) struct Renewing<R: Renew> {
-    pub job: R,
+    pub(crate) job: R,
     /// A renewal already made but not kept, kept again rather than renewed again.
-    pub fresh: Option<R::Kept>,
+    pub(crate) fresh: Option<R::Kept>,
 }
 
 impl<A: Clone + Send + Sync + 'static> Renewals<A> {
@@ -269,10 +269,10 @@ impl<R: Renew> Renewing<R> {
 
 /// Renewing a GitHub App's token.
 pub(super) struct HostRenewal {
-    pub ledger: Ledger,
-    pub http: Http,
-    pub github: Github,
-    pub current: CredentialConnected,
+    pub(crate) ledger: Ledger,
+    pub(crate) http: Http,
+    pub(crate) github: Github,
+    pub(crate) current: CredentialConnected,
 }
 
 impl Renew for HostRenewal {

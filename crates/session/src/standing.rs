@@ -15,7 +15,7 @@ use tokio::sync::watch;
 
 use crate::choice::Choice;
 use crate::held::{Slot, Use, finished};
-use crate::protocol::{ApiError, ContextUse, DiskShort, Reply, Show, ThreadSummary, code};
+use crate::protocol::{ApiError, ContextUse, DiskShort, Reply, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, no_thread};
 use crate::words::Sentence;
 
@@ -181,17 +181,13 @@ where
         caller: &Caller,
         project: Option<ProjectId>,
         limit: Option<usize>,
-        show: Option<Show>,
+        show: Option<Standing>,
         cursor: Option<String>,
     ) -> Result<Reply, ApiError> {
         let (_, scope) = self.project_for(caller, project).await?;
         let project = scope.project();
         let limit = limit.unwrap_or(20).clamp(1, MAX_PAGE);
-        let standing = match show.unwrap_or_default() {
-            Show::Active => Standing::Active,
-            Show::Archived => Standing::Archived,
-            Show::Deleted => Standing::Deleted,
-        };
+        let standing = show.unwrap_or_default();
         let after = cursor
             .map(|cursor| crate::cursor::read(&cursor, project, standing))
             .transpose()?;

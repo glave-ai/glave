@@ -18,6 +18,10 @@ use crate::storage::KeyStorage;
 
 use super::Keys;
 
+mod stored;
+
+pub use stored::{BlobRecord, BlobRecords, SealedBlobs, forget_sealed};
+
 /// The plaintext bytes in each sealed chunk but the last, which holds 0 to `CHUNK`.
 pub(crate) const CHUNK: usize = 64 * 1024;
 
@@ -162,7 +166,7 @@ impl BlobOpener {
 
 /// Seals what `bytes` yields into `writer`, refusing more than `limit` bytes. The writer is
 /// left to finish or abandon.
-pub async fn seal_into(
+pub(crate) async fn seal_into(
     mut sealer: BlobSealer,
     limit: u64,
     bytes: &mut dyn Chunks,
@@ -182,13 +186,13 @@ pub async fn seal_into(
 }
 
 /// A blob's content: its object's sealed bytes, opened as they are read.
-pub struct Opened {
+pub(crate) struct Opened {
     sealed: Box<dyn Chunks>,
     opener: Option<BlobOpener>,
 }
 
 impl Opened {
-    pub fn new(sealed: Box<dyn Chunks>, opener: BlobOpener) -> Self {
+    pub(crate) fn new(sealed: Box<dyn Chunks>, opener: BlobOpener) -> Self {
         Self {
             sealed,
             opener: Some(opener),
