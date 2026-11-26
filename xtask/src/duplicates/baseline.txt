@@ -11,7 +11,6 @@
 111e9eda7f7fe431 9 crates/azure/src/workload/tests.rs crates/google/src/adc/tests.rs
 12fce2f8c183f2c6 36 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 164d700574459588 9 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
-1bc560fe8419ed5b 8 crates/identity/src/signin/browsers/passkeys/tests.rs crates/identity/src/signin/browsers/tests.rs
 1c3c0adb8bac6fcc 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
 21324c4068197f18 7 crates/harness/src/resume.rs crates/harness/src/waits.rs
 237d79407a4200b6 7 web/e2e/attachments.e2e.ts web/e2e/attachments.e2e.ts
@@ -56,7 +55,6 @@ bbd73ee3de4c9b51 8 crates/computer/src/local/confinement_tests.rs crates/compute
 c12ac87a932d4b74 9 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 c17d7fe4cb135254 15 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 ee8c2a91fc842113 19 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
-caeb06a87c9deb1f 7 crates/acme/src/https/tests.rs crates/identity/src/signin/browsers/passkeys/tests.rs crates/identity/src/signin/browsers/tests.rs
 cc0e2ab47194c099 8 crates/computer/src/local/sandbox/linux/tests.rs crates/computer/src/local/sandbox/tests.rs
 ce0906a0f5b574b1 8 crates/computer/tests/remote.rs crates/harness/tests/faults.rs
 d0803df2a14350ec 8 web/app/src/app/services/projects.service.spec.ts web/app/src/app/services/projects.service.spec.ts
