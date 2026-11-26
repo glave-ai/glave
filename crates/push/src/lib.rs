@@ -11,4 +11,4 @@ mod subscription;
 
 pub use key::{KeyError, VapidKey};
 pub use send::{Message, PushError, Pusher, Sent, Urgency};
-pub use subscription::{PUSH_SERVICES, Refused, Subscription};
+pub use subscription::{Refused, Subscription};

@@ -2,7 +2,7 @@
 //! 443, with a key and a secret of the right shapes; never another host, a private network or
 //! this computer, outside a test's own service.
 
-use glave_push::{PUSH_SERVICES, Pusher, Refused};
+use glave_push::{Pusher, Refused};
 
 use crate::example::{AUTH, P256DH};
 
@@ -20,11 +20,6 @@ fn each_browser_s_push_service_is_taken() {
             "{endpoint}"
         );
     }
-    assert_eq!(
-        PUSH_SERVICES.len(),
-        4,
-        "Google's, Mozilla's, Apple's, Microsoft's"
-    );
     // Padded, as some browsers write it.
     let padded = pusher.subscription(
         "https://web.push.apple.com/QGx2v",

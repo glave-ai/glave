@@ -32,4 +32,4 @@ pub use keys::{
 };
 pub use material::KeyMaterial;
 pub use root::{InMemoryRoot, KeyFileRoot, Root};
-pub use storage::{InMemoryKeyStorage, KeyStorage, StoredProject};
+pub use storage::{KeyStorage, StoredProject};
