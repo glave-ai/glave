@@ -18,6 +18,7 @@ use glave_ports::{
 
 use crate::approval::{Approver, Decision};
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::resume::dangling_calls;
 use crate::service::{Round, round_of};
 use crate::tools::Tool;
 use crate::turn::Step;
@@ -85,24 +86,7 @@ pub(crate) fn open_turn(events: &[Event]) -> Option<Open> {
     {
         return None;
     }
-    let completed: HashSet<&CallId> = turn
-        .iter()
-        .filter_map(|event| match &event.body {
-            Body::ToolCallCompleted(done) => Some(&done.call_id),
-            _ => None,
-        })
-        .collect();
-    let calls: Vec<ToolCall> = turn
-        .iter()
-        .filter_map(|event| match &event.body {
-            Body::ToolCallRequested(call) if !completed.contains(&call.call_id) => Some(ToolCall {
-                call_id: call.call_id.clone(),
-                tool: call.tool.clone(),
-                arguments: call.arguments.clone(),
-            }),
-            _ => None,
-        })
-        .collect();
+    let calls = dangling_calls(turn);
     let round = calls
         .first()
         .and_then(|first| round_of(turn, &first.call_id));
@@ -446,7 +430,7 @@ pub(crate) fn by(view: &ThreadView, person: Option<PrincipalId>) -> Option<Princ
 
 /// Whether `events` hold a call with no result outside any open turn.
 fn dangling(events: &[Event]) -> bool {
-    !crate::resume::dangling_calls(events).is_empty()
+    !dangling_calls(events).is_empty()
 }
 
 /// What the latest turn in `events` did by itself: its model calls, tool calls, commands that
