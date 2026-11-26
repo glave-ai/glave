@@ -17,3 +17,26 @@ export async function clickAsSafari(target: HTMLElement): Promise<void> {
   target.dispatchEvent(new MouseEvent('mouseup', init));
   target.click();
 }
+
+/** Clicks `button` as Safari does, then lets `fixture` settle. */
+export async function pressAsSafari(
+  button: HTMLElement,
+  fixture: { whenStable(): Promise<unknown> },
+): Promise<void> {
+  await clickAsSafari(button);
+  await fixture.whenStable();
+}
+
+/**
+ * Clicks `button`, whose menu is open, as Safari does, and fails unless the menu has closed,
+ * the button says so, and focus is on it.
+ */
+export async function expectClosedAsSafari(
+  button: HTMLElement,
+  fixture: { whenStable(): Promise<unknown> },
+): Promise<void> {
+  await pressAsSafari(button, fixture);
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  expect(button.getAttribute('aria-expanded')).toBe('false');
+  expect(document.activeElement).toBe(button);
+}

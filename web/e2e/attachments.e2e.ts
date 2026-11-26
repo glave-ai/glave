@@ -1,5 +1,8 @@
-import { THREAD, fakeApi } from './fake-api';
+import type { Page } from '@playwright/test';
+
+import { type Request, THREAD, fakeApi } from './fake-api';
 import {
+  type Problems,
   SIGNED_IN,
   byTestId,
   expect,
@@ -15,15 +18,27 @@ const PNG = Buffer.from(
   'base64',
 );
 
+/**
+ * The thread opened on a wide page in `colorScheme`, with what the page says went wrong and
+ * what it asked the fake server.
+ */
+async function openThread(
+  page: Page,
+  colorScheme: 'light' | 'dark',
+): Promise<{ readonly problems: Problems; readonly requests: readonly Request[] }> {
+  const problems = watchForProblems(page);
+  await page.emulateMedia({ colorScheme });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const { requests } = await fakeApi(page);
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  return { problems, requests };
+}
+
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`files are added by picking and dropping them, shown, and sent with the message (${colorScheme})`, async ({
     page,
   }) => {
-    const problems = watchForProblems(page);
-    await page.emulateMedia({ colorScheme });
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const { requests } = await fakeApi(page);
-    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    const { problems, requests } = await openThread(page, colorScheme);
     await expect(byTestId(page, 'thread-composer-attach')).toBeVisible();
 
     await byTestId(page, 'thread-composer-picker').setInputFiles([
@@ -69,11 +84,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test(`a screenshot and a PDF pasted into the box are shown and sent with the message (${colorScheme})`, async ({
     page,
   }) => {
-    const problems = watchForProblems(page);
-    await page.emulateMedia({ colorScheme });
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const { requests } = await fakeApi(page);
-    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    const { problems, requests } = await openThread(page, colorScheme);
     const input = byTestId(page, 'thread-composer-input');
     await expect(input).toBeVisible();
 

@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 
 import type { GlzOption } from '../../lib/options';
 import { expectAccessible } from '../../testing/axe';
-import { clickAsSafari } from '../../testing/press';
+import { expectClosedAsSafari, pressAsSafari } from '../../testing/press';
 import { GlzMenuButtonComponent } from './menu-button.component';
 
 @Component({
@@ -86,17 +86,12 @@ describe('GlzMenuButtonComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const button = trigger(root);
-    await clickAsSafari(button);
-    await fixture.whenStable();
+    await pressAsSafari(button, fixture);
     expect(button.getAttribute('aria-expanded')).toBe('true');
     expect(shown('more-action')).toHaveLength(2);
-    await clickAsSafari(button);
-    await fixture.whenStable();
-    expect(document.querySelector('[role="menu"]')).toBeNull();
-    expect(button.getAttribute('aria-expanded')).toBe('false');
-    // The press took focus to the button, so the menu, which closes once focus leaves it and
-    // its button, closed on the click alone (end to end, where focus is in the menu).
-    expect(document.activeElement).toBe(button);
+    // The press takes focus to the button, so the menu, which closes once focus leaves it and
+    // its button, closes on the click alone (end to end, where focus is in the menu).
+    await expectClosedAsSafari(button, fixture);
     expect(fixture.componentInstance.picked).toEqual([]);
     await expectAccessible(root);
   });
