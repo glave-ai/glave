@@ -20,7 +20,9 @@ use crate::root::Root;
 use crate::seal::{associated, open, seal};
 use crate::storage::KeyStorage;
 
-pub use self::blob::{BlobOpener, BlobSealer, Finished, Opened, seal_into};
+pub use self::blob::{
+    BlobOpener, BlobRecord, BlobRecords, BlobSealer, Finished, SealedBlobs, forget_sealed,
+};
 use self::cache::Cache;
 
 /// How a store's keys are set up: the root that wraps organization keys, the clock that
@@ -139,7 +141,7 @@ impl<S: KeyStorage> Keys<S> {
     /// The name a blob is stored under in `scope`: HMAC-SHA-256 of its hash under the project
     /// key, so the store does not reveal which known files it holds. `None` when the project
     /// has no key yet (or it was erased), so nothing sealed can be found.
-    pub async fn blob_name(
+    pub(crate) async fn blob_name(
         &self,
         scope: &Scope,
         sha256: &Sha256,

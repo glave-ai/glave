@@ -20,7 +20,7 @@ mod store;
 mod tls;
 mod views;
 
-pub use blobs::PostgresBlobs;
+pub use blobs::{PostgresBlobs, PostgresRecords};
 pub use directory::PostgresDirectory;
 pub use keys::PostgresKeys;
 pub use leases::PostgresLeases;

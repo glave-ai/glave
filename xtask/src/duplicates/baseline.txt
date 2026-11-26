@@ -3,13 +3,11 @@
 # place they are in. A copy not listed here fails the check, and so does a line no longer found:
 # a change that shares a copy takes its line out, and one that edits or moves a listed copy puts
 # the line the check prints in its place. Nothing is added here but that.
-00244d63d16a6b84 34 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 010ee3b4bae24c7f 14 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
 04879cd549cea09e 7 crates/cli/src/memory.rs crates/cli/src/threads.rs
 090ee4c561993ff7 6 crates/session/tests/listing.rs crates/session/tests/standing.rs
 104f93b401311b5c 7 crates/store-postgres/src/store.rs crates/store-sqlite/src/store.rs
 111e9eda7f7fe431 9 crates/azure/src/workload/tests.rs crates/google/src/adc/tests.rs
-12fce2f8c183f2c6 36 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 164d700574459588 9 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 1bc560fe8419ed5b 8 crates/identity/src/signin/browsers/passkeys/tests.rs crates/identity/src/signin/browsers/tests.rs
 1c3c0adb8bac6fcc 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
@@ -20,7 +18,6 @@
 2e3ce5bbc0e838ca 7 crates/session/src/http/body/tests.rs crates/session/src/http/body/tests.rs
 2efd93b7f3eedc0e 10 crates/session/tests/outside.rs crates/session/tests/outside.rs
 3a6f88c56187a776 9 crates/eval/tests/attempt.rs crates/eval/tests/attempt.rs
-3b6e34fd48a5a87f 29 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 4fac0a7d959a48c2 13 crates/session/tests/list_watching.rs crates/session/tests/subagents.rs
 55b7dc4aa2df1119 9 crates/harness/tests/support/script.rs crates/memory/tests/support/kit.rs
 560cf54430deb382 6 web/app/src/app/components/connections/connections.component.spec.ts web/app/src/app/components/passkeys/passkeys.component.spec.ts
@@ -47,7 +44,6 @@ a4c6e50cee13806d 11 crates/store-postgres/src/blobs.rs crates/store-postgres/src
 a55f04d0fc470d9f 11 crates/session/src/answers.rs crates/session/src/turn.rs
 a8649abdfb794d0a 7 crates/harness/src/commands.rs crates/harness/src/skills.rs
 a9f65d4fb272be59 8 crates/harness/tests/project_folders.rs crates/session/tests/choices.rs
-ad1bfdee27617df5 15 crates/store-postgres/src/blobs.rs crates/store-sqlite/src/blobs.rs
 afa24c0018395dcb 13 crates/keys/src/conformance.rs crates/ports/src/conformance.rs
 afb23fe741d3fd70 7 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
 2e2e396f5b1d8803 8 web/app/src/app/components/connections/connections.component.spec.ts web/app/src/app/components/connections/connections.component.spec.ts
