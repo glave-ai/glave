@@ -20,7 +20,7 @@ use tokio::sync::{oneshot, watch};
 use crate::held::{Finish, Slot, Use, finished};
 use crate::protocol::{Answer, ApiError, Reply, Status, code};
 use crate::server::{Inner, Server};
-use crate::turn::publish;
+use crate::turn::{after_turn, publish};
 use crate::words::Sentence;
 
 /// Waiting turns whose ending someone follows, kept at once; past this, a new one's follower
@@ -342,16 +342,7 @@ where
         parent: ThreadId,
         call: &CallId,
     ) -> Result<Option<ThreadView>, ApiError> {
-        let query = ThreadQuery {
-            standing: Standing::Active,
-            limit: 1,
-            after: None,
-            open: false,
-            parent: Some(ParentCall {
-                thread: parent,
-                call_id: call.clone(),
-            }),
-        };
+        let query = child_query(parent, call);
         let found = self.inner.harness.log().thread_views(scope, &query).await?;
         Ok(found.into_iter().next())
     }
@@ -394,16 +385,7 @@ where
             let ran = harness
                 .go_on(&mut held, &caller, &cancel, &mut publish)
                 .await;
-            // A first exchange that ended only now gets its title now.
-            if ran.is_ok()
-                && let Some(case) = harness.title_case(&held)
-            {
-                let inner = Arc::clone(&inner);
-                Server { inner }.title_later(thread, case);
-            }
-            let ran = harness
-                .run_queued(&mut held, ran, &cancel, &mut publish)
-                .await;
+            let ran = after_turn(&inner, thread, &mut held, ran, &cancel, &mut publish).await;
             if matches!(ran, Err(HarnessError::Waits(_))) {
                 inner.followed.keep(thread, finish);
             }
@@ -432,20 +414,25 @@ where
         .iter()
         .filter(|call| call.kind == CallKind::Agent)
     {
-        let query = ThreadQuery {
-            standing: Standing::Active,
-            limit: 1,
-            after: None,
-            open: false,
-            parent: Some(ParentCall {
-                thread: held.id,
-                call_id: call.call.clone(),
-            }),
-        };
+        let query = child_query(held.id, &call.call);
         if let Ok(found) = log.thread_views(&held.scope, &query).await {
             for child in found {
                 inner.hub.adopt(child.thread, held.id);
             }
         }
+    }
+}
+
+/// The query for the subagent's thread `call` in `parent` started.
+fn child_query(parent: ThreadId, call: &CallId) -> ThreadQuery {
+    ThreadQuery {
+        standing: Standing::Active,
+        limit: 1,
+        after: None,
+        open: false,
+        parent: Some(ParentCall {
+            thread: parent,
+            call_id: call.clone(),
+        }),
     }
 }

@@ -357,23 +357,6 @@ where
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Runs `work` on `thread` in a task of its own, holding the thread busy until it ends, so
-    /// a client that goes away never strands it. The result is sent on `done` once the thread
-    /// is ready for the next turn.
-    pub(crate) async fn occupy<W, F, R>(
-        &self,
-        thread: ThreadId,
-        done: Finish<R>,
-        work: W,
-    ) -> Result<(), ApiError>
-    where
-        W: FnOnce(Arc<Inner<P, L, B>>, Thread, Cancel) -> F + Send + 'static,
-        F: Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
-        R: Send + Sync + 'static,
-    {
-        self.occupy_for(thread, done, Use::Work, work).await
-    }
-
     /// Readies `thread`, in `scope`, for work of the kind `purpose`, before anything is held:
     /// what the person chose of keeping the computer awake and of memory is read, the thread
     /// loaded, and work that cannot start refused. Answers where its project's folder is now,
@@ -408,7 +391,9 @@ where
         Ok(folder)
     }
 
-    /// Like [`Server::occupy`], for work of the kind `purpose` says.
+    /// Runs `work` of the kind `purpose` on `thread` in a task of its own, holding the thread
+    /// busy until it ends, so a client that goes away never strands it. The result is sent on
+    /// `done` once the thread is ready for the next turn.
     pub(crate) async fn occupy_for<W, F, R>(
         &self,
         thread: ThreadId,

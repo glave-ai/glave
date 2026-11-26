@@ -348,22 +348,39 @@ where
                     &mut publish,
                 )
                 .await;
-            // After the first exchange, a model titles the thread without holding it.
-            if ran.is_ok()
-                && let Some(case) = harness.title_case(&held)
-            {
-                let inner = Arc::clone(&inner);
-                Server { inner }.title_later(thread, case);
-            }
-            let ran = harness
-                .run_queued(&mut held, ran, &cancel, &mut publish)
-                .await;
+            let ran = after_turn(&inner, thread, &mut held, ran, &cancel, &mut publish).await;
             if matches!(ran, Err(HarnessError::Waits(_))) {
                 inner.followed.keep(thread, finish);
             }
             (held, ran)
         })
     })
+}
+
+/// What follows a turn that `ran` on `held`, its updates on `publish`: after the thread's
+/// first exchange, a model titles it without holding it; then a turn runs for each message sent
+/// too late for the one before.
+pub(crate) async fn after_turn<P, L, B>(
+    inner: &Arc<Inner<P, L, B>>,
+    thread: ThreadId,
+    held: &mut Thread,
+    ran: Ended,
+    cancel: &Cancel,
+    publish: &mut (dyn FnMut(Live) + Send),
+) -> Ended
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    let harness = &inner.harness;
+    if ran.is_ok()
+        && let Some(case) = harness.title_case(held)
+    {
+        let inner = Arc::clone(inner);
+        Server { inner }.title_later(thread, case);
+    }
+    harness.run_queued(held, ran, cancel, publish).await
 }
 
 /// Brings the copy of the project a schedule's run in `held` works on up to date, and where it

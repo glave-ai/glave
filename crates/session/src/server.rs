@@ -31,7 +31,7 @@ use crate::awake::{Awake, KeepAwake};
 use crate::choice::Choice;
 use crate::connections::Connections;
 use crate::credentials::{PeoplesGitHosts, credentials_of};
-use crate::held::{Slot, finished};
+use crate::held::{Slot, Use, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
 use crate::ledger::Ledgers;
@@ -721,10 +721,15 @@ where
 
     pub(crate) async fn compact(&self, thread: ThreadId) -> Result<Reply, ApiError> {
         let (finish, mut done) = watch::channel(None);
-        self.occupy(thread, finish, |inner, mut held, cancel| async move {
-            let compacted = inner.harness.compact(&mut held, &cancel, &mut |_| {}).await;
-            (held, compacted)
-        })
+        self.occupy_for(
+            thread,
+            finish,
+            Use::Work,
+            |inner, mut held, cancel| async move {
+                let compacted = inner.harness.compact(&mut held, &cancel, &mut |_| {}).await;
+                (held, compacted)
+            },
+        )
         .await?;
         let ended = finished(&mut done)
             .await
