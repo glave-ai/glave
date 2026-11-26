@@ -19,7 +19,7 @@ use super::*;
 use crate::gateway::{Allowed, gateway};
 use crate::model::Model;
 use glave_harness::ProjectFolders as _;
-use glave_ports::{Clock as _, OrgId, Scope, SystemClock};
+use glave_ports::{Clock as _, Entropy as _, OrgId, OsEntropy, Scope, SystemClock};
 use glave_session::ProjectTrust as _;
 
 /// A home folder and a project in it whose `.mcp.json` has `servers` and whose config is
@@ -411,7 +411,7 @@ fn an_idle_project_s_servers_close_and_start_again_when_needed() {
 
 /// A person, and two projects of theirs on their own computer.
 fn two_projects_of_a_person() -> (PrincipalId, Scope, Scope) {
-    let ana = PrincipalId::new(SystemClock.now(), crate::accounts::random().unwrap()).unwrap();
+    let ana = PrincipalId::new(SystemClock.now(), OsEntropy.bytes().unwrap()).unwrap();
     let org = OrgId::from_uuid(uuid::Uuid::from_u128(1));
     let another = ProjectId::from_uuid(uuid::Uuid::from_u128(3));
     (

@@ -10,9 +10,8 @@ use glave_event::{
     encode,
 };
 use glave_ports::stream::{Reserved, append_retrying};
-use glave_ports::{Clock as _, EventLog as _, Scope, SystemClock};
+use glave_ports::{Clock as _, Entropy as _, EventLog as _, OsEntropy, Scope, SystemClock};
 
-use crate::accounts::random;
 use crate::data::{Data, DataLog};
 
 /// The type of the ledger's one event.
@@ -86,7 +85,7 @@ impl Catalogs {
 fn event(refreshed: &CatalogRefreshed, seq: u64) -> anyhow::Result<RawEvent> {
     let now = SystemClock.now();
     let header = Header {
-        id: EventId::new(now, random()?)?,
+        id: EventId::new(now, OsEntropy.bytes()?)?,
         thread: Reserved::Catalogs.id(),
         seq: Seq::new(seq)?,
         at: At::from(now),
@@ -116,7 +115,7 @@ mod tests {
     fn the_latest_catalogs_are_kept_in_the_store_for_every_server_on_it() {
         block_on!(async {
             let store = Data::in_memory().unwrap();
-            let person = PrincipalId::new(SystemClock.now(), random().unwrap()).unwrap();
+            let person = PrincipalId::new(SystemClock.now(), OsEntropy.bytes().unwrap()).unwrap();
             let catalogs = Catalogs::open(&store, person).await.unwrap();
             assert_eq!(catalogs.latest().await.unwrap(), Vec::<Catalog>::new());
             let first = vec![catalog(ProviderKind::Openrouter, &["a/one"])];

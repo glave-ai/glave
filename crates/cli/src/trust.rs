@@ -8,9 +8,8 @@ use glave_event::{
     At, Body, EventId, Header, Principal, PrincipalId, RawEvent, Seq, decode, encode,
 };
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
-use glave_ports::{Clock as _, Scope, SystemClock};
+use glave_ports::{Clock as _, Entropy as _, OsEntropy, Scope, SystemClock};
 
-use crate::accounts::random;
 use crate::data::{Data, DataLog};
 
 /// The person's trust ledger, in the store.
@@ -95,7 +94,7 @@ impl Trust {
 fn event(entry: &Entry, seq: u64) -> anyhow::Result<RawEvent> {
     let now = SystemClock.now();
     let header = Header {
-        id: EventId::new(now, random()?)?,
+        id: EventId::new(now, OsEntropy.bytes()?)?,
         thread: Reserved::Trust.id(),
         seq: Seq::new(seq)?,
         at: At::from(now),
@@ -108,7 +107,7 @@ impl Trust {
     /// A new person's trust ledger on a store in memory; and the store.
     pub(crate) async fn in_memory() -> anyhow::Result<(Data, Self)> {
         let store = Data::in_memory()?;
-        let person = PrincipalId::new(SystemClock.now(), random()?)?;
+        let person = PrincipalId::new(SystemClock.now(), OsEntropy.bytes()?)?;
         let trust = Self::open(&store, person).await?;
         Ok((store, trust))
     }
