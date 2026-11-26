@@ -147,7 +147,7 @@ function statusOf(turn: Turn, waiting: readonly Waiting[], running: boolean): Gl
  * What model calls cost, as the server says of a turn or a thread: estimated, or not reported,
  * written for `locale`.
  */
-export function spent(result: Pick<TurnResult, 'cost' | 'estimated'>, locale: string): string {
+function spent(result: Pick<TurnResult, 'cost' | 'estimated'>, locale: string): string {
   const cost = result.cost ?? null;
   const said =
     cost === null

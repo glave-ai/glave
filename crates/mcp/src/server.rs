@@ -380,7 +380,7 @@ impl McpServer {
     }
 
     /// Whether the server is marked untrusted.
-    pub fn is_untrusted(&self) -> bool {
+    pub(crate) fn is_untrusted(&self) -> bool {
         self.untrusted
     }
 

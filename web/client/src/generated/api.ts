@@ -1535,9 +1535,6 @@ export type ShareInfo = {
   readonly shared_at: At;
 };
 
-/** Which threads `thread/list` shows. */
-export type Show = "archived" | "active" | "deleted";
-
 /** What an invite's link opens, for whoever holds it: never its code, nor whom it was sent to. */
 export type ShownInvite = {
   /**
@@ -3363,7 +3360,7 @@ export type ThreadListParams = {
   /** The project whose threads to list, by default as `thread/start` picks one. */
   readonly project?: ProjectId | null;
   /** Which threads: the active ones by default. */
-  readonly show?: Show | null;
+  readonly show?: Standing | null;
 };
 
 export type ThreadListResult = {

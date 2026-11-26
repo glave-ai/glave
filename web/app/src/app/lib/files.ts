@@ -1,4 +1,5 @@
 import type { ChangedFile, LineKind, RawEvent } from '@glave/client';
+import { numberFormat } from '@glave/glaze';
 
 import { plural } from './plural';
 
@@ -28,7 +29,7 @@ export function roomFor(paths: readonly string[]): readonly ChangedFile[] {
 
 /** The marks for lines added and removed, written for `locale`: `+12` and `−3`. */
 export function lineMarks(locale: string): LineMarks {
-  const numbers = new Intl.NumberFormat(locale);
+  const numbers = numberFormat(locale);
   return {
     added: (lines) => `+${numbers.format(lines)}`,
     removed: (lines) => `−${numbers.format(lines)}`,

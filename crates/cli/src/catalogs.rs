@@ -115,9 +115,7 @@ mod tests {
     #[test]
     fn the_latest_catalogs_are_kept_in_the_store_for_every_server_on_it() {
         block_on!(async {
-            let root = glave_keys::InMemoryRoot::new().unwrap();
-            let keys = glave_keys::KeySettings::new(std::sync::Arc::new(root));
-            let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
+            let store = Data::in_memory().unwrap();
             let person = PrincipalId::new(SystemClock.now(), random().unwrap()).unwrap();
             let catalogs = Catalogs::open(&store, person).await.unwrap();
             assert_eq!(catalogs.latest().await.unwrap(), Vec::<Catalog>::new());

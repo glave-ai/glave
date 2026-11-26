@@ -6,15 +6,14 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use glave_ports::BoxFuture;
 use glave_ports::Clock;
 use glave_ports::auth::{
-    AuthError, Fresh, Header, Outgoing, Refreshing, RequestSigner, Secret, safe_to_send,
+    AuthError, Fresh, Header, Outgoing, Refreshing, RequestSigner, Secret, credentials_client,
+    exchange_token, read_token_file, safe_to_send,
 };
 use jiff::SignedDuration;
-use reqwest::header::CONTENT_TYPE;
 use serde::Deserialize;
 
 /// The scope Microsoft's current Azure OpenAI v1 examples ask for.
@@ -65,11 +64,7 @@ impl WorkloadIdentity {
         let client_id = needed("AZURE_CLIENT_ID")?;
         let tenant = needed("AZURE_TENANT_ID")?;
         let authority = set("AZURE_AUTHORITY_HOST").unwrap_or_else(|| DEFAULT_AUTHORITY.into());
-        let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|e| AuthError::unreachable(format!("could not set up HTTP: {e}")))?;
+        let http = credentials_client()?;
         Ok(Some(Self {
             http,
             token_url: token_url(&authority, &tenant)?,
@@ -83,66 +78,29 @@ impl WorkloadIdentity {
 
     /// Exchanges the cluster's token for an Entra token.
     async fn exchange(&self) -> Result<Fresh<Secret>, AuthError> {
-        let assertion = tokio::fs::read_to_string(&self.token_file)
-            .await
-            .map_err(|error| {
-                AuthError::refused(format!(
-                    "could not read the federated token file {} (AZURE_FEDERATED_TOKEN_FILE): \
-                     {error}",
-                    self.token_file.display()
-                ))
-            })?;
+        let assertion = read_token_file(
+            &self.token_file,
+            "the federated token file",
+            "AZURE_FEDERATED_TOKEN_FILE",
+        )
+        .await?;
         let form = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("client_id", &self.client_id)
             .append_pair("scope", &self.scope)
             .append_pair("client_assertion_type", ASSERTION_TYPE)
-            .append_pair("client_assertion", assertion.trim())
+            .append_pair("client_assertion", &assertion)
             .append_pair("grant_type", "client_credentials")
             .finish();
         let asked = self.clock.now();
-        let response = self
-            .http
-            .post(&self.token_url)
-            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
-            .body(form)
-            .send()
-            .await
-            .map_err(|error| {
-                AuthError::unreachable(format!(
-                    "could not reach Microsoft Entra at {}: {}",
-                    glave_ports::host::shown(&self.token_url),
-                    error.without_url()
-                ))
-            })?;
-        let status = response.status();
-        let body = response.text().await.map_err(|error| {
-            AuthError::unreachable(format!(
-                "Microsoft Entra's answer broke off: {}",
-                error.without_url()
-            ))
-        })?;
-        if !status.is_success() {
-            return Err(refusal(status.as_u16(), &body));
-        }
-        let token: TokenResponse = serde_json::from_str(&body).map_err(|_| {
-            AuthError::unreachable("Microsoft Entra sent a token response glave could not read")
-        })?;
-        if !token.token_type.eq_ignore_ascii_case("bearer") {
-            return Err(AuthError::refused(format!(
-                "Microsoft Entra sent a {} token, not a bearer token",
-                token.token_type
-            )));
-        }
-        let lifetime = token.expires_in.seconds().ok_or_else(|| {
-            AuthError::unreachable("Microsoft Entra's token response has no expires_in")
-        })?;
-        let expires = asked
-            .saturating_add(SignedDuration::from_secs(lifetime))
-            .map_err(|_| AuthError::unreachable("Microsoft Entra's token outlives time"))?;
-        Ok(Fresh {
-            value: Secret::new(token.access_token),
-            expires,
-        })
+        exchange_token(
+            &self.http,
+            &self.token_url,
+            form,
+            "Microsoft Entra",
+            asked,
+            refusal,
+        )
+        .await
     }
 }
 
@@ -206,32 +164,6 @@ fn refusal(status: u16, body: &str) -> AuthError {
         "Microsoft Entra refused the workload identity token exchange",
         &detail,
     )
-}
-
-/// Entra's answer to a token request. Never printed: it holds the token.
-#[derive(Deserialize)]
-struct TokenResponse {
-    access_token: String,
-    token_type: String,
-    expires_in: Seconds,
-}
-
-/// A number of seconds, which Entra sends as a number and some of its endpoints as a string.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum Seconds {
-    Number(i64),
-    Text(String),
-}
-
-impl Seconds {
-    fn seconds(&self) -> Option<i64> {
-        match self {
-            Self::Number(seconds) => Some(*seconds),
-            Self::Text(text) => text.trim().parse().ok(),
-        }
-        .filter(|seconds| *seconds > 0)
-    }
 }
 
 /// Entra's error body.

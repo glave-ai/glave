@@ -42,7 +42,7 @@ const ENTITIES: Readonly<Record<string, string>> = {
 };
 
 /** `text` with every character HTML gives meaning to escaped. */
-export function escapeHtml(text: string): string {
+function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/gu, (char) => ENTITIES[char] ?? char);
 }
 

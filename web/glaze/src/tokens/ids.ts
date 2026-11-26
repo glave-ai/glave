@@ -1,7 +1,7 @@
 import { InjectionToken, inject } from '@angular/core';
 
 /** Makes ids unique within one app, for linking labels, hints and popups to their controls. */
-export const GLZ_ID_SEQUENCE = new InjectionToken<{ next: number }>('GLZ_ID_SEQUENCE', {
+const GLZ_ID_SEQUENCE = new InjectionToken<{ next: number }>('GLZ_ID_SEQUENCE', {
   providedIn: 'root',
   factory: () => ({ next: 0 }),
 });

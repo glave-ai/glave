@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::envelope::RawEvent;
 use crate::id::{CredentialId, DeviceId, ProviderId};
 use crate::payload::principal::Principal;
@@ -66,18 +66,17 @@ impl Payload for ProviderRemoved {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_connected(
+/// A provider's events, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<ProviderConnected>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_removed(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ProviderRemoved>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (CONNECTED, 1) => parse(data).map(Body::ProviderConnected),
+        (REMOVED, 1) => parse(data).map(Body::ProviderRemoved),
+        _ => return None,
+    })
 }
 
 /// The account whose own data key seals `event`, when it is a `provider.connected` (a model

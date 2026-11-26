@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::error::InvalidValue;
 use crate::money::Money;
 
@@ -223,12 +223,14 @@ impl Payload for ModelResponded {
     const VERSION: u32 = 2;
 }
 
+/// `model.responded`, or `None` for a type or version that is none of them.
 /// Version 2 only adds a stop reason, `repeating`: every version 1 payload reads as it is.
-pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<ModelResponded>> {
-    match version {
-        1 | 2 => Some(parse(data)),
-        _ => None,
-    }
+pub(crate) fn decode(
+    kind: &str,
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<Body>> {
+    (kind == TYPE && matches!(version, 1 | 2)).then(|| parse(data).map(Body::ModelResponded))
 }
 
 #[cfg(test)]

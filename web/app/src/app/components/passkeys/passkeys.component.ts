@@ -7,6 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import {
+  dateTimeFormat,
   GlzButtonComponent,
   GlzCardComponent,
   GlzConfirmDialogComponent,
@@ -46,7 +47,7 @@ interface Shown {
 })
 export class PasskeysComponent {
   private readonly keys = inject(PasskeysService);
-  private readonly dates = new Intl.DateTimeFormat(inject(LOCALE_ID), { dateStyle: 'medium' });
+  private readonly dates = dateTimeFormat(inject(LOCALE_ID), { dateStyle: 'medium' });
   protected readonly copy = {
     heading: $localize`:@@passkeys.heading:Passkeys`,
     lead: $localize`:@@passkeys.lead:These sign you in to glave from your devices: your face, your fingerprint or a screen lock, never a password.`,

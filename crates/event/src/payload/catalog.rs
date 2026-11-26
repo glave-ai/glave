@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::envelope::At;
 use crate::money::Nanos;
 use crate::payload::provider::ProviderKind;
@@ -267,16 +267,20 @@ impl Payload for CatalogRefreshed {
     const VERSION: u32 = 2;
 }
 
-/// `catalog.refreshed` at `version`: version 1, with no image models, upgraded as it is read.
-pub(crate) fn decode_refreshed(
+/// `catalog.refreshed`, version 1 (with no image models) upgraded as it is read, or `None` for a
+/// type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<CatalogRefreshed>> {
-    match version {
-        1 => Some(parse::<CatalogRefreshedV1>(data).map(CatalogRefreshed::from)),
-        2 => Some(parse(data)),
-        _ => None,
-    }
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (REFRESHED, 1) => {
+            parse::<CatalogRefreshedV1>(data).map(|old| Body::CatalogRefreshed(old.into()))
+        }
+        (REFRESHED, 2) => parse(data).map(Body::CatalogRefreshed),
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

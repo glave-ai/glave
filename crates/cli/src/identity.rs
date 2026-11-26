@@ -21,8 +21,8 @@ const COMPUTER: &str = "computer";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Identity {
-    pub person: PrincipalId,
-    pub agent: PrincipalId,
+    pub(crate) person: PrincipalId,
+    pub(crate) agent: PrincipalId,
 }
 
 /// Your identity from the store, made and kept there the first time.
@@ -78,9 +78,7 @@ mod tests {
     use super::*;
 
     fn store() -> Data {
-        let root = glave_keys::InMemoryRoot::new().unwrap();
-        let keys = glave_keys::KeySettings::new(std::sync::Arc::new(root));
-        Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap())
+        Data::in_memory().unwrap()
     }
 
     #[test]

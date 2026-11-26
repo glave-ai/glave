@@ -5,7 +5,7 @@ import { By } from '@angular/platform-browser';
 import { Folder, MessageCircle } from 'lucide';
 
 import { expectAccessible } from '../../testing/axe';
-import { clickAsSafari } from '../../testing/press';
+import { clickAsSafari, expectClosedAsSafari, pressAsSafari } from '../../testing/press';
 import { type GlzMenuOption, GlzMenuSelectComponent } from './menu-select.component';
 
 const MODELS: readonly GlzMenuOption[] = [
@@ -118,18 +118,13 @@ describe('GlzMenuSelectComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const button = trigger(root);
-    await clickAsSafari(button);
-    await fixture.whenStable();
+    await pressAsSafari(button, fixture);
     expect(document.querySelector('[role="menu"]')).not.toBeNull();
     expect(button.getAttribute('aria-expanded')).toBe('true');
-    await clickAsSafari(button);
-    await fixture.whenStable();
-    expect(document.querySelector('[role="menu"]')).toBeNull();
-    expect(button.getAttribute('aria-expanded')).toBe('false');
-    // The press took focus to the button, so focus never left the menu and its button: in a
+    // The press takes focus to the button, so focus never leaves the menu and its button: in a
     // browser the menu, which closes once it does, stays open until the click closes it (jsdom
     // renders no CDK overlay, so focus can't be in the menu here; end to end it is).
-    expect(document.activeElement).toBe(button);
+    await expectClosedAsSafari(button, fixture);
     await expectAccessible(root);
   });
 

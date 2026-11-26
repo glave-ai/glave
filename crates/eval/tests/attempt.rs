@@ -69,6 +69,22 @@ pub(crate) fn keyed_at(endpoint: Config, key: &str) -> Setup {
     }
 }
 
+/// Runs `task` once in `dir` against a fake model answering `replies`, fails unless it passed,
+/// and gives the body of the last request the model was sent.
+fn passed(task: &glave_eval::Task, replies: Vec<Reply>, dir: &Path) -> serde_json::Value {
+    let server = FakeServer::start(replies).unwrap();
+    let done = block_on!(attempt(
+        &setup(&server),
+        task,
+        "fake-model",
+        1,
+        &dir.join("run")
+    ))
+    .unwrap();
+    assert_eq!(done.failures, Vec::<String>::new());
+    server.received().pop().unwrap().body
+}
+
 fn writes_hello() -> Vec<Reply> {
     vec![
         Reply::tool_call(
@@ -317,17 +333,7 @@ fn later_turns_continue_the_thread_from_its_log() {
     );
     let mut replies = writes_hello();
     replies.push(Reply::text("Still here."));
-    let server = FakeServer::start(replies).unwrap();
-    let attempt = block_on!(attempt(
-        &setup(&server),
-        &task,
-        "fake-model",
-        1,
-        &dir.join("run"),
-    ))
-    .unwrap();
-    assert_eq!(attempt.failures, Vec::<String>::new());
-    let last = server.received().pop().unwrap().body;
+    let last = passed(&task, replies, &dir);
     let messages = last["messages"].as_array().unwrap();
     assert!(
         messages.len() >= 5,
@@ -407,17 +413,7 @@ fn later_threads_share_one_store_with_memory_and_the_checks_read_it() {
         ),
     );
     replies.push(Reply::text("Tabs."));
-    let server = FakeServer::start(replies).unwrap();
-    let attempt = block_on!(attempt(
-        &setup(&server),
-        &task,
-        "fake-model",
-        1,
-        &dir.join("run"),
-    ))
-    .unwrap();
-    assert_eq!(attempt.failures, Vec::<String>::new());
-    let last = server.received().pop().unwrap().body.to_string();
+    let last = passed(&task, replies, &dir).to_string();
     assert!(last.contains("# Memory"), "{last}");
     assert!(last.contains("This project uses tabs"), "{last}");
     assert!(last.contains("Ada likes short answers"), "{last}");

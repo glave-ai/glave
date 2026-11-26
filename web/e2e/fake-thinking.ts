@@ -18,7 +18,7 @@ export const THINKING = ['The lock is taken ', 'twice on the same thread.\n\n'];
 /** Its headline, as the server says it once the sentence is whole. */
 export const HEADLINE = 'The lock is taken twice on the same thread.';
 /** How long it thought, as the server says once it is done: 3 s. */
-export const THOUGHT_MS = 3000;
+const THOUGHT_MS = 3000;
 /** What it answers, in the pieces it streams. */
 export const ANSWER = ['The lock ', 'is taken twice.'];
 

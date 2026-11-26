@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, LOCALE_ID, computed, inject } from '@angular/core';
-import { GlzButtonComponent, GlzCardComponent } from '@glave/glaze';
+import { dateTimeFormat, GlzButtonComponent, GlzCardComponent } from '@glave/glaze';
 
 import { PushService } from '../../services/push.service';
 
@@ -42,7 +42,7 @@ export class NotificationsComponent {
   protected readonly toggle = computed(() => (this.on() ? this.copy.turnOff : this.copy.turnOn));
   /** The browsers the server pushes to, as the list shows them. */
   protected readonly devices = computed(() => {
-    const day = new Intl.DateTimeFormat(this.locale, { dateStyle: 'medium' });
+    const day = dateTimeFormat(this.locale, { dateStyle: 'medium' });
     return this.push.devices().map((device) => ({
       id: device.id,
       name: device.name,

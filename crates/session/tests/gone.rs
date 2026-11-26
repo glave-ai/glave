@@ -8,8 +8,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Body, Opened, ThreadId, decode};
-use glave_ports::{EventLog, ProjectId};
-use glave_session::protocol::{GoneFolder, Reply, Request, Show, code};
+use glave_ports::{EventLog, ProjectId, Standing};
+use glave_session::protocol::{GoneFolder, Reply, Request, code};
 use serde_json::json;
 
 use crate::support::*;
@@ -75,7 +75,7 @@ async fn listed<L: EventLog + 'static>(server: &Tested<L>) -> (Vec<String>, Vec<
 async fn threads<L: EventLog + 'static>(
     server: &Tested<L>,
     project: ProjectId,
-    show: Show,
+    show: Standing,
 ) -> Vec<ThreadId> {
     let listed = Request::ThreadList {
         project: Some(project),
@@ -173,7 +173,7 @@ fn a_project_whose_folder_is_gone_says_so_plainly_and_nothing_runs_or_is_made_th
         // Archiving it still works, straight in the log.
         let archived = fresh.request(Request::ThreadArchive { thread }).await;
         assert!(matches!(archived, Ok(Reply::Done {})), "{archived:?}");
-        assert_eq!(threads(&fresh, project, Show::Archived).await, [thread]);
+        assert_eq!(threads(&fresh, project, Standing::Archived).await, [thread]);
     });
 }
 
@@ -284,10 +284,10 @@ fn removing_a_project_archives_its_threads_and_lists_it_no_more() {
         assert_eq!(refused.code, code::NOT_ALLOWED);
         let removed = server.request(Request::ProjectRemove { project }).await;
         assert!(matches!(removed, Ok(Reply::Done {})), "{removed:?}");
-        assert_eq!(threads(&server, project, Show::Active).await, []);
+        assert_eq!(threads(&server, project, Standing::Active).await, []);
         let mut both = vec![first, second];
         both.sort();
-        assert_eq!(threads(&server, project, Show::Archived).await, both);
+        assert_eq!(threads(&server, project, Standing::Archived).await, both);
         let (names, gone) = listed(&server).await;
         assert!(!names.contains(&"Garden".to_owned()), "{names:?}");
         assert_eq!(gone, []);

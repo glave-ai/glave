@@ -6,16 +6,18 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
-use glave_ports::auth::{AuthError, Fresh, Header, Outgoing, Refreshing, RequestSigner, Secret};
+use glave_ports::auth::{
+    AuthError, Fresh, Header, Outgoing, Refreshing, RequestSigner, Secret, credentials_client,
+    parse_answer,
+};
 use glave_ports::{BoxFuture, Clock};
 use jiff::{SignedDuration, Timestamp};
 use serde::Deserialize;
 
 use crate::external::{ExternalAccount, https};
 use crate::jwt::{Claims, SigningKey};
-use crate::token::{exchange, parse};
+use crate::token::exchange;
 use crate::{jwt, metadata};
 
 /// The scope tokens are asked for: all of Google Cloud, narrowed by the account's IAM roles.
@@ -76,11 +78,7 @@ impl Adc {
                 metadata: metadata::token_url(&host)?,
             }
         };
-        let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|e| AuthError::unreachable(format!("could not set up HTTP: {e}")))?;
+        let http = credentials_client()?;
         Ok(Self {
             source,
             scope: scope.to_owned(),
@@ -116,20 +114,20 @@ impl Adc {
             ))
         })?;
         let what = format!("the Google credentials file {shown}");
-        let kind: Kind = parse(&text, &what)?;
+        let kind: Kind = parse_answer(&text, &what)?;
         match kind.kind.as_str() {
             "service_account" => {
-                parse::<ServiceAccount>(&text, &what)?
+                parse_answer::<ServiceAccount>(&text, &what)?
                     .token(self, now)
                     .await
             }
             "authorized_user" => {
-                parse::<AuthorizedUser>(&text, &what)?
+                parse_answer::<AuthorizedUser>(&text, &what)?
                     .token(self, now)
                     .await
             }
             "external_account" => {
-                parse::<ExternalAccount>(&text, &what)?
+                parse_answer::<ExternalAccount>(&text, &what)?
                     .token(&self.http, &self.scope, now)
                     .await
             }

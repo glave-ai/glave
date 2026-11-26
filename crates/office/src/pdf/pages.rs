@@ -13,7 +13,8 @@ use std::fmt::Write as _;
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use super::form::{form_of, unwidgeted};
-use super::{DEEPEST, Given, Ranges, Use, counted, open, pruned, resolved, saved};
+use super::{DEEPEST, Given, Ranges, Use, open, pruned, resolved, saved};
+use crate::cells::counted;
 use crate::error::OfficeError;
 use crate::write::Written;
 

@@ -7,7 +7,12 @@ import {
   signal,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { GlzButtonComponent, GlzCardComponent, GlzConfirmDialogComponent } from '@glave/glaze';
+import {
+  GlzButtonComponent,
+  GlzCardComponent,
+  GlzConfirmDialogComponent,
+  listFormat,
+} from '@glave/glaze';
 
 import { serviceName } from '../../lib/connections';
 import { accountName as hostName } from '../../lib/credentials';
@@ -118,7 +123,7 @@ export class SettingsComponent {
     if (names.length === 0) {
       return this.copy.connectionsText;
     }
-    const list = new Intl.ListFormat(this.locale, { type: 'conjunction' }).format(names);
+    const list = listFormat(this.locale, { type: 'conjunction' }).format(names);
     return names.length === 1
       ? $localize`:@@settings.connectedOne:${list}:NAMES: is connected. Services glave can use for you, each signed in to as you.`
       : $localize`:@@settings.connectedMany:${list}:NAMES: are connected. Services glave can use for you, each signed in to as you.`;

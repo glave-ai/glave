@@ -31,6 +31,21 @@ async function following(projects: ProjectsService): Promise<void> {
   await settled();
 }
 
+/** The service over one project with one thread, Plan, its lists watched through `watch`. */
+function oneThreadWatched(): {
+  readonly watch: FakeTurn;
+  readonly fake: FakeSession;
+  readonly projects: ProjectsService;
+} {
+  const watch = new FakeTurn();
+  const fake = new FakeSession()
+    .answer('project/list', { projects: [record('project-1', 'glave')] })
+    .answer('thread/list', { threads: [thread('t1', 'Plan')] })
+    .listWatch(watch);
+  TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+  return { watch, fake, projects: TestBed.inject(ProjectsService) };
+}
+
 describe('ProjectsService', () => {
   it('lists projects before the personal project, each with its threads', async () => {
     const fake = new FakeSession()
@@ -230,13 +245,7 @@ describe('ProjectsService', () => {
   });
 
   it('follows the lists from the newest update they hold, as the server says each thread changes', async () => {
-    const watch = new FakeTurn();
-    const fake = new FakeSession()
-      .answer('project/list', { projects: [record('project-1', 'glave')] })
-      .answer('thread/list', { threads: [thread('t1', 'Plan')] })
-      .listWatch(watch);
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
-    const projects = TestBed.inject(ProjectsService);
+    const { watch, fake, projects } = oneThreadWatched();
     await following(projects);
     expect(fake.paramsOf('thread/list/watch')).toEqual([
       { after: '2026-10-11T10:05:00.000Z', away: false },
@@ -259,13 +268,7 @@ describe('ProjectsService', () => {
   });
 
   it('tells of a change the server says the person made to their own settings', async () => {
-    const watch = new FakeTurn();
-    const fake = new FakeSession()
-      .answer('project/list', { projects: [record('project-1', 'glave')] })
-      .answer('thread/list', { threads: [thread('t1', 'Plan')] })
-      .listWatch(watch);
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
-    const projects = TestBed.inject(ProjectsService);
+    const { watch, projects } = oneThreadWatched();
     const changes = TestBed.inject(ChangesService);
     await following(projects);
     watch.send({ jsonrpc: '2.0', method: 'settings/changed', params: { setting: 'connections' } });
@@ -358,13 +361,7 @@ describe('ProjectsService', () => {
   });
 
   it('lets go of its watch once the tab signs out', async () => {
-    const watch = new FakeTurn();
-    const fake = new FakeSession()
-      .answer('project/list', { projects: [record('project-1', 'glave')] })
-      .answer('thread/list', { threads: [thread('t1', 'Plan')] })
-      .listWatch(watch);
-    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
-    const projects = TestBed.inject(ProjectsService);
+    const { watch, fake, projects } = oneThreadWatched();
     await following(projects);
     await TestBed.inject(SessionService).signOut();
     TestBed.tick();

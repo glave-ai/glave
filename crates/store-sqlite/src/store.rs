@@ -6,14 +6,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use glave_event::PrincipalId;
-use glave_keys::{KeySettings, Keys};
+use glave_keys::{KeySettings, Keys, SealedBlobs};
 use glave_ports::search::{MOST_CACHED, SearchCache};
 use glave_ports::{Clock, InMemoryObjects, Objects, OrgId};
 use rusqlite::{Connection, params};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::blobs::SqliteBlobs;
+use crate::blobs::{SqliteBlobs, SqliteRecords};
 use crate::copy;
 use crate::directory::SqliteDirectory;
 use crate::keys::SqliteKeys;
@@ -157,12 +157,12 @@ impl Store {
     }
 
     pub fn blobs(&self) -> SqliteBlobs {
-        SqliteBlobs::new(
+        SealedBlobs::new(SqliteRecords::new(
             Arc::clone(&self.connection),
             Arc::clone(&self.keys),
             Arc::clone(&self.objects),
             Arc::clone(&self.clock),
-        )
+        ))
     }
 
     /// The keys content is sealed under, and erased by destroying.

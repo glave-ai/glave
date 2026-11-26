@@ -23,11 +23,10 @@ mod wire;
 mod worker;
 pub mod worktrees;
 
-pub use cancel::CancelSwitch;
 pub use disk::{Keeper, Largest};
 pub use local::{
-    LocalComputers, SANDBOX_HELPER_FAILED, ask_repository, glave_on_path, sandbox_available,
-    sandbox_helper, terminal_helper,
+    LocalComputers, SANDBOX_HELPER_FAILED, glave_on_path, sandbox_available, sandbox_helper,
+    terminal_helper,
 };
 pub use remote::RemoteComputers;
 pub use serve::{Idle, bridge, listen_socket, serve, serve_socket, serve_tcp, serve_tls};
