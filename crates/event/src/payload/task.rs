@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::envelope::At;
 use crate::id::{ScheduleId, ThreadId};
 use crate::money::Money;
@@ -296,73 +296,36 @@ impl Payload for ScheduleUnplaced {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_started(
+/// A task's and a schedule's events, and the schedules' index's, or `None` for a type or version
+/// that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<TaskStarted>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_ended(version: u32, data: &RawValue) -> Option<serde_json::Result<TaskEnded>> {
-    // Version 1 had no `due`, which reads as absent: it ends whatever its thread has open.
-    (version == 1 || version == 2).then(|| parse(data))
-}
-
-pub(crate) fn decode_created(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ScheduleCreated>> {
-    match version {
-        1 | 2 => Some(parse::<ScheduleCreatedBefore>(data).map(ScheduleCreated::from)),
-        3 => Some(parse(data)),
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (STARTED, 1) => parse(data).map(Body::TaskStarted),
+        // Version 1 had no `due`, which reads as absent: it ends whatever its thread has open.
+        (ENDED, 1 | 2) => parse(data).map(Body::TaskEnded),
+        (CREATED, 1 | 2) => {
+            parse::<ScheduleCreatedBefore>(data).map(|old| Body::ScheduleCreated(old.into()))
+        }
+        (CREATED, 3) => parse(data).map(Body::ScheduleCreated),
         // Named always from v4: none is no schedule of this version.
-        4 => Some(
-            parse(data).and_then(|created: ScheduleCreated| match created.by {
-                Some(_) => Ok(created),
-                None => Err(serde::de::Error::missing_field("by")),
-            }),
-        ),
-        _ => None,
-    }
-}
-
-pub(crate) fn decode_paused(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<SchedulePaused>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_skipped(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ScheduleSkipped>> {
-    match version {
-        1 => Some(parse::<ScheduleSkippedBefore>(data).map(ScheduleSkipped::from)),
-        2 => Some(parse(data)),
-        _ => None,
-    }
-}
-
-pub(crate) fn decode_deleted(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ScheduleDeleted>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_placed(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<SchedulePlaced>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_unplaced(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ScheduleUnplaced>> {
-    (version == 1).then(|| parse(data))
+        (CREATED, 4) => parse(data).and_then(|created: ScheduleCreated| match created.by {
+            Some(_) => Ok(Body::ScheduleCreated(created)),
+            None => Err(serde::de::Error::missing_field("by")),
+        }),
+        (DELETED, 1) => parse(data).map(Body::ScheduleDeleted),
+        (SKIPPED, 1) => {
+            parse::<ScheduleSkippedBefore>(data).map(|old| Body::ScheduleSkipped(old.into()))
+        }
+        (SKIPPED, 2) => parse(data).map(Body::ScheduleSkipped),
+        (PAUSED, 1) => parse(data).map(Body::SchedulePaused),
+        (PLACED, 1) => parse(data).map(Body::SchedulePlaced),
+        (UNPLACED, 1) => parse(data).map(Body::ScheduleUnplaced),
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -373,7 +336,9 @@ mod tests {
     fn a_schedule_made_before_schedules_had_a_zone_reads_as_one_in_utc() {
         let old = r#"{"schedule":"0192f5c1-0000-7000-8000-000000000002","when":{"cron":"0 9 * * *"},"prompt":"Check the release","budget":50000}"#;
         let raw = RawValue::from_string(old.to_owned()).unwrap();
-        let read = decode_created(1, &raw).unwrap().unwrap();
+        let Some(Ok(Body::ScheduleCreated(read))) = decode(CREATED, 1, &raw) else {
+            panic!("a schedule made");
+        };
         assert_eq!(read.zone, "UTC");
         assert_eq!(read.when, When::Cron("0 9 * * *".into()));
         assert_eq!(
@@ -387,7 +352,11 @@ mod tests {
     fn a_run_refused_before_refusals_had_reasons_reads_with_none() {
         let old = r#"{"schedule":"0192f5c1-0000-7000-8000-000000000002","due":"2026-11-19T08:00:00.000Z","why":{"kind":"refused","why":"the chat is archived"}}"#;
         let raw = RawValue::from_string(old.to_owned()).unwrap();
-        let read = decode_skipped(1, &raw).unwrap().unwrap();
+        let skipped = |raw: &RawValue| match decode(SKIPPED, 1, raw) {
+            Some(Ok(Body::ScheduleSkipped(read))) => read,
+            _ => panic!("a run skipped"),
+        };
+        let read = skipped(&raw);
         assert_eq!(
             read.why,
             Skipped::Refused {
@@ -399,9 +368,6 @@ mod tests {
             r#"{"kind":"going"}"#,
         );
         let raw = RawValue::from_string(going).unwrap();
-        assert_eq!(
-            decode_skipped(1, &raw).unwrap().unwrap().why,
-            Skipped::Going
-        );
+        assert_eq!(skipped(&raw).why, Skipped::Going);
     }
 }

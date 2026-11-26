@@ -13,7 +13,12 @@ import {
   untracked,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { GlzIconButtonComponent, GlzIconComponent, GlzNavItemComponent } from '@glave/glaze';
+import {
+  GlzIconButtonComponent,
+  GlzIconComponent,
+  GlzNavItemComponent,
+  numberFormat,
+} from '@glave/glaze';
 import Image from 'lucide/dist/esm/icons/image.mjs';
 import ListChecks from 'lucide/dist/esm/icons/list-checks.mjs';
 import PenLine from 'lucide/dist/esm/icons/pen-line.mjs';
@@ -115,7 +120,7 @@ export class SideNavComponent {
    */
   protected readonly tasksGoing = computed(() => {
     const going = this.tasks.going();
-    const count = new Intl.NumberFormat(this.locale).format(going);
+    const count = numberFormat(this.locale).format(going);
     return going === 0 ? null : { count, words: $localize`:@@sideNav.going:${count}:COUNT: going` };
   });
   protected readonly tasksCurrent = computed(() => this.page() === 'tasks');

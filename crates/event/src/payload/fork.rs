@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::envelope::Seq;
 use crate::id::ThreadId;
 
@@ -64,9 +64,11 @@ impl Payload for ThreadForked {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<ThreadForked>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
+/// `thread.forked`, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<Body>> {
+    (kind == TYPE && version == 1).then(|| parse(data).map(Body::ThreadForked))
 }

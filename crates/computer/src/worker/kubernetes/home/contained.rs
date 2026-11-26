@@ -28,7 +28,7 @@ use super::super::objects::{CONTAINER, PERSON_HOME};
 use super::super::tests::{another_pod, cluster, key, left_behind};
 use super::PersonComputer;
 use super::tests::ran;
-use crate::CancelSwitch;
+use crate::cancel::CancelSwitch;
 use crate::worker::WorkerComputers;
 use crate::worker::route::Tail;
 

@@ -11,6 +11,8 @@
 
 mod accounts;
 mod browsers;
+#[cfg(test)]
+mod fixtures;
 mod keys;
 mod local;
 

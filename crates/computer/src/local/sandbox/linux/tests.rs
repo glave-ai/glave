@@ -15,10 +15,11 @@ use glave_ports::computer::{
 };
 
 use super::landlocked;
+use crate::LocalComputers;
+use crate::cancel::CancelSwitch;
 use crate::local::sandbox::tests::terminals::AnotherTerminal;
 use crate::local::sandbox::tests::{shut, token};
 use crate::local::sandbox_available;
-use crate::{CancelSwitch, LocalComputers};
 
 mod made_again;
 

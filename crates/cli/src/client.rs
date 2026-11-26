@@ -98,20 +98,20 @@ impl Following {
 
 /// What a turn is followed with.
 pub(crate) struct Client<'a> {
-    pub server: Session<'a>,
-    pub thread: ThreadId,
-    pub input: &'a Input,
+    pub(crate) server: Session<'a>,
+    pub(crate) thread: ThreadId,
+    pub(crate) input: &'a Input,
     /// The model endpoint, when the model is called from here: for receipts and fixes.
-    pub endpoint: Option<&'a Endpoint>,
+    pub(crate) endpoint: Option<&'a Endpoint>,
     /// Whether approvals are asked in this terminal; without one, the server answers "no one
     /// there" itself.
-    pub asks: bool,
+    pub(crate) asks: bool,
     /// The MCP servers started here, if any.
-    pub servers: Option<&'a Servers>,
+    pub(crate) servers: Option<&'a Servers>,
     /// The model and mode each turn chooses for the thread, when the person named them for a
     /// server elsewhere: the server records a choice only when it changes.
-    pub model: Option<String>,
-    pub permissions: Option<Permissions>,
+    pub(crate) model: Option<String>,
+    pub(crate) permissions: Option<Permissions>,
 }
 
 impl Client<'_> {

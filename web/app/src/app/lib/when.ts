@@ -1,3 +1,5 @@
+import { dateTimeFormat, numberFormat, relativeTimeFormat } from '@glave/glaze';
+
 /** The reader the server's times are written for: their language and time zone, by default. */
 export interface Reader {
   readonly locale?: string;
@@ -54,14 +56,14 @@ const UNITS = [
  */
 export function readerTimes(now: number, reader: Reader = {}): Times {
   const { locale, timeZone } = reader;
-  const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-  const ago = new Intl.RelativeTimeFormat(locale);
+  const relative = relativeTimeFormat(locale, { numeric: 'auto' });
+  const ago = relativeTimeFormat(locale);
   const units = UNITS.map((each) => ({
     ...each,
-    short: new Intl.NumberFormat(locale, { style: 'unit', unit: each.unit, unitDisplay: 'narrow' }),
+    short: numberFormat(locale, { style: 'unit', unit: each.unit, unitDisplay: 'narrow' }),
   }));
   const date = (options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat =>
-    new Intl.DateTimeFormat(locale, { timeZone, ...options });
+    dateTimeFormat(locale, { timeZone, ...options });
   const thisYear = {
     short: date({ month: 'short', day: 'numeric' }),
     long: date({ month: 'long', day: 'numeric' }),
@@ -109,7 +111,7 @@ export function readerTimes(now: number, reader: Reader = {}): Times {
 
 /** The day a moment falls on in `timeZone`, written `2026-10-12`. */
 export function calendarDay(timeZone: string | undefined): (at: number) => string {
-  const parts = new Intl.DateTimeFormat('en-US', {
+  const parts = dateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',
     month: '2-digit',

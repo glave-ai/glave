@@ -7,8 +7,9 @@
 // (e2e/playwright.config.ts), ESLint, Prettier and Stylelint; package.json's scripts name the
 // scripts they run. The entry points none of them names are listed here.
 //
-// Unused exports and types are left off: today they find 10 exports and 215 types, 207 of them
-// the session API's generated types (client/src/generated/).
+// Unused exports are checked: a name exported is used outside its file, or it isn't exported.
+// Unused types are left off: today they find over 300, most of them the session API's
+// generated types (client/src/generated/), whose exports aren't checked either.
 {
   "$schema": "./node_modules/knip/schema-jsonc.json",
   "entry": [
@@ -30,7 +31,10 @@
     "unlisted",
     "binaries",
     "unresolved",
+    "exports",
   ],
+  // The session API's types and helpers, generated from its schema (`cargo xtask schema`).
+  "ignore": ["client/src/generated/**"],
   // The fonts, which angular.json's `styles` name by package (`@fontsource/…/400.css`), and
   // knip's Angular plugin looks for as files of this folder. And npm, a dev dependency so that
   // `npm run audit` runs npm 11 from node_modules/.bin whatever npm Node brings (npm 10 falls

@@ -9,8 +9,8 @@ use serde_json::{Map, Value};
 
 use super::appearance::draw;
 use super::form::{COMBO, EDIT, Field, Kind, MULTILINE, READ_ONLY, fields, form_mut, on_state};
-use super::{Given, Use, counted, open, saved};
-use crate::cells::listed;
+use super::{Given, Use, open, saved};
+use crate::cells::{counted, listed};
 use crate::error::OfficeError;
 use crate::write::Written;
 

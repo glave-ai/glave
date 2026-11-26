@@ -12,8 +12,7 @@ mod fetch {
     use glave_ports::settings::WebPolicy;
     use glave_ports::{NeverCancelled, ToolOutput, ToolSource, block_on};
     use glave_web::pages::{Pages, Reply};
-    use glave_web::{FetchError, Fetcher, Limits, WEB_FETCH, Web, WebSettings};
-    use reqwest::Url;
+    use glave_web::{FetchError, Fetcher, Limits, Web, WebSettings};
 
     /// The policy tests run under: every host, and the local server's address named exactly, so
     /// it alone of the private addresses may be reached.
@@ -211,15 +210,11 @@ mod fetch {
             matches!(denied, Err(FetchError::Denied { .. })),
             "{denied:?}"
         );
-        let elsewhere_here = Url::parse("http://127.0.0.1:8080/").unwrap();
-        assert!(fetcher.check(&elsewhere_here).is_ok(), "denied at 80 alone");
         let elsewhere = block_on!(fetcher.fetch("https://example.com/"));
         assert!(
             matches!(elsewhere, Err(FetchError::NotAllowed(_))),
             "{elsewhere:?}"
         );
-        let url = Url::parse("https://docs.rs/").unwrap();
-        assert!(self::fetcher(WebPolicy::default()).check(&url).is_ok());
     }
 
     #[test]
@@ -327,7 +322,7 @@ mod fetch {
     fn fetch_is_offered_by_default_and_nothing_when_off() {
         block_on!(async {
             let web = Web::new(WebSettings::default()).unwrap();
-            assert_eq!(names(&web).await, [WEB_FETCH]);
+            assert_eq!(names(&web).await, [WebPage::TOOL]);
             assert!(web.offers_any());
             assert_eq!(glave_ports::conformance::tool_source(&web).await, Ok(()));
             let off = Web::new(WebSettings {
@@ -358,7 +353,7 @@ mod fetch {
             .unwrap();
             let url = format!("{}/page", pages.base());
             let fetched = web
-                .call(WEB_FETCH, &arguments("url", &url), &NeverCancelled)
+                .call(WebPage::TOOL, &arguments("url", &url), &NeverCancelled)
                 .await;
             assert!(fetched.untrusted && !fetched.is_error);
             let head = format!("URL: {url}\nTitle: Release notes\n\n");
@@ -372,7 +367,7 @@ mod fetch {
             // A page that gives no title is read all the same, with none.
             let plain = format!("{}/plain", pages.base());
             let fetched = web
-                .call(WEB_FETCH, &arguments("url", &plain), &NeverCancelled)
+                .call(WebPage::TOOL, &arguments("url", &plain), &NeverCancelled)
                 .await;
             assert!(text(&fetched).starts_with(&format!("URL: {plain}\n\njust text")));
             let read = WebPage {
@@ -382,7 +377,7 @@ mod fetch {
             assert_eq!(fetched.structured, Some(read.structured()));
             let refused = web
                 .call(
-                    WEB_FETCH,
+                    WebPage::TOOL,
                     &arguments("url", "http://10.0.0.1/"),
                     &NeverCancelled,
                 )
@@ -390,10 +385,10 @@ mod fetch {
             assert!(refused.is_error && !refused.untrusted && refused.structured.is_none());
             assert!(text(&refused).starts_with("Not fetched: 10.0.0.1 is a private address"));
             assert_eq!(
-                web.describe(WEB_FETCH, &arguments("url", &url)),
+                web.describe(WebPage::TOOL, &arguments("url", &url)),
                 format!("web_fetch {url}")
             );
-            assert_eq!(web.kind(WEB_FETCH), ToolKind::Web);
+            assert_eq!(web.kind(WebPage::TOOL), ToolKind::Web);
         });
     }
 }

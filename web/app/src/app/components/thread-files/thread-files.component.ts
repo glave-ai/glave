@@ -7,6 +7,7 @@ import {
   input,
 } from '@angular/core';
 import type { ChangeKind, ChangedFile } from '@glave/client';
+import { numberFormat } from '@glave/glaze';
 
 import { SIGNS, lineCounts } from '../../lib/files';
 
@@ -37,7 +38,7 @@ export class ThreadFilesComponent {
 
   /** What the `nth` change to the file at `path` is called: `Edited src/main.rs, change 2`. */
   private named(note: string, path: string, nth: number): string {
-    const number = new Intl.NumberFormat(this.locale).format(nth);
+    const number = numberFormat(this.locale).format(nth);
     return $localize`:@@threadFiles.change:${note}:NOTE: ${path}:PATH:, change ${number}:NUMBER:`;
   }
 

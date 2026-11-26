@@ -1,4 +1,5 @@
 import type { InviteInfo, OrgRole, PersonInfo } from '@glave/client';
+import { relativeTimeFormat } from '@glave/glaze';
 
 import { plural } from './plural';
 
@@ -102,7 +103,7 @@ export type Until = (at: string) => string;
 
 /** An `Until` in `locale`, counted from `now` (milliseconds since the epoch). */
 export function untilIn(locale: string, now: number): Until {
-  const relative = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  const relative = relativeTimeFormat(locale, { numeric: 'auto' });
   const HOUR = 3_600_000;
   return (at) => {
     const hours = Math.max(0, Math.round((Date.parse(at) - now) / HOUR));

@@ -208,17 +208,21 @@ function isEventStream(response: Response): boolean {
   return (response.headers.get('Content-Type') ?? '').startsWith('text/event-stream');
 }
 
-function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
+/** A JSON object, read as it came: its fields not yet checked. */
+export type JsonObject = Readonly<Record<string, unknown>>;
+
+/** Whether `value` is a JSON object: not `null`, not an array. */
+export function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isNotification(message: unknown): message is Notification {
-  return isObject(message) && typeof message['method'] === 'string' && !('id' in message);
+  return isRecord(message) && typeof message['method'] === 'string' && !('id' in message);
 }
 
 function isErrorObject(value: unknown): value is ErrorObject {
   return (
-    isObject(value) && typeof value['code'] === 'number' && typeof value['message'] === 'string'
+    isRecord(value) && typeof value['code'] === 'number' && typeof value['message'] === 'string'
   );
 }
 
@@ -228,7 +232,7 @@ function isErrorObject(value: unknown): value is ErrorObject {
  */
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- see above
 function answerOf<T>(message: unknown): T {
-  if (!isObject(message)) {
+  if (!isRecord(message)) {
     throw new ApiError({ code: ErrorCode.PARSE, message: 'the answer is not a JSON-RPC response' });
   }
   const error = message['error'];

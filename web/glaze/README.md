@@ -6,16 +6,7 @@ See every component live in the showcase (`npm run showcase` in `web/`), a dev-o
 
 ## What is in it
 
-Only what an app uses today: a piece no app uses leaves Glaze.
-
-- **Styles** (`styles/glaze.css`): the tokens, the layout primitives (`glz-stack`, `glz-row`, `glz-grid`, `glz-gap-*`), the prose flow (`glz-flow`), and what moves: `glz-spin`, which turns a ring while work goes on, `glz-rise` and `glz-settle`, and `glz-crossfade`, the part of a page that crossfades in a View Transition, in the motion tokens alone.
-- **Actions and display**: `glzButton`, `glzIconButton`, `glz-icon`, `glz-badge`, `glz-avatar`, `glz-card`, `glz-empty-state`.
-- **Forms**: `glz-form-field`, `glz-error`, `glzInput`, `glz-checkbox`, `glz-radio-group`, `glz-radio`.
-- **Layout**: `glz-sidenav-layout`, `glz-panel-layout`, `glz-top-bar`, `glz-page-header`, `glz-nav-list`, `glzNavItem`, `glz-tabs`, `glz-tab`.
-- **Overlays**: `glz-dialog`, `glz-confirm-dialog`, `glz-menu-button`, `glz-menu-select`, `glz-picker`, `glz-popover` with `glzPopoverTrigger`, `glzTooltip`.
-- **Conversation**: `glz-composer`, `glz-message`, `glz-thought`, `glz-receipt`, `glz-steps`, `glz-approval-card`, `glz-question-card`, `glz-service-card`, `glz-service-detail`, `glzStickToBottom`, `glzCopy`.
-
-`src/public-api.ts` lists every export; each one's doc comment has a short usage example.
+Only what an app uses today: a piece no app uses leaves Glaze. [`src/public-api.ts`](src/public-api.ts) lists every export, and each one's doc comment has a short usage example; the global CSS (tokens, layout primitives, prose flow and motion) is `styles/glaze.css`.
 
 ## Example
 
@@ -57,17 +48,7 @@ export class RenameComponent {
 
 ## Theming
 
-Override tokens, nothing else. The accent is one colour in each of light and dark; the text on it, its hover and its tints follow from it:
-
-```css
-:root {
-  --glz-accent-light: #0b5cad;
-  --glz-accent-dark: #8cc2ff;
-  --glz-font-sans: 'Inter', system-ui, sans-serif;
-}
-```
-
-Light and dark follow the system; `data-theme="light"` or `"dark"` on `<html>` forces one.
+Override tokens, nothing else: [AGENTS.md](AGENTS.md), "Theming", says which a theme sets and how light and dark are chosen.
 
 ## Structure
 

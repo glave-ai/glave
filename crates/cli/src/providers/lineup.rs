@@ -27,7 +27,7 @@ use super::describe::{self, cards_for, rank, service_name};
 #[derive(Clone)]
 pub(crate) struct Lineup {
     /// The endpoint the settings choose, when they choose a model.
-    pub configured: Option<Endpoint>,
+    pub(crate) configured: Option<Endpoint>,
     judge: Judge,
     judge_from: Source,
     main_from: Option<Source>,
@@ -44,9 +44,9 @@ pub(crate) struct Lineup {
 /// of the default; none of it while no model is set up.
 #[derive(Default)]
 pub(crate) struct Built {
-    pub gateway: Option<Gateway>,
-    pub models: Models,
-    pub endpoint: Option<Endpoint>,
+    pub(crate) gateway: Option<Gateway>,
+    pub(crate) models: Models,
+    pub(crate) endpoint: Option<Endpoint>,
 }
 
 impl Lineup {

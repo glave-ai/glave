@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::envelope::Seq;
 use crate::id::{CallId, ThreadId};
 use crate::payload::part::Part;
@@ -99,11 +99,17 @@ impl Payload for ThreadStarted {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<ThreadStarted>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
+/// A thread's start and its compactions, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (TYPE, 1) => parse(data).map(Body::ThreadStarted),
+        (COMPACTED, 1) => parse(data).map(Body::ThreadCompacted),
+        _ => return None,
+    })
 }
 
 /// The conversation was summarized to fit the model's context window. From here on, the model
@@ -126,14 +132,4 @@ pub struct ThreadCompacted {
 impl Payload for ThreadCompacted {
     const TYPE: &'static str = COMPACTED;
     const VERSION: u32 = 1;
-}
-
-pub(crate) fn decode_compacted(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ThreadCompacted>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
 }

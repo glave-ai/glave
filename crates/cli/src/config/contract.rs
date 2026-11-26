@@ -26,11 +26,11 @@ const BEDROCK_KEYS: &[&str] = &["GLAVE_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"];
 /// How a cloud's models are reached.
 pub(super) struct Reached {
     /// Its OpenAI-compatible Chat Completions.
-    pub provider: Config,
+    pub(crate) provider: Config,
     /// Anthropic's Messages API there, for the models whose family speaks it.
-    pub claude: Option<Claude>,
+    pub(crate) claude: Option<Claude>,
     /// The variable the key came from, if a key did.
-    pub key_from: Option<&'static str>,
+    pub(crate) key_from: Option<&'static str>,
 }
 
 /// The provider `[provider]` names, with credentials from `env`.

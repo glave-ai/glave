@@ -1,4 +1,5 @@
 import type { AssetKind, LibraryItem, Project } from '@glave/client';
+import { dateTimeFormat } from '@glave/glaze';
 
 import { chatsName } from './nav';
 import { threadTitle } from './threads';
@@ -118,7 +119,7 @@ export function madeWhen(at: string, now: number, reader: Reader = {}): string {
   }
   const { locale, timeZone } = reader;
   const date = (options: Intl.DateTimeFormatOptions): string =>
-    new Intl.DateTimeFormat(locale, { timeZone, ...options }).format(then);
+    dateTimeFormat(locale, { timeZone, ...options }).format(then);
   const dayOf = calendarDay(timeZone);
   const day = dayOf(then);
   const today = dayOf(now);
