@@ -18,6 +18,7 @@ use glave_session::protocol::{Reply, Request};
 use crate::data::{Data, DataLog};
 use crate::reach::{self, Reached};
 use crate::said::Said;
+use crate::session::{finish, parsed};
 use crate::setup::Setup;
 use crate::turns::{Here, no_project};
 use glave_config::policy::MemorySettings;
@@ -188,33 +189,9 @@ fn parse(words: &[String]) -> Result<Command, String> {
 }
 
 pub(crate) fn main(arguments: &[String]) -> ExitCode {
-    if arguments
-        .iter()
-        .any(|word| word == "--help" || word == "-h")
-    {
-        println!("{USAGE}");
-        return ExitCode::SUCCESS;
-    }
-    let command = match parse(arguments) {
-        Ok(command) => command,
-        Err(message) => {
-            eprintln!("glave: {message}\n\n{USAGE}");
-            return ExitCode::from(2);
-        }
-    };
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    else {
-        eprintln!("glave: could not start");
-        return ExitCode::FAILURE;
-    };
-    match runtime.block_on(run(command)) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("glave: {error:#}");
-            ExitCode::FAILURE
-        }
+    match parsed(arguments, USAGE, parse) {
+        Ok(command) => finish(run(command)),
+        Err(code) => code,
     }
 }
 
