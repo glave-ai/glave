@@ -22,14 +22,12 @@
 83355f733bf6c3cb 6 crates/store-postgres/src/store.rs crates/store-sqlite/src/store.rs
 aab82f086101a3df 6 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 9555910be626e4a7 8 crates/store-postgres/src/leases.rs crates/store-sqlite/src/leases.rs
-9686706281056062 6 crates/cli/tests/computer.rs crates/computer/src/local/background/tests.rs
 9917f56ff024635e 7 crates/computer/src/local/credentials/tests.rs crates/computer/src/local/sandbox/linux/tests.rs crates/computer/src/local/sandbox/tests.rs
 a3d85a8380144aef 12 crates/harness/tests/support/script.rs crates/memory/tests/support/kit.rs
 a3e4b5de28fa9b4d 12 crates/cli/src/worktrees/cleanup/tests.rs crates/computer/src/worktrees/tests.rs
 a4c6e50cee13806d 11 crates/store-postgres/src/blobs.rs crates/store-postgres/src/blobs.rs
 a55f04d0fc470d9f 11 crates/session/src/answers.rs crates/session/src/turn.rs
 a9f65d4fb272be59 8 crates/harness/tests/project_folders.rs crates/session/tests/choices.rs
-afa24c0018395dcb 13 crates/keys/src/conformance.rs crates/ports/src/conformance.rs
 afb23fe741d3fd70 7 crates/provider-anthropic/src/fake.rs crates/provider-openai/src/fake.rs
 bbb0d4e47b13c4ec 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
 bbd73ee3de4c9b51 8 crates/computer/src/local/confinement_tests.rs crates/computer/src/local/confinement_tests.rs
