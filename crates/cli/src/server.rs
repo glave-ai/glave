@@ -69,8 +69,8 @@ pub(crate) struct Lock {
 /// computer's `localhost` that follows it).
 #[derive(Debug)]
 pub(crate) struct Claimed {
-    pub lock: Lock,
-    pub listening: crate::serving::Listening,
+    pub(crate) lock: Lock,
+    pub(crate) listening: crate::serving::Listening,
 }
 
 impl Lock {

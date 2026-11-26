@@ -26,16 +26,16 @@ pub(crate) const NO_SANDBOX: &str = "this computer has no sandbox glave can use 
 
 /// What this run uses: the files read, and the choices within the constraints.
 pub(crate) struct Setup {
-    pub loaded: Loaded,
-    pub choices: Choices,
+    pub(crate) loaded: Loaded,
+    pub(crate) choices: Choices,
     /// The hooks that run for the person's threads everywhere: their own. A project's trusted
     /// hooks run for its own threads alone, in its own folder (`project_folders.rs`).
-    pub hooks: Vec<Hook>,
+    pub(crate) hooks: Vec<Hook>,
     /// The most a sandbox on this computer allows, which each mode narrows, once the
     /// workspace found it (`sandboxing.rs`); none where none can run, or before it looked.
-    pub sandbox: Option<Sandbox>,
+    pub(crate) sandbox: Option<Sandbox>,
     /// Where glave's own sentences about this run go: the log, or the terminal.
-    pub said: Said,
+    pub(crate) said: Said,
 }
 
 impl Setup {

@@ -57,15 +57,15 @@ pub(crate) struct Rereading {
 
 /// What a [`Rereading`] is made with.
 pub(crate) struct Parts {
-    pub args: Args,
-    pub folder: PathBuf,
-    pub home: PathBuf,
-    pub start: Choices,
-    pub here: Option<SandboxLevel>,
-    pub accounts: Option<Arc<ModelAccounts>>,
-    pub switch: GatewaySwitch,
-    pub servers: Arc<Servers>,
-    pub projects: Arc<ProjectFolders>,
+    pub(crate) args: Args,
+    pub(crate) folder: PathBuf,
+    pub(crate) home: PathBuf,
+    pub(crate) start: Choices,
+    pub(crate) here: Option<SandboxLevel>,
+    pub(crate) accounts: Option<Arc<ModelAccounts>>,
+    pub(crate) switch: GatewaySwitch,
+    pub(crate) servers: Arc<Servers>,
+    pub(crate) projects: Arc<ProjectFolders>,
 }
 
 impl Rereading {
