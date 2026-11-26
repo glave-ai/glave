@@ -12,7 +12,7 @@ use glave_ports::stream::{Reserved, catch_up, in_order};
 use glave_ports::{OrgId, Scope};
 
 use crate::data::Data;
-use crate::tasks::run_with;
+use crate::session::run_with;
 
 pub(crate) const USAGE: &str = "\
 glave people: the people on this glave, for whoever runs it

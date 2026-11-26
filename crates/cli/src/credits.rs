@@ -14,7 +14,7 @@ use glave_session::protocol::{CreditsInfo, Reply, Request, SpaceCredits};
 use uuid::Uuid;
 
 use crate::reach;
-use crate::tasks::run_with;
+use crate::session::run_with;
 
 pub(crate) const USAGE: &str = "\
 glave credits: what is left to spend on models, where this glave keeps credits

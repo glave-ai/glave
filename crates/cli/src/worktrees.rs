@@ -20,6 +20,7 @@ use jiff::{SignedDuration, Timestamp};
 use crate::client::Session;
 use crate::home;
 use crate::said::Said;
+use crate::session::finish;
 
 pub(crate) use cleanup::Cleanup;
 
@@ -75,23 +76,7 @@ pub(crate) fn main(arguments: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!("glave: could not start: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
-    match runtime.block_on(run(prune, &forced)) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("glave: {error:#}");
-            ExitCode::FAILURE
-        }
-    }
+    finish(run(prune, &forced))
 }
 
 /// The names after `prune`: each `--force <name>`.

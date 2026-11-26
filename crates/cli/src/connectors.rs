@@ -14,7 +14,7 @@ use glave_session::protocol::{ConnectorAccount, ConnectorInfo, ConnectorStatus, 
 
 use crate::connections::signed_in;
 use crate::reach::{self, Reached};
-use crate::tasks::run_with;
+use crate::session::run_with;
 
 pub(crate) const USAGE: &str = "\
 glave connectors: the apps glave can work in for you, each an official MCP server its maker

@@ -47,6 +47,63 @@ const SUBCOMMANDS: [(&str, Subcommand); 15] = [
     ("people", crate::people::main),
 ];
 
+/// What a command was asked, `parse` reading the words after its name; or how it ends: with
+/// its usage when asked for help, or with why the words don't read and code 2.
+pub(crate) fn parsed<T>(
+    words: &[String],
+    usage: &str,
+    parse: impl FnOnce(&[String]) -> Result<T, String>,
+) -> Result<T, ExitCode> {
+    if words.iter().any(|word| word == "--help" || word == "-h") {
+        println!("{usage}");
+        return Err(ExitCode::SUCCESS);
+    }
+    parse(words).map_err(|message| {
+        eprintln!("glave: {message}\n\n{usage}");
+        ExitCode::from(2)
+    })
+}
+
+/// A command run on its words: its usage when asked for help, else `run` given them, on a
+/// runtime of its own ([`finish`]).
+pub(crate) fn run_with<F, R>(words: &[String], usage: &str, run: F) -> ExitCode
+where
+    F: FnOnce(Vec<String>) -> R,
+    R: Future<Output = anyhow::Result<()>>,
+{
+    match parsed(words, usage, |words| Ok(words.to_vec())) {
+        Ok(words) => finish(run(words)),
+        Err(code) => code,
+    }
+}
+
+/// Runs a command's `work` to its end on a runtime of its own, and ends as it did.
+pub(crate) fn finish(work: impl Future<Output = anyhow::Result<()>>) -> ExitCode {
+    match runtime() {
+        Ok(runtime) => ended(runtime.block_on(work).map(|()| ExitCode::SUCCESS)),
+        Err(code) => code,
+    }
+}
+
+/// A runtime on this thread for a command's work; where none starts, glave says so.
+pub(crate) fn runtime() -> Result<tokio::runtime::Runtime, ExitCode> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| {
+            eprintln!("glave: could not start: {error}");
+            ExitCode::FAILURE
+        })
+}
+
+/// How a command whose work `ran` ends: with the code it gave, or with its error said.
+pub(crate) fn ended(ran: anyhow::Result<ExitCode>) -> ExitCode {
+    ran.unwrap_or_else(|error| {
+        eprintln!("glave: {error:#}");
+        ExitCode::FAILURE
+    })
+}
+
 /// glave's entry, once `kept` says whether it kept its capabilities to itself
 /// (`capabilities.rs`): what went wrong there is said once glave knows where it says things.
 pub(crate) fn main(kept: Option<&str>) -> ExitCode {

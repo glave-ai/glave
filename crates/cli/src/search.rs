@@ -8,7 +8,7 @@ use anyhow::bail;
 use glave_session::protocol::{Reply, Request, SearchInfo};
 
 use crate::reach::{self, Reached};
-use crate::tasks::run_with;
+use crate::session::run_with;
 
 pub(crate) const USAGE: &str = "\
 glave search: whether glave may search the web for you
