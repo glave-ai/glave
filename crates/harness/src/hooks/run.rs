@@ -43,10 +43,10 @@ impl<'a> ToolHook<'a> {
 }
 
 /// What one hook decided.
-pub(crate) struct Ran {
-    pub(crate) result: HookResult,
+pub(super) struct Ran {
+    pub(super) result: HookResult,
     exit_code: Option<i32>,
-    pub(crate) reason: Option<String>,
+    pub(super) reason: Option<String>,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -221,7 +221,7 @@ where
 /// Code and Codex read it: `"decision": "block"`, or for `PreToolUse` a
 /// `hookSpecificOutput.permissionDecision` of `"deny"`. Allowing fields are ignored: a hook
 /// never lets anything through that would otherwise ask.
-pub(crate) fn decided(point: HookPoint, text: &str) -> Ran {
+pub(super) fn decided(point: HookPoint, text: &str) -> Ran {
     let passed = Ran {
         result: HookResult::Passed,
         exit_code: Some(0),
