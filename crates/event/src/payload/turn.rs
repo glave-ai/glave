@@ -8,7 +8,7 @@ use super::made::{FileMade, MadeLeft};
 use super::model::{ModelRef, ModelResponded, TokenCounts};
 use super::tool::ToolError;
 use crate::blob::BlobRef;
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::envelope::At;
 use crate::error::InvalidValue;
 use crate::money::{Currency, Money, Nanos};
@@ -128,15 +128,18 @@ impl Payload for TurnStarted {
     const VERSION: u32 = 2;
 }
 
-pub(crate) fn decode_started(
+/// A turn's start and end, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<TurnStarted>> {
-    match version {
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
         // Before a turn said it was a schedule's run: none was, as far as it says.
-        1 | 2 => Some(parse(data)),
-        _ => None,
-    }
+        (STARTED, 1 | 2) => parse(data).map(Body::TurnStarted),
+        (ENDED, 1..=3) => parse(data).map(Body::TurnEnded),
+        _ => return None,
+    })
 }
 
 /// A turn ended (`turn.ended`): how, and what it did and cost, its subagents' work included.
@@ -304,16 +307,6 @@ impl Payload for TurnResult {
     const VERSION: u32 = 3;
 }
 
-pub(crate) fn decode_ended(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<TurnResult>> {
-    match version {
-        1..=3 => Some(parse(data)),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,7 +397,9 @@ mod tests {
     #[test]
     fn a_turn_recorded_with_its_outcome_alone_reads_with_nothing_counted() {
         let raw = RawValue::from_string(r#"{"outcome":"failed"}"#.into()).unwrap();
-        let ended = decode_ended(1, &raw).unwrap().unwrap();
+        let Some(Ok(Body::TurnEnded(ended))) = decode(ENDED, 1, &raw) else {
+            panic!("a turn's end");
+        };
         assert_eq!(ended.outcome, Outcome::Failed);
         assert_eq!(
             (ended.model_calls, ended.cost, ended.via.len()),

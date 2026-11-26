@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 
 pub(crate) const BOUND: &str = "workspace.bound";
 pub(crate) const REMOVED: &str = "workspace.removed";
@@ -99,19 +99,15 @@ impl Payload for WorkspaceRemoved {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<WorkspaceBound>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
-}
-
-pub(crate) fn decode_removed(
+/// A workspace's events, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<WorkspaceRemoved>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (BOUND, 1) => parse(data).map(Body::WorkspaceBound),
+        (REMOVED, 1) => parse(data).map(Body::WorkspaceRemoved),
+        _ => return None,
+    })
 }

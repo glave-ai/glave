@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 use rust_xlsxwriter::{Chart, ExcelDateTime, Format, FormatBorder, Workbook, Worksheet, XlsxError};
 use serde_json::Value;
 
-use crate::cells::{Cell, Range, SheetRange, column_number, listed};
+use crate::cells::{Cell, Range, SheetRange, column_number, counted, listed};
 use crate::error::OfficeError;
 use description::{ChartDescription, Description, SheetDescription};
 
@@ -100,10 +100,6 @@ fn contents(sheet: &SheetDescription, formulas: usize) -> String {
         held.push(counted(sheet.charts.len(), "chart", "charts"));
     }
     format!("{} ({})", sheet.name, held.join(", "))
-}
-
-fn counted(count: usize, one: &str, many: &str) -> String {
-    format!("{count} {}", if count == 1 { one } else { many })
 }
 
 fn write_sheet(

@@ -7,6 +7,7 @@ import {
   GlzIconComponent,
   type GlzIconData,
   GlzPlanCardComponent,
+  numberFormat,
 } from '@glave/glaze';
 import { Folder, GitBranch, Laptop } from 'lucide';
 
@@ -139,7 +140,7 @@ export class ThreadOverviewComponent {
     if (percent === null) {
       return null;
     }
-    const used = new Intl.NumberFormat(this.locale, { style: 'percent' }).format(percent / 100);
+    const used = numberFormat(this.locale, { style: 'percent' }).format(percent / 100);
     const compacting = this.facts.compacting();
     // Not while a turn runs, which compacts on its own as it needs to. Drawn unavailable rather
     // than disabled, so a press on it never loses the keyboard's place.

@@ -20,8 +20,8 @@ pub(crate) const ANTHROPIC_HOST: &str = "api.anthropic.com";
 #[derive(Clone)]
 pub(crate) struct Claude {
     /// Where and how; its idle timeout is the endpoint's.
-    pub config: glave_provider_anthropic::Config,
-    pub models: Family,
+    pub(crate) config: glave_provider_anthropic::Config,
+    pub(crate) models: Family,
 }
 
 /// Which models are asked through Anthropic's Messages API.

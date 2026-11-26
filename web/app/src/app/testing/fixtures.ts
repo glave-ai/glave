@@ -14,7 +14,7 @@ import type {
 
 /** Test data shaped as the session API sends it. */
 
-export const TOKENS: TokenCounts = {
+const TOKENS: TokenCounts = {
   input: 1200,
   output: 300,
   cache_read: 0,

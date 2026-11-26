@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::envelope::At;
 use crate::id::CallId;
 use crate::payload::caution::Caution;
@@ -190,25 +190,18 @@ impl Payload for ApprovalDecided {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_requested(
+/// An approval's events, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<ApprovalRequested>> {
-    match version {
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
         // Version 2 only adds what an approval may ask and why: version 1 reads as it is.
-        1 | 2 => Some(parse(data)),
-        _ => None,
-    }
-}
-
-pub(crate) fn decode_decided(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ApprovalDecided>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
+        (REQUESTED, 1 | 2) => parse(data).map(Body::ApprovalRequested),
+        (DECIDED, 1) => parse(data).map(Body::ApprovalDecided),
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -219,7 +212,10 @@ mod tests {
     fn a_request_to_run_outside_the_sandbox_keeps_the_model_s_reason_apart() {
         let read = |data: &str| {
             let raw = RawValue::from_string(data.to_owned()).unwrap();
-            decode_requested(1, &raw).unwrap().unwrap()
+            let Some(Ok(Body::ApprovalRequested(read))) = decode(REQUESTED, 1, &raw) else {
+                panic!("an approval's request");
+            };
+            read
         };
         let asked = read(
             r#"{"call_id":"call_4","tool":"bash","summary":"bash: cargo add serde","secret":false,"caution":"It runs outside the sandbox.","outside_sandbox":{"reason":"cargo add writes ~/.cargo/registry"}}"#,

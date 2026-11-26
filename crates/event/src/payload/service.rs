@@ -8,7 +8,7 @@ use serde_json::value::RawValue;
 use serde_json::{Map, Number, Value};
 
 use crate::blob::BlobRef;
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::id::CallId;
 use crate::payload::principal::Principal;
 
@@ -247,24 +247,17 @@ impl Payload for ServiceAnswered {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_asked(
+/// A service's questions and their answers, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<ServiceAsked>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
-}
-
-pub(crate) fn decode_answered(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ServiceAnswered>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (ASKED, 1) => parse(data).map(Body::ServiceAsked),
+        (ANSWERED, 1) => parse(data).map(Body::ServiceAnswered),
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

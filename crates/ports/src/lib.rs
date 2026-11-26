@@ -44,6 +44,7 @@ pub mod stream;
 #[cfg(any(test, feature = "conformance"))]
 pub mod testing;
 mod tools;
+mod uuid_id;
 mod view;
 mod web_search;
 

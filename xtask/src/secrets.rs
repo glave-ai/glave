@@ -4,11 +4,9 @@
 //! and no scanner, nor reader, mistakes a test for a leak. The files on [`ALLOWED`] are passed
 //! over, each for its reason.
 
-use std::io::ErrorKind;
-
 use glave_ports::secrets::TOKEN_PREFIXES;
 
-use crate::{cmd, workspace};
+use crate::sources;
 
 /// Tracked files that may hold a secret's shape, and why.
 const ALLOWED: &[(&str, &str)] = &[(
@@ -27,27 +25,12 @@ const JWT_PART: usize = 19;
 /// Fails on a secret-shaped literal in a tracked file, or on an allowed file that no longer
 /// holds one.
 pub(crate) fn check() -> Result<(), String> {
-    let root = workspace::root()?;
-    let listed = cmd::query("git", &["ls-files", "-z"])?;
     let mut problems = Vec::new();
     let mut scanned = 0_usize;
-    for path in listed.split('\0').filter(|path| !path.is_empty()) {
-        let text = match std::fs::read_to_string(root.join(path)) {
-            Ok(text) => text,
-            // Binary files, folders and files deleted but not yet staged hold no text.
-            Err(err)
-                if matches!(
-                    err.kind(),
-                    ErrorKind::InvalidData | ErrorKind::NotFound | ErrorKind::IsADirectory
-                ) =>
-            {
-                continue;
-            }
-            Err(err) => return Err(format!("could not read {path}: {err}")),
-        };
+    for (path, text) in sources::tracked(&[], |_| true)? {
         scanned += 1;
         let found = findings(&text);
-        if allowed(path) {
+        if allowed(&path) {
             if found.is_empty() {
                 problems.push(format!("{path}: allowed, but holds no secret's shape now"));
             }

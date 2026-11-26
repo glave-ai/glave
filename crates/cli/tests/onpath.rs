@@ -5,13 +5,13 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use glave_computer::{CancelSwitch, LocalComputers};
-use glave_ports::block_on;
+use glave_computer::LocalComputers;
 use glave_ports::computer::{
     Command, Computers, Ending, Environment, RunsFor, Sandbox, SandboxLevel, SandboxNetwork,
     Sources,
 };
 use glave_ports::testing::Captured;
+use glave_ports::{NeverCancelled, block_on};
 use glave_provider_openai::fake::FakeServer;
 
 use crate::http::serve_http;
@@ -69,7 +69,7 @@ fn a_sandboxed_command_with_glave_on_its_path_cannot_act_as_the_person() {
         command.timeout_secs = Some(60);
         let output = Captured::default();
         let finished = computers
-            .run(here, &command, &output, &CancelSwitch::default())
+            .run(here, &command, &output, &NeverCancelled)
             .await
             .unwrap();
         let said = output.text();

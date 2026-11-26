@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::payload::principal::Principal;
 
 pub(crate) const FOLDER_SET: &str = "project.folder.set";
@@ -89,11 +89,22 @@ impl Payload for ProjectRemoved {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_removed(
+/// A project's events, or `None` for a type or version that is none of them. A `project.folder.set`
+/// of version 1 is upgraded as it is read to version 2, whose repository's address names the
+/// repository alone.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<ProjectRemoved>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (FOLDER_SET, 1) => {
+            parse(data).map(|v1| Body::ProjectFolderSet(ProjectFolderSet::from_v1(v1)))
+        }
+        (FOLDER_SET, 2) => parse(data).map(Body::ProjectFolderSet),
+        (REMOVED, 1) => parse(data).map(Body::ProjectRemoved),
+        _ => return None,
+    })
 }
 
 impl Payload for ProjectFolderSet {
@@ -112,19 +123,6 @@ impl ProjectFolderSet {
     }
 }
 
-/// `project.folder.set` at `version`: version 2, whose repository's address names the
-/// repository alone, or version 1, upgraded to it as it is read.
-pub(crate) fn decode_folder_set(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<ProjectFolderSet>> {
-    match version {
-        1 => Some(parse(data).map(ProjectFolderSet::from_v1)),
-        2 => Some(parse(data)),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,7 +137,9 @@ mod tests {
             "checkout": {"computer": "0192f5c5-0000-7000-8000-000000000001", "path": "/code/app"},
         }))
         .unwrap();
-        let read = decode_folder_set(1, &data).unwrap().unwrap();
+        let Some(Ok(Body::ProjectFolderSet(read))) = decode(FOLDER_SET, 1, &data) else {
+            panic!("a folder set");
+        };
         let url = "https://github.com/o/app".to_owned();
         assert_eq!(read.source, FolderSource::Repository { url });
     }

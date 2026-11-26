@@ -19,7 +19,7 @@ const LONGEST: usize = 2_048;
 /// The push services browsers subscribe with, by host: Google's for Chrome, Edge on Android,
 /// Samsung Internet and Opera; Mozilla's for Firefox; Apple's for Safari; Microsoft's (WNS) for
 /// Edge on Windows. A leading `*.` is any name under it.
-pub const PUSH_SERVICES: [&str; 4] = [
+const PUSH_SERVICES: [&str; 4] = [
     "fcm.googleapis.com",
     "*.push.services.mozilla.com",
     "*.push.apple.com",

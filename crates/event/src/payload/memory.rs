@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::envelope::{At, RawEvent, Seq};
 use crate::id::{EventId, MemoryId, ThreadId};
 use crate::payload::principal::Principal;
@@ -158,45 +158,20 @@ impl Payload for MemoryTidied {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode_saved(
+/// A memory's events, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<MemorySaved>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
-}
-
-pub(crate) fn decode_edited(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<MemoryEdited>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_forgotten(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<MemoryForgotten>> {
-    match version {
-        1 => Some(parse(data)),
-        _ => None,
-    }
-}
-
-pub(crate) fn decode_restored(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<MemoryRestored>> {
-    (version == 1).then(|| parse(data))
-}
-
-pub(crate) fn decode_tidied(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<MemoryTidied>> {
-    (version == 1).then(|| parse(data))
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (SAVED, 1) => parse(data).map(Body::MemorySaved),
+        (EDITED, 1) => parse(data).map(Body::MemoryEdited),
+        (FORGOTTEN, 1) => parse(data).map(Body::MemoryForgotten),
+        (RESTORED, 1) => parse(data).map(Body::MemoryRestored),
+        (TIDIED, 1) => parse(data).map(Body::MemoryTidied),
+        _ => return None,
+    })
 }
 
 /// The memory whose own data key seals `event`, when it is one that holds a memory's text

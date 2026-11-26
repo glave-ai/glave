@@ -13,6 +13,7 @@ import {
 } from '@angular/core';
 import type { Permissions } from '@glave/client';
 import {
+  dateTimeFormat,
   GlzAttachmentComponent,
   GlzButtonComponent,
   GlzComposerComponent,
@@ -276,7 +277,7 @@ export class ThreadComponent {
     if (ended === null) {
       return null;
     }
-    const time = new Intl.DateTimeFormat(this.locale, { timeStyle: 'short' }).format(ended.at);
+    const time = dateTimeFormat(this.locale, { timeStyle: 'short' }).format(ended.at);
     return {
       key: ended.key,
       line: $localize`:@@thread.away:Finished while you were away · ${time}:TIME:`,

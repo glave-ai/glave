@@ -1,25 +1,15 @@
 //! `cargo xtask file-sizes`: enforce the source-file line limits from AGENTS.md.
 
-use std::path::{Path, PathBuf};
+use crate::sources;
 
 /// Above this many lines a file gets a warning: time to consider splitting it.
 const SOFT_LIMIT: usize = 400;
 /// Above this many lines a file fails the check.
 const HARD_LIMIT: usize = 800;
-/// Directories scanned, relative to the workspace root.
-const SCANNED_DIRS: &[&str] = &["crates", "xtask", "apps", "web"];
+/// Folders scanned, relative to the workspace root.
+const SCANNED_DIRS: &[&str] = &["crates", "xtask", "web"];
 /// Extensions counted as source code.
 const SOURCE_EXTENSIONS: &[&str] = &["rs", "ts"];
-/// Directory names never scanned (build output, dependencies, generated code).
-const SKIPPED_DIRS: &[&str] = &[
-    "target",
-    "node_modules",
-    "dist",
-    "generated",
-    ".angular",
-    "out-tsc",
-    "test-results",
-];
 
 /// How a file's length compares with the limits.
 #[derive(Debug, PartialEq, Eq)]
@@ -39,21 +29,16 @@ fn classify(lines: usize) -> Verdict {
     }
 }
 
-/// Scans the source tree, warns about long files, and fails on files over the hard limit.
+/// Reads the tracked sources, warns about long files, and fails on files over the hard limit.
 pub(crate) fn check() -> Result<(), String> {
-    let root = crate::workspace::root()?;
-    let mut files = Vec::new();
-    for dir in SCANNED_DIRS {
-        collect(&root.join(dir), &mut files)?;
-    }
+    let files = sources::tracked(SCANNED_DIRS, counted)?;
     let mut failures = Vec::new();
-    for path in &files {
-        let lines = count_lines(path)?;
-        let shown = path.strip_prefix(&root).unwrap_or(path).display();
+    for (path, text) in &files {
+        let lines = text.lines().count();
         match classify(lines) {
             Verdict::Fine => {}
-            Verdict::Warn => println!("warning: {shown}: {lines} lines (target ≤ {SOFT_LIMIT})"),
-            Verdict::Fail => failures.push(format!("{shown}: {lines} lines")),
+            Verdict::Warn => println!("warning: {path}: {lines} lines (target ≤ {SOFT_LIMIT})"),
+            Verdict::Fail => failures.push(format!("{path}: {lines} lines")),
         }
     }
     if failures.is_empty() {
@@ -68,49 +53,18 @@ pub(crate) fn check() -> Result<(), String> {
     }
 }
 
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    if !dir.is_dir() {
-        return Ok(());
-    }
-    let entries =
-        std::fs::read_dir(dir).map_err(|err| format!("could not read {}: {err}", dir.display()))?;
-    for entry in entries {
-        let path = entry
-            .map_err(|err| format!("could not read {}: {err}", dir.display()))?
-            .path();
-        if path.is_dir() {
-            if !has_name_in(&path, SKIPPED_DIRS) {
-                collect(&path, out)?;
-            }
-        } else if has_extension_in(&path, SOURCE_EXTENSIONS) {
-            out.push(path);
-        }
-    }
-    Ok(())
-}
-
-fn has_name_in(path: &Path, names: &[&str]) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| names.contains(&name))
-}
-
-fn has_extension_in(path: &Path, extensions: &[&str]) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| extensions.contains(&ext))
-}
-
-fn count_lines(path: &Path) -> Result<usize, String> {
-    std::fs::read_to_string(path)
-        .map(|text| text.lines().count())
-        .map_err(|err| format!("could not read {}: {err}", path.display()))
+/// Whether `path` is counted: source code, generated code aside.
+fn counted(path: &str) -> bool {
+    !path.contains("/generated/")
+        && std::path::Path::new(path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| SOURCE_EXTENSIONS.contains(&ext))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{HARD_LIMIT, SOFT_LIMIT, Verdict, classify, has_extension_in, has_name_in};
-    use std::path::Path;
+    use super::{HARD_LIMIT, SOFT_LIMIT, Verdict, classify, counted};
 
     #[test]
     fn limits_are_inclusive_at_the_boundary() {
@@ -126,15 +80,11 @@ mod tests {
     }
 
     #[test]
-    fn matches_source_extensions_only() {
-        assert!(has_extension_in(Path::new("a/b.rs"), &["rs"]));
-        assert!(!has_extension_in(Path::new("a/b.md"), &["rs"]));
-        assert!(!has_extension_in(Path::new("a/rs"), &["rs"]));
-    }
-
-    #[test]
-    fn skips_named_directories() {
-        assert!(has_name_in(Path::new("crates/x/target"), &["target"]));
-        assert!(!has_name_in(Path::new("crates/x/src"), &["target"]));
+    fn counts_sources_and_not_generated_code() {
+        assert!(counted("crates/x/src/b.rs"));
+        assert!(counted("web/app/src/main.ts"));
+        assert!(!counted("crates/x/README.md"));
+        assert!(!counted("crates/x/rs"));
+        assert!(!counted("web/client/src/generated/api.ts"));
     }
 }

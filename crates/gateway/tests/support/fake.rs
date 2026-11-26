@@ -11,7 +11,7 @@ use glave_gateway::{Credits, Model, Price, Target};
 pub(crate) use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, FaultyLog, ManualClock};
 use glave_ports::{
-    BoxFuture, Completion, Delta, Hit, Made, MadeFile, MediaAsk, Message, ModelRequest,
+    BoxFuture, Completion, Delta, Hit, Made, MadeFile, MediaAsk, Message, ModelRequest, Payer,
     ProviderError, Purpose, SearchAsk, SearchResults, ToolChoice, ToolSpec,
 };
 use tokio::sync::Semaphore;
@@ -270,16 +270,32 @@ pub(crate) fn org() -> glave_ports::OrgId {
     glave_ports::OrgId::from_uuid(id.unwrap().as_uuid())
 }
 
+/// `asked`, as the test person's work in the test organization.
+pub(crate) fn paid(mut asked: ModelRequest) -> ModelRequest {
+    asked.payer = Some(Payer {
+        org: org(),
+        person: Some(person()),
+    });
+    asked
+}
+
 /// Credits on a log of their own, with `nanos` added for the test's organization.
 pub(crate) fn funded(nanos: i64) -> Arc<Credits<FaultyLog>> {
+    funded_on(&FaultyLog::default(), nanos)
+}
+
+/// Credits on `log`, with `nanos` added for the test's organization when there are any.
+pub(crate) fn funded_on(log: &FaultyLog, nanos: i64) -> Arc<Credits<FaultyLog>> {
     let credits = Arc::new(Credits::new(
-        FaultyLog::default(),
+        log.clone(),
         Box::new(ManualClock::ticking(1_793_350_800_000)),
         Box::new(CountingEntropy::starting_at(1)),
         None,
     ));
-    let by = Principal::person(person());
-    block_on!(credits.add(org(), dollars(nanos), "order-1", by)).unwrap();
+    if nanos > 0 {
+        let by = Principal::person(person());
+        block_on!(credits.add(org(), dollars(nanos), "order-1", by)).unwrap();
+    }
     credits
 }
 

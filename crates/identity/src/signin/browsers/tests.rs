@@ -1,25 +1,11 @@
-use std::sync::Arc;
-
+use glave_ports::block_on;
 use glave_ports::testing::ManualClock;
-use glave_ports::{OrgId, ProjectId, block_on};
-use glave_store_sqlite::{SqliteLog, Store};
+use glave_store_sqlite::SqliteLog;
 
 use super::*;
+use crate::signin::fixtures::{scope, store};
 
 const START: i64 = 1_791_590_400;
-
-/// A store of its own, in memory.
-fn store() -> Store {
-    let root = glave_keys::InMemoryRoot::new().unwrap();
-    Store::open_in_memory(glave_keys::KeySettings::new(Arc::new(root))).unwrap()
-}
-
-fn scope() -> Scope {
-    Scope::glaves_own(
-        OrgId::from_uuid(Uuid::from_u128(1)),
-        ProjectId::from_uuid(Uuid::from_u128(2)),
-    )
-}
 
 async fn open(log: SqliteLog, clock: &ManualClock) -> Browsers {
     Browsers::open(

@@ -3,7 +3,7 @@ import { ApiError, type CredentialInfo, ErrorCode, type Forge } from '@glave/cli
 import { sentence, somethingWrong } from './text';
 
 /** GitHub's own address: connecting GitHub with a token sends it here. */
-export const GITHUB = 'https://github.com';
+const GITHUB = 'https://github.com';
 
 /** What each forge is called, by its own name. */
 const FORGES: Readonly<Record<Exclude<Forge, 'other'>, string>> = {

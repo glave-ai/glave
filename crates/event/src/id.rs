@@ -26,6 +26,13 @@ fn require_v7(what: &'static str, uuid: Uuid) -> Result<Uuid, InvalidValue> {
     }
 }
 
+/// Reads `text`, trimmed, as a version 7 UUID.
+fn parse_v7(what: &'static str, text: &str) -> Result<Uuid, InvalidValue> {
+    let uuid = Uuid::parse_str(text.trim())
+        .map_err(|e| InvalidValue::new(what, format!("{text:?}: {e}")))?;
+    require_v7(what, uuid)
+}
+
 /// A UUID v7 id type, `$what` in what its errors say: made from a time and caller-supplied
 /// randomness, read only from a version 7 UUID, and shown as the UUID.
 macro_rules! v7_id {
@@ -101,28 +108,13 @@ impl PrincipalId {
     }
 }
 
-/// Identifies one thread: a conversation or task with its own ordered log.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    schemars::JsonSchema,
-)]
-#[serde(try_from = "Uuid", into = "Uuid")]
-pub struct ThreadId(Uuid);
+v7_id!(
+    /// Identifies one thread: a conversation or task with its own ordered log.
+    ThreadId,
+    "thread id"
+);
 
 impl ThreadId {
-    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
-        build_v7("thread id", at, random).map(Self)
-    }
-
     /// The id at time zero whose random bits are all zero but the last byte, `last`, such as
     /// `00000000-0000-7000-8000-000000000002`: an id no thread can have, since a thread's id
     /// carries the time it started, kept for glave's own streams.
@@ -132,30 +124,6 @@ impl ThreadId {
             *end = last;
         }
         Self(Builder::from_unix_timestamp_millis(0, &random).into_uuid())
-    }
-
-    pub fn as_uuid(self) -> Uuid {
-        self.0
-    }
-}
-
-impl TryFrom<Uuid> for ThreadId {
-    type Error = InvalidValue;
-
-    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
-        require_v7("thread id", uuid).map(Self)
-    }
-}
-
-impl From<ThreadId> for Uuid {
-    fn from(id: ThreadId) -> Self {
-        id.0
-    }
-}
-
-impl fmt::Display for ThreadId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
     }
 }
 
@@ -181,9 +149,7 @@ impl std::str::FromStr for MemoryId {
     type Err = InvalidValue;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let uuid = Uuid::parse_str(text.trim())
-            .map_err(|e| InvalidValue::new("memory id", format!("{text:?}: {e}")))?;
-        Self::try_from(uuid)
+        parse_v7("memory id", text).map(Self)
     }
 }
 
@@ -197,9 +163,7 @@ impl std::str::FromStr for ProviderId {
     type Err = InvalidValue;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let uuid = Uuid::parse_str(text.trim())
-            .map_err(|e| InvalidValue::new("provider id", format!("{text:?}: {e}")))?;
-        Self::try_from(uuid)
+        parse_v7("provider id", text).map(Self)
     }
 }
 

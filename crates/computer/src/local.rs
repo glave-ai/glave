@@ -49,7 +49,6 @@ pub(crate) use registry::new_id;
 use registry::{Kept, Opened, Registry};
 
 use crate::disk::Largest;
-pub use git::ask_repository;
 pub use on_path::glave_on_path;
 pub(crate) use sandbox::CACHE_FOLDER;
 pub use sandbox::{SANDBOX_HELPER_FAILED, sandbox_available, sandbox_helper};

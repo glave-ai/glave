@@ -16,7 +16,7 @@ use super::super::tests::{cluster, left_behind};
 use super::PersonComputer;
 use super::measured::two_cpus;
 use super::tests::ran;
-use crate::CancelSwitch;
+use crate::cancel::CancelSwitch;
 use crate::worker::WorkerComputers;
 use crate::worker::route::Tail;
 

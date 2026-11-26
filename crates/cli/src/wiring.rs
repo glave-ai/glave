@@ -41,7 +41,7 @@ use glave_gateway::WebSearch;
 
 /// The server for this folder, and what the terminal needs to show it.
 pub(crate) struct Wired {
-    pub server: Glave,
+    pub(crate) server: Glave,
     pub(crate) servers: Arc<Servers>,
     /// The default model's endpoint; none while no model is set up.
     pub(crate) endpoint: Option<Endpoint>,

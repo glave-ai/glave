@@ -27,17 +27,17 @@ const KEY: &str = "GLAVE_API_KEY";
 /// The model endpoint and the model to use.
 #[derive(Clone)]
 pub(crate) struct Endpoint {
-    pub provider: Config,
+    pub(crate) provider: Config,
     /// Claude's Messages API at the same cloud, for the models whose family speaks it.
-    pub claude: Option<Claude>,
-    pub model: String,
+    pub(crate) claude: Option<Claude>,
+    pub(crate) model: String,
     /// True when the model runs on this computer, so a missing cost means $0.
-    pub local: bool,
+    pub(crate) local: bool,
     /// The setting that says where the endpoint is: `GLAVE_BASE_URL`, or `[provider]` and
     /// its file.
-    pub at: String,
+    pub(crate) at: String,
     /// The variable the key came from, or would: `GLAVE_API_KEY` unless a cloud's own.
-    pub key_from: &'static str,
+    pub(crate) key_from: &'static str,
 }
 
 /// The endpoint for `model`, the model chosen, at the cloud `provider` names, else at
