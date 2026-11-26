@@ -12,7 +12,6 @@ mod tool;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-
 pub use tool::{SKILL, Skills};
 
 /// The file that makes a folder a skill.
