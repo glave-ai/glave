@@ -20,11 +20,11 @@ const MOST: usize = 256 * 1024;
 /// What the host said of a token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Checked {
-    pub forge: Forge,
+    pub(crate) forge: Forge,
     /// Whom the token is for, when the host said.
-    pub login: Option<String>,
+    pub(crate) login: Option<String>,
     /// What the token may do, when the host said.
-    pub scopes: Option<Vec<String>>,
+    pub(crate) scopes: Option<Vec<String>>,
 }
 
 /// The clients every call to a git host is made with: no redirects, so a token never follows

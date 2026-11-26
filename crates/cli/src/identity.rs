@@ -21,8 +21,8 @@ const COMPUTER: &str = "computer";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Identity {
-    pub person: PrincipalId,
-    pub agent: PrincipalId,
+    pub(crate) person: PrincipalId,
+    pub(crate) agent: PrincipalId,
 }
 
 /// Your identity from the store, made and kept there the first time.

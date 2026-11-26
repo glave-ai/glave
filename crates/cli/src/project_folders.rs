@@ -49,26 +49,26 @@ const FOR_OTHERS: &str = "a project's own tools and settings run only for the pe
 /// What glave runs with itself, which each project's settings go among.
 pub(crate) struct Own {
     /// The levels glave's choices came from, and the constraints.
-    pub loaded: Loaded,
+    pub(crate) loaded: Loaded,
     /// glave's own settled choices, its sandbox as it runs: what a project's settings change.
-    pub choices: Choices,
+    pub(crate) choices: Choices,
     /// The servers glave runs for the person's threads everywhere, by name: a project's
     /// server of the same name gives way to theirs.
-    pub taken: Vec<String>,
+    pub(crate) taken: Vec<String>,
     /// The models a thread may be sent to now.
-    pub models: GatewaySwitch,
+    pub(crate) models: GatewaySwitch,
     /// Memory, when it is on: each project's settings choose its project's.
-    pub memory: Option<Arc<GlaveMemory<DataLog>>>,
+    pub(crate) memory: Option<Arc<GlaveMemory<DataLog>>>,
     /// What tells how long a project's servers have gone unused.
-    pub clock: Box<dyn Clock>,
+    pub(crate) clock: Box<dyn Clock>,
     /// Where a project's servers start, each owned by its project.
-    pub processes: Processes,
+    pub(crate) processes: Processes,
     /// The addresses a project's remote server may be at.
-    pub reachable: glave_mcp::Reachable,
+    pub(crate) reachable: glave_mcp::Reachable,
     /// What a program in a project's file has its variables filled from.
-    pub reads: crate::mcp::ProjectEnvironment,
+    pub(crate) reads: crate::mcp::ProjectEnvironment,
     /// What the person decided about each project.
-    pub trust: Trust,
+    pub(crate) trust: Trust,
 }
 
 /// The levels glave's own choices came from, the constraints, and those choices: what each

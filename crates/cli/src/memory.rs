@@ -37,9 +37,9 @@ Memory is on until you turn it off in Settings. In a session, /memory lists them
 
 /// Memory as running here: the server, and the projects it keeps for the person it runs for.
 pub(crate) struct Running {
-    pub memory: Arc<GlaveMemory<DataLog>>,
-    pub scopes: Vec<Scope>,
-    pub person: PrincipalId,
+    pub(crate) memory: Arc<GlaveMemory<DataLog>>,
+    pub(crate) scopes: Vec<Scope>,
+    pub(crate) person: PrincipalId,
     /// Whether it housekeeps as it starts and ends: not on the person's server, whose daily job
     /// housekeeps every organization ([`crate::args::Args::housekeeps_memory`]).
     housekeeps: bool,
