@@ -83,7 +83,7 @@ export const RESEARCH_HISTORY = [
 ];
 
 /** What the chat's reply drew on, as the server reads it from the history. */
-export const RESEARCH_SOURCES: ReplySources = {
+const RESEARCH_SOURCES: ReplySources = {
   reply: 13,
   sentence: 'Sources: 2 pages',
   pages: [...PAGES],

@@ -115,7 +115,7 @@ export function countryName(code: string, locale: string): string {
 }
 
 /** How precisely a provider serves a model's weights, in a few words. */
-export function precisionText(precision: Precision): string {
+function precisionText(precision: Precision): string {
   switch (precision) {
     case 'four_bit':
       return $localize`:@@serving.fourBit:4-bit`;
@@ -131,7 +131,7 @@ export function precisionText(precision: Precision): string {
 }
 
 /** Where `endpoint`'s provider is based and runs, as far as the router says, for `locale`. */
-export function whereText(endpoint: EndpointInfo, locale: string): string {
+function whereText(endpoint: EndpointInfo, locale: string): string {
   const home = endpoint.based_in ?? null;
   if (home === null) {
     return $localize`:@@serving.homeUnsaid:Where it’s based isn’t said`;
@@ -151,7 +151,7 @@ export function whereText(endpoint: EndpointInfo, locale: string): string {
 }
 
 /** What `endpoint`'s provider keeps of what it is sent. */
-export function keepsText(endpoint: EndpointInfo): string {
+function keepsText(endpoint: EndpointInfo): string {
   return endpoint.keeps_nothing
     ? $localize`:@@serving.keepsNothing:keeps nothing`
     : $localize`:@@serving.keepsSome:may keep chats for a while, never trains on them`;

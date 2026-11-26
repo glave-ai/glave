@@ -206,7 +206,7 @@ export function partsText(parts: unknown): { readonly text: string; readonly rea
 }
 
 /** What a message's reasoning came to, as `message.added` records it (`thought`). */
-export function thoughtOf(value: unknown): Thought {
+function thoughtOf(value: unknown): Thought {
   if (!isRecord(value)) {
     return NO_THOUGHT;
   }
@@ -216,7 +216,7 @@ export function thoughtOf(value: unknown): Thought {
 }
 
 /** The files of a message's `parts`, in order. */
-export function filesOf(parts: unknown): readonly SentFile[] {
+function filesOf(parts: unknown): readonly SentFile[] {
   const list = Array.isArray(parts) ? (parts as readonly unknown[]) : [];
   return list
     .filter(isRecord)
@@ -229,7 +229,7 @@ export function filesOf(parts: unknown): readonly SentFile[] {
 }
 
 /** The images among a tool result's `parts`, each whole as it was kept, in order. */
-export function imagesOf(parts: unknown): readonly HeldImage[] {
+function imagesOf(parts: unknown): readonly HeldImage[] {
   const list = Array.isArray(parts) ? (parts as readonly unknown[]) : [];
   return list
     .filter(isRecord)
@@ -302,7 +302,7 @@ function fieldKindOf(kind: Data): GlzServiceField['kind'] {
 }
 
 /** The fields a `service.asked` asks for. */
-export function serviceFieldsOf(fields: unknown): readonly GlzServiceField[] {
+function serviceFieldsOf(fields: unknown): readonly GlzServiceField[] {
   const list = Array.isArray(fields) ? (fields as readonly unknown[]) : [];
   return list.filter(isRecord).map((field) => ({
     name: text(field['name']),
