@@ -135,12 +135,7 @@ impl Unusable {
 
 /// The summary's text: its text parts joined.
 fn text_of(completion: &Completion) -> String {
-    let texts: Vec<&str> = (completion.parts.iter())
-        .filter_map(|part| match part {
-            Part::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect();
+    let texts: Vec<&str> = (completion.parts.iter()).filter_map(Part::text).collect();
     texts.join("\n")
 }
 

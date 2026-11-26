@@ -20,6 +20,17 @@ pub(crate) struct Document {
     pub(crate) body: String,
 }
 
+impl Document {
+    /// The field `key`, which must be text, trimmed; `None` when it is not there.
+    pub(crate) fn text(&self, key: &str) -> Result<Option<String>, String> {
+        match self.fields.get(key) {
+            Some(Value::Text(text)) => Ok(Some(text.trim().to_owned())),
+            Some(Value::Other) => Err(format!("{key} must be text")),
+            None => Ok(None),
+        }
+    }
+}
+
 /// Splits `text` into its frontmatter fields and the body after them.
 pub(crate) fn parse(text: &str) -> Result<Document, String> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);

@@ -8,16 +8,14 @@ use std::sync::{Mutex, PoisonError};
 use glave_event::Part;
 use glave_ports::{Message, ToolOutput};
 
+use crate::compaction::CHARS_PER_TOKEN;
 use crate::tools::Captured;
-
-/// Bytes per token when sizing what fits: generous, as the gateway's estimate of what fits is.
-const BYTES_PER_TOKEN: u64 = 4;
 
 /// The most bytes one tool output may give a model whose window is `window_tokens`: a quarter of
 /// the window, as a summary may take, so a model with a small window still has room to read a
 /// file in parts. A large window keeps each tool's own limit, which is smaller.
 pub(crate) fn tool_room(window_tokens: u64) -> usize {
-    usize::try_from(window_tokens / 4 * BYTES_PER_TOKEN).unwrap_or(usize::MAX)
+    usize::try_from(window_tokens / 4 * CHARS_PER_TOKEN).unwrap_or(usize::MAX)
 }
 
 /// `output` with its texts cut to `room` bytes together, each keeping its start and its end;
