@@ -22,7 +22,7 @@ Each piece built has one line, which the pull requests that change it edit.
 - **Someone else's temp folders** (#1583): someone else's commands there share no `/tmp` with the owner's, nor read what the owner left in `/var/tmp` or the owner's temp folder (*Writes*).
 - **Someone else's reads** (#1647): someone else's commands there read nothing of the owner's home folder or projects' folder but their own workspace and toolchains, nor the owner's git settings (*Reads*).
 - **Someone else's background commands** (#1506): at most 48 running and 96 kept of the computer's 64 and 128 (`computers.md`, "Background commands").
-- **The project's own files not hidden** (#1397): `.env` among them (*Reads*).
+- **The project's own files not hidden** (#1397, owner decision, 2026-11-13): `.env` among them (*Reads*).
 - **A computer served with `--tls`** (#1502): its token and key kept in glave's folder, hidden from its commands (*Reads*).
 - **A sandbox that could not start** (#1533): made again from a fresh look, or says why; nothing that may have run is run again (*Linux*).
 
