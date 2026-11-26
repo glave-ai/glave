@@ -7,7 +7,7 @@ use glave_event::{
     PrincipalId, ProviderId, ScheduleId, Secret, Seq, Sha256, ThreadId, When,
 };
 use glave_ports::computer::{Bytes, CommandId, ComputerId, TerminalId, TerminalSize};
-use glave_ports::{OrgId, ProjectId};
+use glave_ports::{OrgId, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 mod files;
@@ -17,7 +17,7 @@ use super::params::{given, is_false};
 use super::{
     Accent, Answer, AttachedFile, Color, ConnectorCategoryId, ConnectorTagId, Filters, Grouping,
     LinkKind, Meta, NewFolder, Permissions, ProviderKind, PushSubscription, ShareOf, ShareSetting,
-    Show, TrustChoice,
+    TrustChoice,
 };
 use files::with_file_methods;
 
@@ -285,7 +285,7 @@ with_file_methods! {
         limit: Option<usize>,
         /// Which threads: the active ones by default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        show: Option<Show>,
+        show: Option<Standing>,
         /// Where the page starts: the `next` of the page before.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cursor: Option<String>,

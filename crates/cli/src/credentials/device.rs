@@ -46,15 +46,15 @@ const OWN_APP: &str = "glave-ai";
 pub(super) struct Github {
     client_id: String,
     /// Where GitHub is: `https://github.com`, or a GitHub Enterprise Server.
-    pub url: String,
+    pub(crate) url: String,
     /// The app's name in its URL, for the page where the person chooses its repositories.
     app: Option<String>,
 }
 
 /// What GitHub granted: a user token, and how to renew it when it expires.
 pub(super) struct Grant {
-    pub token: Secret,
-    pub renewal: Option<Renewal>,
+    pub(crate) token: Secret,
+    pub(crate) renewal: Option<Renewal>,
 }
 
 /// One sign-in waiting for the person.

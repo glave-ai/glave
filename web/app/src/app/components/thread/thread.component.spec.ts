@@ -10,7 +10,7 @@ import { PanelService } from '../../services/panel.service';
 import { FakeTurn } from '../../testing/fake-session';
 import { changed, editedFile, event, record, thread } from '../../testing/fixtures';
 import { objectUrls } from '../../testing/object-urls';
-import { openThread as open, session, type } from '../../testing/thread-view';
+import { type OpenThread, openThread as open, session, type } from '../../testing/thread-view';
 import type { TurnResults } from '../../lib/results';
 import { TurnComponent } from '../turn/turn.component';
 
@@ -48,6 +48,35 @@ const ANSWERED = [
   event(2, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Hello' }] }),
   event(3, 'model.responded', { model: { provider: 'gateway', name: 'hope-12b' } }),
 ];
+
+/** An answered thread, its conversation five times as tall as it shows, at its top. */
+async function tallThread(): Promise<{
+  readonly fixture: OpenThread['fixture'];
+  readonly items: HTMLElement;
+  readonly latest: Element | null;
+}> {
+  const { root, fixture } = await open(session(ANSWERED));
+  const items = root.querySelector<HTMLElement>('[data-testid="thread-items"]');
+  const latest = root.querySelector('[data-testid="thread-latest"]');
+  if (items === null) {
+    throw new Error('no conversation');
+  }
+  Object.defineProperty(items, 'scrollHeight', { value: 1000 });
+  Object.defineProperty(items, 'clientHeight', { value: 200 });
+  return { fixture, items, latest };
+}
+
+/** Ends `turn`, as the server records it completed at event 7, and lets the page settle. */
+async function endTurn(turn: FakeTurn, fixture: { whenStable(): Promise<unknown> }): Promise<void> {
+  turn.send({
+    jsonrpc: '2.0',
+    method: 'thread/event',
+    params: { thread: 'thread-1', event: event(7, 'turn.ended', { outcome: 'completed' }) },
+  });
+  turn.end();
+  await settle();
+  await fixture.whenStable();
+}
 
 describe('ThreadComponent', () => {
   beforeEach(() => {
@@ -186,14 +215,7 @@ describe('ThreadComponent', () => {
   });
 
   it('never shows "Jump to latest" between a press and its release, which would take the click', async () => {
-    const { root, fixture } = await open(session(ANSWERED));
-    const items = root.querySelector<HTMLElement>('[data-testid="thread-items"]');
-    const latest = root.querySelector('[data-testid="thread-latest"]');
-    if (items === null) {
-      throw new Error('no conversation');
-    }
-    Object.defineProperty(items, 'scrollHeight', { value: 1000 });
-    Object.defineProperty(items, 'clientHeight', { value: 200 });
+    const { fixture, items, latest } = await tallThread();
     // Pressed on a line a scroll has just brought into view, away from the bottom.
     document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     items.scrollTop = 760;
@@ -217,14 +239,7 @@ describe('ThreadComponent', () => {
   });
 
   it('holds "Jump to latest" for no press a menu or a drag takes over', async () => {
-    const { root, fixture } = await open(session(ANSWERED));
-    const items = root.querySelector<HTMLElement>('[data-testid="thread-items"]');
-    const latest = root.querySelector('[data-testid="thread-latest"]');
-    if (items === null) {
-      throw new Error('no conversation');
-    }
-    Object.defineProperty(items, 'scrollHeight', { value: 1000 });
-    Object.defineProperty(items, 'clientHeight', { value: 200 });
+    const { fixture, items, latest } = await tallThread();
     const scrolled = async (top: number): Promise<void> => {
       items.scrollTop = top;
       items.dispatchEvent(new Event('scroll'));
@@ -423,14 +438,7 @@ describe('ThreadComponent', () => {
     expect(root.querySelector('[data-testid="thread-message-read"]')?.textContent).toBe(
       'Read while working',
     );
-    turn.send({
-      jsonrpc: '2.0',
-      method: 'thread/event',
-      params: { thread: 'thread-1', event: event(7, 'turn.ended', { outcome: 'completed' }) },
-    });
-    turn.end();
-    await settle();
-    await fixture.whenStable();
+    await endTurn(turn, fixture);
     expect(root.querySelector('[data-testid="thread-composer-stop"]')).toBeNull();
   });
 
@@ -463,14 +471,7 @@ describe('ThreadComponent', () => {
       expect(root.querySelector('[data-testid="thread-working"]')).toBe(working);
     }
     expect(announce.mock.calls.filter(([said]) => said === 'Thinking…')).toHaveLength(1);
-    turn.send({
-      jsonrpc: '2.0',
-      method: 'thread/event',
-      params: { thread: 'thread-1', event: event(7, 'turn.ended', { outcome: 'completed' }) },
-    });
-    turn.end();
-    await settle();
-    await fixture.whenStable();
+    await endTurn(turn, fixture);
   });
 
   it('sends the model picked with the next turn, and only when it changes', async () => {

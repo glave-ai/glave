@@ -22,7 +22,7 @@ use crate::rules::{Personal, Rules};
 
 pub use housekeep::Housekept;
 pub(crate) use recall::DEFAULT_HITS;
-pub use recall::{MOST_HITS, Recalled, Source};
+pub use recall::{Recalled, Source};
 pub use tidy::{Tidied, Tidier};
 pub use write::{BUDGET_TOKENS, Remembering, Writer, tokens};
 

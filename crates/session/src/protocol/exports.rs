@@ -20,7 +20,7 @@ pub use super::made::{FilePreview, MadeFile, TurnFiles};
 pub use super::meta::{IdempotencyKey, Meta};
 pub use super::models::{EndpointInfo, ModelInfo};
 pub use super::notification::{Notification, WatchEnd};
-pub use super::params::{Answer, Show};
+pub use super::params::Answer;
 pub use super::passkeys::{AcceptedPasskeys, LinkKind, PasskeySummary, SignInWay, UnknownPasskey};
 pub use super::people::{InviteInfo, JoinWay, OrganizationInfo, PersonInfo, ShownInvite};
 pub use super::plans::PlanInfo;

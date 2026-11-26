@@ -43,6 +43,8 @@ fn every_known_version_has_a_fixture_that_decodes() -> TestResult {
             "{} decoded as unknown",
             path.display()
         );
+        // Decoded into the body of its own type: it encodes back under the type it was read as.
+        assert_eq!(event.to_raw()?.kind.as_str(), *kind, "{}", path.display());
     }
     Ok(())
 }

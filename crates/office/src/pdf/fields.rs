@@ -8,7 +8,8 @@ use lopdf::{Document, Object, ObjectId};
 use super::form::{
     Choice, EDIT, Field, Kind, MULTILINE, READ_ONLY, REQUIRED, fields, form_of, references, text,
 };
-use super::{Given, Use, counted, open};
+use super::{Given, Use, open};
+use crate::cells::counted;
 use crate::error::OfficeError;
 
 /// The longest value shown whole.

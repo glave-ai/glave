@@ -19,7 +19,7 @@ mod search;
 mod store;
 mod views;
 
-pub use blobs::SqliteBlobs;
+pub use blobs::{SqliteBlobs, SqliteRecords};
 pub use directory::SqliteDirectory;
 pub use keys::SqliteKeys;
 pub use leases::SqliteLeases;

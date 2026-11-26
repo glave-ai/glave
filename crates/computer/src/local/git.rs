@@ -296,17 +296,6 @@ pub(crate) fn config_settings(
     variables
 }
 
-/// git's answer to `args`, a question about the repository around `folder`, asked as the server
-/// itself: for a program that reads a repository before any computer holds it.
-pub async fn ask_repository(
-    processes: &Processes,
-    folder: &Path,
-    args: &[&str],
-) -> Result<String, ComputerError> {
-    let environment: Vec<(OsString, OsString)> = std::env::vars_os().collect();
-    Git::at(processes, &environment, folder).must(args).await
-}
-
 /// Refuses text git would read as an option.
 pub(crate) fn not_an_option(what: fn(String) -> Refusal, value: &str) -> Result<(), ComputerError> {
     if value.starts_with('-') || value.trim().is_empty() {

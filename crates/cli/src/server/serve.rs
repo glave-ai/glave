@@ -43,17 +43,17 @@ const DAILY: Duration = Duration::from_hours(24);
 /// What the server does once a day, beside what it serves.
 pub(crate) struct Daily<'a> {
     /// The store's log, which the worktrees' check records in.
-    pub log: DataLog,
+    pub(crate) log: DataLog,
     /// The store, whose blobs are swept in every organization on it, each under a lease.
-    pub store: Data,
+    pub(crate) store: Data,
     /// Who this server holds those leases as.
-    pub holder: Holder,
+    pub(crate) holder: Holder,
     /// Memory, when it is on.
-    pub memory: Option<&'a Running>,
+    pub(crate) memory: Option<&'a Running>,
     /// The processes the worktrees' check runs git as.
-    pub processes: &'a Processes,
+    pub(crate) processes: &'a Processes,
     /// Where it says what it did, and what failed.
-    pub said: Said,
+    pub(crate) said: Said,
 }
 
 impl Daily<'_> {

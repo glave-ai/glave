@@ -15,7 +15,8 @@ use glave_ports::computer::{
 };
 
 use super::{CACHE_FOLDER, sandbox_available};
-use crate::{CancelSwitch, LocalComputers};
+use crate::LocalComputers;
+use crate::cancel::CancelSwitch;
 
 mod commondir;
 

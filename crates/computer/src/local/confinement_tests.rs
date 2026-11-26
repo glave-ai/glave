@@ -53,7 +53,7 @@ impl Output for Text {
 
 async fn output_of(computers: &LocalComputers, at: WorkspaceId, script: &str) -> String {
     let text = Text(Mutex::default());
-    let never = crate::CancelSwitch::default();
+    let never = crate::cancel::CancelSwitch::default();
     computers
         .run(at, &Command::new(script), &text, &never)
         .await
@@ -473,7 +473,7 @@ fn a_command_sees_the_secrets_it_is_given_and_its_computer_s_own_variables_win()
             .await
             .unwrap();
         let text = Text(Mutex::default());
-        let never = crate::CancelSwitch::default();
+        let never = crate::cancel::CancelSwitch::default();
         computers
             .run(here.id, &command, &text, &never)
             .await

@@ -65,9 +65,7 @@ mod tests {
     #[test]
     fn each_organization_is_erased_under_its_lease_and_one_held_elsewhere_is_left() {
         block_on!(async {
-            let root = glave_keys::InMemoryRoot::new().unwrap();
-            let keys = glave_keys::KeySettings::new(Arc::new(root));
-            let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
+            let store = Data::in_memory().unwrap();
             let memories = Memories::new(
                 store.log(),
                 store.eraser(),

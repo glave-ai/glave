@@ -4,12 +4,12 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use glave_ports::testing::ManualClock;
 use glave_ports::{OrgId, block_on};
-use glave_store_sqlite::Store;
 use serde_json::json;
 use uuid::Uuid;
 
 use super::*;
 use crate::signin::Proof;
+use crate::signin::fixtures::store;
 use crate::testing::Authenticator;
 
 /// What `accounts` refuses `forged` with, a passkey no account here knows, once it says it is
@@ -38,9 +38,7 @@ fn a_passkey_no_account_knows_is_refused_alike_whoever_s_id_it_names() {
             ("http://localhost:4180", "localhost", false),
         ];
         for (origin, party, forgotten) in origins {
-            let root = glave_keys::InMemoryRoot::new().unwrap();
-            let store =
-                Store::open_in_memory(glave_keys::KeySettings::new(Arc::new(root))).unwrap();
+            let store = store();
             let origin = PublicOrigin::parse(origin).unwrap();
             let clock = Arc::new(ManualClock::at_second(1_791_590_400));
             let directory = Arc::new(store.directory());
@@ -67,8 +65,7 @@ fn a_passkey_no_account_knows_is_refused_alike_whoever_s_id_it_names() {
 #[test]
 fn a_passkey_no_account_has_is_refused_before_any_ledger_is_opened() {
     block_on!(async {
-        let root = glave_keys::InMemoryRoot::new().unwrap();
-        let store = Store::open_in_memory(glave_keys::KeySettings::new(Arc::new(root))).unwrap();
+        let store = store();
         let origin = PublicOrigin::parse("https://glave.test").unwrap();
         let clock = Arc::new(ManualClock::at_second(1_791_590_400));
         let open = || {
@@ -98,8 +95,7 @@ fn a_passkey_no_account_has_is_refused_before_any_ledger_is_opened() {
 #[test]
 fn one_account_s_request_to_add_a_passkey_is_refused_to_another() {
     block_on!(async {
-        let root = glave_keys::InMemoryRoot::new().unwrap();
-        let store = Store::open_in_memory(glave_keys::KeySettings::new(Arc::new(root))).unwrap();
+        let store = store();
         let origin = PublicOrigin::parse("https://glave.test").unwrap();
         let clock = Arc::new(ManualClock::at_second(1_791_590_400));
         let directory = Arc::new(store.directory());

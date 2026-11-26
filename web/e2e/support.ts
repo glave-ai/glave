@@ -400,7 +400,7 @@ export async function expectEven(box: Locator, items?: Locator): Promise<void> {
 }
 
 /** A box on the screen, as Playwright measures it. */
-interface Box {
+export interface Box {
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -424,8 +424,8 @@ function expectInside(name: string, inner: Box, outer: Box): void {
   );
 }
 
-/** The box of the element with this `data-testid`; fails when it has none. */
-async function boxOf(page: Page, testId: string): Promise<Box> {
+/** The box of the element with this `data-testid`, which shows; fails when it has none. */
+export async function boxOf(page: Page, testId: string): Promise<Box> {
   const element = byTestId(page, testId);
   await expect(element).toBeVisible();
   const box = await element.boundingBox();

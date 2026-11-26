@@ -1,6 +1,9 @@
 //! What every model provider's HTTP client makes of a request: the headers that prove who is
 //! calling, never shown; what a failed request means; a refusal read from the start of its
 //! answer; and an answer that is not the JSON it should be, its address as it may be shown.
+//! Beside it, what every cloud's credentials share over HTTP (`token`).
+
+mod token;
 
 use std::time::Duration;
 
@@ -11,6 +14,10 @@ use crate::failure::Failure;
 use crate::host::shown;
 use crate::model::ProviderError;
 use crate::spoken;
+
+pub use token::{
+    TokenResponse, credentials_client, exchange_token, parse_answer, read_token_file, send_for_body,
+};
 
 /// The longest a connection to the provider may take to open, its TLS handshake included.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);

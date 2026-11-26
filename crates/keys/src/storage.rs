@@ -1,8 +1,10 @@
 //! Where wrapped keys are kept: the data store, through this interface. It holds only wrapped
 //! keys, never a key that could open content on its own.
 
+#[cfg(test)]
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+#[cfg(test)]
 use std::sync::Mutex;
 
 use glave_ports::{OrgId, Scope};
@@ -58,15 +60,17 @@ pub trait KeyStorage: Send + Sync {
     }
 }
 
-/// Wrapped keys held in memory, for tests and in-memory stores.
+/// Wrapped keys held in memory, for tests.
+#[cfg(test)]
 #[derive(Debug, Default)]
-pub struct InMemoryKeyStorage {
+pub(crate) struct InMemoryKeyStorage {
     orgs: Mutex<BTreeMap<OrgId, Vec<u8>>>,
     projects: Mutex<BTreeMap<Scope, StoredProject>>,
 }
 
+#[cfg(test)]
 impl InMemoryKeyStorage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
@@ -97,6 +101,7 @@ impl InMemoryKeyStorage {
     }
 }
 
+#[cfg(test)]
 impl KeyStorage for InMemoryKeyStorage {
     fn org_key(
         &self,

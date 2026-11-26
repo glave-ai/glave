@@ -28,9 +28,9 @@ const HTTPS_PORT: u16 = 443;
 #[derive(Default)]
 pub(crate) struct Reach {
     /// Its public origin.
-    pub origin: Option<PublicOrigin>,
+    pub(crate) origin: Option<PublicOrigin>,
     /// HTTPS of its own for that origin, when glave serves it itself.
-    pub https: Option<Arc<Https<DataLog>>>,
+    pub(crate) https: Option<Arc<Https<DataLog>>>,
 }
 
 impl Reach {

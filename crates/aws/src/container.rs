@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use glave_ports::auth::{AuthError, Fresh, Secret, safe_to_send};
+use glave_ports::auth::{AuthError, Fresh, Secret, read_token_file, safe_to_send, send_for_body};
 use reqwest::header::{AUTHORIZATION, HeaderValue};
 use serde::Deserialize;
 
@@ -58,33 +58,19 @@ impl Container {
         if let Some(token) = self.authorization().await? {
             call = call.header(AUTHORIZATION, token);
         }
-        let response = call.send().await.map_err(|error| {
-            AuthError::unreachable(format!(
-                "could not reach the container credentials endpoint {}: {}",
-                glave_ports::host::shown(&self.uri),
-                error.without_url()
-            ))
-        })?;
-        let status = response.status();
-        if !status.is_success() {
+        let refused = |status: u16, _: &str| {
             let message = format!(
-                "the container credentials endpoint {} answered HTTP {}",
+                "the container credentials endpoint {} answered HTTP {status}",
                 glave_ports::host::shown(&self.uri),
-                status.as_u16()
             );
-            return Err(if status.is_server_error() || status.as_u16() == 429 {
+            if status >= 500 || status == 429 {
                 AuthError::unreachable(message)
             } else {
                 AuthError::refused(message)
-            });
-        }
-        let body = response.bytes().await.map_err(|error| {
-            AuthError::unreachable(format!(
-                "the container credentials endpoint's answer broke off: {}",
-                error.without_url()
-            ))
-        })?;
-        let answer: Answer = serde_json::from_slice(&body).map_err(|_| {
+            }
+        };
+        let body = send_for_body(call, "the container credentials endpoint", refused).await?;
+        let answer: Answer = serde_json::from_str(&body).map_err(|_| {
             AuthError::unreachable(format!(
                 "the container credentials endpoint {} sent keys glave could not read",
                 self.uri
@@ -105,13 +91,14 @@ impl Container {
         let token = match &self.token {
             None => return Ok(None),
             Some(Token::Fixed(token)) => token.expose().to_owned(),
-            Some(Token::File(path)) => tokio::fs::read_to_string(path).await.map_err(|error| {
-                AuthError::refused(format!(
-                    "could not read the container authorization token file {} \
-                         (AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE): {error}",
-                    path.display()
-                ))
-            })?,
+            Some(Token::File(path)) => {
+                read_token_file(
+                    path,
+                    "the container authorization token file",
+                    "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+                )
+                .await?
+            }
         };
         let mut value = HeaderValue::from_str(token.trim()).map_err(|_| {
             AuthError::refused("the container authorization token is not a valid header value")

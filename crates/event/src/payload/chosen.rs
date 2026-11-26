@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
-use crate::codec::{Payload, parse};
+use crate::codec::{Body, Payload, parse};
 use crate::payload::principal::Principal;
 
 pub(crate) const TYPE: &str = "model.chosen";
@@ -29,8 +29,18 @@ impl Payload for ModelChosen {
     const VERSION: u32 = 1;
 }
 
-pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<ModelChosen>> {
-    (version == 1).then(|| parse(data))
+/// The choices made for a thread, or `None` for a type or version that is none of them.
+pub(crate) fn decode(
+    kind: &str,
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<Body>> {
+    Some(match (kind, version) {
+        (TYPE, 1) => parse(data).map(Body::ModelChosen),
+        (PERMISSIONS, 1) => parse(data).map(Body::PermissionsChosen),
+        (EFFORT, 1) => parse(data).map(Body::EffortChosen),
+        _ => return None,
+    })
 }
 
 /// The thread's turns ask their model to reason at `effort` from now on, until another is
@@ -50,13 +60,6 @@ pub struct EffortChosen {
 impl Payload for EffortChosen {
     const TYPE: &'static str = EFFORT;
     const VERSION: u32 = 1;
-}
-
-pub(crate) fn decode_effort(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<EffortChosen>> {
-    (version == 1).then(|| parse(data))
 }
 
 /// What the agent may do without asking the person (`specs/approvals.md`, "Modes"): the one
@@ -133,13 +136,6 @@ pub struct PermissionsChosen {
 impl Payload for PermissionsChosen {
     const TYPE: &'static str = PERMISSIONS;
     const VERSION: u32 = 1;
-}
-
-pub(crate) fn decode_permissions(
-    version: u32,
-    data: &RawValue,
-) -> Option<serde_json::Result<PermissionsChosen>> {
-    (version == 1).then(|| parse(data))
 }
 
 #[cfg(test)]

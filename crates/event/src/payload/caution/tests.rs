@@ -1,7 +1,8 @@
 use serde_json::json;
 
 use super::*;
-use crate::payload::approval::{ApprovalRequested, decode_requested};
+use crate::Body;
+use crate::payload::approval::{ApprovalRequested, REQUESTED, decode};
 
 fn deletes() -> Risk {
     Risk::DeletesOutside {
@@ -103,7 +104,10 @@ fn every_risk_is_found_again_by_its_id() {
 fn a_request_reads_with_its_reason_and_without_one() {
     let read = |data: serde_json::Value| {
         let raw = serde_json::value::RawValue::from_string(data.to_string()).unwrap();
-        decode_requested(1, &raw).unwrap().unwrap()
+        let Some(Ok(Body::ApprovalRequested(read))) = decode(REQUESTED, 1, &raw) else {
+            panic!("an approval's request");
+        };
+        read
     };
     let before: ApprovalRequested = read(json!({
         "call_id": "call_1", "tool": "bash", "summary": "bash: git push", "secret": false,

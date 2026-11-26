@@ -6,10 +6,11 @@
 
 use std::collections::BTreeSet;
 
+use glave_keys::forget_sealed;
 use glave_ports::{BlobError, OrgId, ProjectId, Scope, Swept, UNREFERENCED_FOR_MS};
 use uuid::Uuid;
 
-use super::{PostgresBlobs, storage};
+use super::{PostgresRecords, storage};
 use crate::store::{connection, database};
 
 /// What a record no thread refers to may be deleted for: referred to once, or an upload older
@@ -19,7 +20,7 @@ const UNREFERENCED: &str = "b.org = $1
         WHERE t.org = b.org AND t.project = b.project AND t.name = b.name)
     AND (b.referred OR b.uploaded < $2)";
 
-impl PostgresBlobs {
+impl PostgresRecords {
     pub(super) async fn sweep_now(&self, org: OrgId) -> Result<Swept, BlobError> {
         let before = self
             .clock
@@ -30,7 +31,7 @@ impl PostgresBlobs {
         let mut swept = Swept::default();
         for (project, object) in gone {
             let scope = Scope::glaves_own(org, ProjectId::from_uuid(project));
-            self.forget(scope, &object).await;
+            forget_sealed(self, scope, &object).await;
             swept.blobs += 1;
         }
         for listed in self.objects.list(org).await? {
