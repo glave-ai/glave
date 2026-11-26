@@ -33,9 +33,26 @@ pub fn seen(letter: char) -> bool {
         )
 }
 
+/// `text` on one line as a person sees it: every space, tab and line end one space, runs of
+/// them one, none at either end, and only the letters [`seen`] keeps.
+pub fn one_line(text: &str) -> String {
+    let shown: String = text
+        .chars()
+        .filter(|letter| letter.is_whitespace() || seen(*letter))
+        .collect();
+    shown.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::seen;
+    use super::{one_line, seen};
+
+    #[test]
+    fn one_line_keeps_only_what_is_seen_with_single_spaces() {
+        assert_eq!(one_line("a\u{1b}[2Kb\nc\u{200b}d\u{202e}e"), "a[2Kb cde");
+        assert_eq!(one_line("  two\r\n\tlines\u{2028}here "), "two lines here");
+        assert_eq!(one_line("a\u{b}b\u{c}c\u{85}d"), "a b c d");
+    }
 
     #[test]
     fn marks_that_change_letters_or_draw_as_nothing_are_not_seen() {
