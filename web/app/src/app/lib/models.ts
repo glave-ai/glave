@@ -1,13 +1,30 @@
 import type { ModelInfo, RawEvent, TokenPrice } from '@glave/client';
-import type { GlzMenuOption } from '@glave/glaze';
+import { type GlzMenuOption, numberFormat } from '@glave/glaze';
 
 /** Between the parts of a model's line in the picker. */
 const DOT = ' · ';
 
 /** A context window, in tokens, as people in `locale` say it: `1M context`, `200K context`. */
 export function contextText(tokens: number, locale: string): string {
-  const size = new Intl.NumberFormat(locale, { notation: 'compact' }).format(tokens);
+  const size = numberFormat(locale, { notation: 'compact' }).format(tokens);
   return $localize`:@@models.context:${size}:TOKENS: context`;
+}
+
+/** What a million of a model's tokens cost, in and out, in dollars as `locale` writes them. */
+export function perMillion(
+  price: TokenPrice,
+  locale: string,
+): { readonly input: string; readonly output: string } {
+  const dollars = numberFormat(locale, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 3,
+  });
+  return {
+    input: dollars.format(price.input / 1_000_000_000),
+    output: dollars.format(price.output / 1_000_000_000),
+  };
 }
 
 /**
@@ -18,14 +35,7 @@ export function priceText(price: TokenPrice, locale: string): string {
   if (price.input === 0 && price.output === 0) {
     return $localize`:@@models.free:Free`;
   }
-  const dollars = new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 3,
-  });
-  const input = dollars.format(price.input / 1_000_000_000);
-  const output = dollars.format(price.output / 1_000_000_000);
+  const { input, output } = perMillion(price, locale);
   return $localize`:@@models.price:${input}:INPUT: in, ${output}:OUTPUT: out per 1M tokens`;
 }
 
@@ -85,7 +95,7 @@ export function modelOptions(
 }
 
 /** How many recent models the picker remembers. */
-export const RECENT_MODELS = 5;
+const RECENT_MODELS = 5;
 
 /** A stored list of recent models, read back: its model ids, at most `RECENT_MODELS`. */
 export function toRecent(value: unknown): readonly string[] {

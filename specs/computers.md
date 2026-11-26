@@ -126,7 +126,7 @@ Built so far, beside `computer/create`, `computer/status`, `computer/destroy`, `
 - *A person's computer is reached again.* When its connection has died, the next call first gives the computer a fresh token (copied in through the API server) and connects again through a new bridge; the call that found it dead is not sent again. If that fails, the call says why, and the next call tries again, since a bridge costs one exec.
 - *A full disk.* Files are replaced whole (written beside, then renamed), so a write the disk cannot hold leaves the file as it was, and the error says the computer's disk is full.
 
-A repository opens as a clone under `~/.glave/workspaces/<computer>/<workspace>`, removed on close; a folder opens in place and is kept.
+A folder opens in place and is kept.
 
 `workspace/open` also takes `{"kind": "project", "name"}`: a new project's folder, made empty where the computer keeps projects (this machine: `~/glave`, `storage.md` "Projects"), named `name` or the first of `name-2`, `name-3` and on that is free, never a folder that was there, and kept as the project's. A name that is not one folder's plain name is refused; a computer that makes no projects' folders answers unsupported. glave then makes it a git repository, or clones the project's repository into it, as a command of its own outside the sandbox (git writes its own files there, which the sandbox protects), signing in with the credential helper as any command's git does ("Credentials"); a clone that fails takes the folder with it.
 
@@ -219,7 +219,7 @@ Where glave runs the machine (Glave Cloud, and an organization that gives each p
 
 ## Workers
 
-**Removed before v0.1** (owner, 2026-11-08): per-thread workers (`--on cloud`, a clone of the project's repository, files handed back, a `glave/wip/` branch on release), environments read from devcontainer.json or environment.toml, and the Docker backend with its fence against cloud metadata. Nobody used them, and they were the part of glave that carried credentials across a boundary (#714, #1200, #1247). The disposable worker Pod on Kubernetes went after them (#1332), once its `kind` tests had moved onto a person's computer, with the reaping of workers a glave left and the owner reference to glave's own Pod, which only it needed. A person's computer, with glave's sandbox, is where work runs; a fresh machine per task may return later, on Kubernetes.
+**Removed before v0.1** (owner, 2026-11-08): per-thread workers (`--on cloud`, a clone of the project's repository, files handed back, a `glave/wip/` branch on release), environments read from devcontainer.json or environment.toml, and the Docker backend with its fence against cloud metadata. Nobody used them, and they were the part of glave that carried credentials across a boundary (#714, #1200, #1247). The disposable worker Pod on Kubernetes went after them (#1332). A person's computer, with glave's sandbox, is where work runs; a fresh machine per task may return later, on Kubernetes.
 
 ## A person's computer on Kubernetes
 
@@ -290,7 +290,7 @@ How rule 8 is kept for git and the forges' own tools: a command run with credent
 
 ## Environments
 
-An environment is what a computer is made from: this machine as it is, or an image. A person's computer in the cloud takes its image from the server's `[computers]` (`policy.md`). How much of the network it reaches is never the environment's: the person's settings and the organization's `[workers]` and `[sandbox]` decide it. A project's own environment file (`.glave/environment.toml`, or a devcontainer.json) was read only for per-thread workers, and went with them (owner, 2026-11-08).
+An environment is what a computer is made from: this machine as it is, or an image. A person's computer in the cloud takes its image from the server's `[computers]` (`policy.md`). How much of the network it reaches is never the environment's: the person's settings and the organization's `[workers]` and `[sandbox]` decide it.
 
 Sizes and counts are choices within policy ceilings (`policy.md`): the largest size, burst budgets.
 

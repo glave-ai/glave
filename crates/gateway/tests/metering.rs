@@ -11,13 +11,13 @@ use glave_event::{Cost, Money, TokenCounts, Usage};
 use glave_gateway::{Credits, Gateway, Routes, Target};
 use glave_ports::testing::FaultyLog;
 use glave_ports::{
-    Failure, InlineFile, Message, ModelProvider, ModelRequest, Payer, ProviderError, Purpose,
-    Unpaid, digest,
+    Failure, InlineFile, Message, ModelProvider, ModelRequest, ProviderError, Purpose, Unpaid,
+    digest,
 };
 use tokio::sync::Semaphore;
 
 use crate::support::{
-    Fake, answer, balance, block_on, cancelled_once_sent, funded, org, person, price, request,
+    Fake, answer, balance, block_on, cancelled_once_sent, funded, paid, price, request,
 };
 
 /// What the test request reads at a billionth of a dollar a token, "Be brief." and "hello",
@@ -34,14 +34,6 @@ fn over(target: Target, credits: &Arc<Credits<FaultyLog>>) -> Gateway {
 
 fn priced(fake: &Arc<Fake>) -> Target {
     fake.target("m").with_price(price(1_000_000))
-}
-
-fn paid(mut asked: ModelRequest) -> ModelRequest {
-    asked.payer = Some(Payer {
-        org: org(),
-        person: Some(person()),
-    });
-    asked
 }
 
 fn ask(gateway: &Gateway) -> Result<glave_ports::Completion, ProviderError> {
