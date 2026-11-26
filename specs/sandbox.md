@@ -6,24 +6,25 @@ A wall around the commands the model runs, enforced by the operating system, and
 
 Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp, Landlock as a fallback at `read-only`). It is glave's default: Auto's `project` level, with the network, wherever it can run; where it cannot, commands ask first (below).
 
-- glave's own git doesn't run what a repository nested in the project names (#1193).
-- git's settings and glave's folder stay read-only however the project is set up (#1201).
-- Untrusted content leaves commands the network they had (#1395; it took it from the rest of the thread, #1156, until the owner's decision of 2026-11-13). Which level a thread's commands run at follows from its mode (`approvals.md`, "Modes").
-- Only the person whose computer it is leaves the sandbox on it (#1212, *Whose computer*), and only they open a terminal there (#355).
-- On Linux, commands with the network make Unix sockets, the person's daemons' hidden (#1118, *Unix sockets on Linux*); on a computer that keeps Rust's homes in the sandbox cache, a tool `cargo install` adds there runs by its name.
-- A command opens no terminal's device but its own (#1289, *Other terminals*).
-- More credential stores hidden, git-credential-store's other file among them, in the home folder and where `XDG_CONFIG_HOME` and the like move them; on Linux git's credential cache, GNU screen's sessions, and what listens in `/tmp` for the person's other programs (ssh agents, connections ssh shares, editors' servers), looked for before each command (#1508, *Reads*, *Unix sockets on Linux*).
-- Someone else's commands on the server's computer get none of its owner's git sign-ins or secrets (#1434, *Whose computer*).
-- Someone else's threads on the server's computer get none of its owner's own instructions, skills or custom commands (#1460, *Whose computer*).
-- Someone else's threads on the server's computer get `web_fetch` with the same hosts but no private address, the owner's network being the owner's (#1507, `policy.md`, `[web]`).
-- Someone else's commands on the server's computer keep their package caches in each command's own temp folder, sharing none with its owner's (#1469, *Whose computer*, *Package caches*).
-- Someone else's commands on the server's computer share no `/tmp` with its owner's: on Linux each gets one of its own, on macOS none; and they read nothing the owner left in `/var/tmp` or, on macOS, the owner's temp folder (#1583, *Whose computer*, *Writes*).
-- Someone else's commands on the server's computer read nothing of its owner's home folder or the folder projects are made in, but their own workspace and the toolchains kept there, nor its owner's git settings (#1647, *Whose computer*, *Reads*).
-- Someone else's background commands on the server's computer leave its owner room: theirs run at most 48 of its 64 and keep at most 96 of its 128, forgotten first (#1506, `computers.md`, *Background commands*).
-- The outbound proxy built for #643, wired to nothing, is deleted (#1398): the network is off or on.
-- The project's own files, `.env` among them, are no longer hidden from its commands (owner decision, 2026-11-13, #1397, *Reads*).
-- A computer served with `--tls` keeps its token and key in glave's folder, which its commands neither read nor change, and hides that folder itself too, as one on a socket hides its own (#1502, *Reads*).
-- A command bubblewrap could not start because a place it hides left while it was made is made again from a fresh look, and one a sandbox never starts says why; nothing that may have run is run again (#1533, *Linux*).
+Each piece built has one line, which the pull requests that change it edit.
+
+- **Nested repositories** (#1193): glave's own git runs nothing a repository nested in the project names.
+- **git's settings and glave's folder read-only** (#1201), however the project is set up.
+- **Untrusted content keeps the network** (#1395): commands keep the network they had (`approvals.md`, "Modes").
+- **Whose computer** (#1212, #355): only the person whose computer it is leaves the sandbox on it, or opens a terminal there (*Whose computer*).
+- **Unix sockets on Linux** (#1118): commands with the network make Unix sockets, the person's daemons' hidden (*Unix sockets on Linux*).
+- **Other terminals** (#1289): a command opens no terminal's device but its own (*Other terminals*).
+- **More credential stores hidden** (#1508): in the home folder and where `XDG_CONFIG_HOME` and the like move them, and on Linux what listens in `/tmp` for the person's other programs, looked for before each command (*Reads*, *Unix sockets on Linux*).
+- **Someone else's sign-ins and secrets** (#1434): someone else's commands on the server's computer get none of its owner's (*Whose computer*).
+- **Someone else's instructions** (#1460): someone else's threads there get none of the owner's own instructions, skills or custom commands (*Whose computer*).
+- **Someone else's web** (#1507): someone else's threads there get `web_fetch` with no private address (`policy.md`, `[web]`).
+- **Someone else's caches** (#1469): someone else's commands there keep their package caches apart from the owner's (*Package caches*).
+- **Someone else's temp folders** (#1583): someone else's commands there share no `/tmp` with the owner's, nor read what the owner left in `/var/tmp` or the owner's temp folder (*Writes*).
+- **Someone else's reads** (#1647): someone else's commands there read nothing of the owner's home folder or projects' folder but their own workspace and toolchains, nor the owner's git settings (*Reads*).
+- **Someone else's background commands** (#1506): at most 48 running and 96 kept of the computer's 64 and 128 (`computers.md`, "Background commands").
+- **The project's own files not hidden** (#1397): `.env` among them (*Reads*).
+- **A computer served with `--tls`** (#1502): its token and key kept in glave's folder, hidden from its commands (*Reads*).
+- **A sandbox that could not start** (#1533): made again from a fresh look, or says why; nothing that may have run is run again (*Linux*).
 
 ## Why on by default
 
