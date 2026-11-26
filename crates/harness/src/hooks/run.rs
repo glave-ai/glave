@@ -43,10 +43,10 @@ impl<'a> ToolHook<'a> {
 }
 
 /// What one hook decided.
-struct Ran {
-    result: HookResult,
+pub(crate) struct Ran {
+    pub(crate) result: HookResult,
     exit_code: Option<i32>,
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -221,7 +221,7 @@ where
 /// Code and Codex read it: `"decision": "block"`, or for `PreToolUse` a
 /// `hookSpecificOutput.permissionDecision` of `"deny"`. Allowing fields are ignored: a hook
 /// never lets anything through that would otherwise ask.
-fn decided(point: HookPoint, text: &str) -> Ran {
+pub(crate) fn decided(point: HookPoint, text: &str) -> Ran {
     let passed = Ran {
         result: HookResult::Passed,
         exit_code: Some(0),
@@ -327,10 +327,4 @@ impl Output for Kept {
         }
         Box::pin(std::future::ready(()))
     }
-}
-
-#[cfg(test)]
-pub(crate) fn decided_for_tests(point: HookPoint, text: &str) -> (HookResult, Option<String>) {
-    let ran = decided(point, text);
-    (ran.result, ran.reason)
 }
