@@ -160,9 +160,10 @@ fn hits(answer: &Value) -> Vec<Hit> {
 }
 
 /// `html`, a title or description as Brave gives it, as plain text: its tags (`<strong>` around
-/// the words searched for) dropped and its character references read.
+/// the words searched for) dropped, its character references read, and kept to one line of
+/// what a person sees, so no reference can put a line end or a control character in it.
 fn plain(html: &str) -> String {
-    crate::title::references(&crate::text::strip_tags(html))
+    glave_event::one_line(&crate::title::references(&crate::text::strip_tags(html)))
 }
 
 /// Brave answers searches alone: never a model's call, nor a media tool's.

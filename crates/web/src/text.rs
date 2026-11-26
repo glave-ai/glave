@@ -87,7 +87,7 @@ pub(crate) fn strip_tags(html: &str) -> String {
     for c in html.chars() {
         match c {
             '<' => inside = true,
-            '>' => inside = false,
+            '>' if inside => inside = false,
             c if !inside => out.push(c),
             _ => {}
         }
