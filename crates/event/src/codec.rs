@@ -638,6 +638,20 @@ mod tests {
         }
     }
 
+    /// Decoding takes the first decoder that claims an event, so two that claimed one would
+    /// decide it by their order in the table: each known version has exactly one.
+    #[test]
+    fn exactly_one_decoder_claims_each_known_version() {
+        let data = RawValue::from_string("{}".to_owned()).unwrap();
+        for (kind, version) in KNOWN_VERSIONS {
+            let claims = DECODERS
+                .iter()
+                .filter(|decode| decode(kind, *version, &data).is_some())
+                .count();
+            assert_eq!(claims, 1, "{kind} v{version}");
+        }
+    }
+
     #[test]
     fn every_payload_declares_a_valid_type_and_version() {
         for (kind, version) in KNOWN_VERSIONS {
