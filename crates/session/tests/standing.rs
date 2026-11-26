@@ -7,13 +7,13 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::ThreadId;
 use glave_ports::{BoxFuture, EventLog, Scope};
-use glave_session::protocol::{Reply, Request, Show, code};
+use glave_session::protocol::{Reply, Request, code};
 use glave_session::{Answering, Worktrees};
 use serde_json::json;
 
 use crate::support::*;
 
-async fn listed<L: EventLog + 'static>(server: &Tested<L>, show: Show) -> Vec<ThreadId> {
+async fn listed<L: EventLog + 'static>(server: &Tested<L>, show: Standing) -> Vec<ThreadId> {
     let request = Request::ThreadList {
         project: Some(scope().project()),
         limit: None,
@@ -33,15 +33,15 @@ fn archiving_hides_a_thread_and_unarchiving_brings_it_back() {
         let answers = vec![answer(Some("Hi."), None)];
         let server = server(&dir, answers, Answering::NoOne).await;
         let (a, b) = (start(&server, false).await, start(&server, false).await);
-        assert_eq!(listed(&server, Show::Active).await, [b, a]);
+        assert_eq!(listed(&server, Standing::Active).await, [b, a]);
 
         let archived = server
             .request(Request::ThreadArchive { thread: a })
             .await
             .unwrap();
         assert!(matches!(archived, Reply::Done {}));
-        assert_eq!(listed(&server, Show::Active).await, [b]);
-        assert_eq!(listed(&server, Show::Archived).await, [a]);
+        assert_eq!(listed(&server, Standing::Active).await, [b]);
+        assert_eq!(listed(&server, Standing::Archived).await, [a]);
         // Kept in the log: still readable, but no turn runs in it.
         assert!(
             kinds(&server, a)
@@ -62,9 +62,9 @@ fn archiving_hides_a_thread_and_unarchiving_brings_it_back() {
             .request(Request::ThreadUnarchive { thread: a })
             .await
             .unwrap();
-        assert_eq!(listed(&server, Show::Active).await, [a, b]);
+        assert_eq!(listed(&server, Standing::Active).await, [a, b]);
         assert_eq!(
-            listed(&server, Show::Archived).await,
+            listed(&server, Standing::Archived).await,
             Vec::<ThreadId>::new()
         );
         assert!(matches!(
@@ -93,12 +93,12 @@ fn deleting_hides_a_thread_for_good_and_lists_it_for_erasure() {
         let mut again = Setup::asking(Vec::new(), Answering::NoOne);
         again.seed = 2;
         let (second, _) = again.build_on(&dir, sqlite(&database).await.log()).await;
-        assert_eq!(listed(&second, Show::Active).await, [keep]);
+        assert_eq!(listed(&second, Standing::Active).await, [keep]);
         assert_eq!(
-            listed(&second, Show::Archived).await,
+            listed(&second, Standing::Archived).await,
             Vec::<ThreadId>::new()
         );
-        assert_eq!(listed(&second, Show::Deleted).await, [gone]);
+        assert_eq!(listed(&second, Standing::Deleted).await, [gone]);
         for request in [
             Request::ThreadGet { thread: gone },
             Request::ThreadEvents {

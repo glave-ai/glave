@@ -18,7 +18,7 @@ use glave_ports::computer::{DiskUse, RunsFor, Sandbox, SandboxLevel, SandboxNetw
 use glave_ports::{Message, ProjectId};
 use glave_session::Answering;
 
-use glave_session::protocol::{NewFolder, ProjectFolder, Reply, Request, Show, ThreadSummary};
+use glave_session::protocol::{NewFolder, ProjectFolder, Reply, Request, ThreadSummary};
 use serde_json::json;
 
 use crate::support::*;
@@ -116,7 +116,7 @@ fn a_person_s_threads_work_on_their_own_computer_woken_only_by_a_tool_call_that_
             .request(Request::ThreadList {
                 project: None,
                 limit: None,
-                show: Some(Show::Active),
+                show: Some(Standing::Active),
                 cursor: None,
             })
             .await
