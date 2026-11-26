@@ -13,14 +13,12 @@ publish.workspace = true
 aws-credential-types.workspace = true
 # AWS's own SigV4 signer, tested against AWS's published suite.
 aws-sigv4.workspace = true
-glave-ports.workspace = true
+glave-ports = { workspace = true, features = ["http"] }
 jiff.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-# Reads the web identity and Pod Identity token files, which Kubernetes rewrites in place.
-tokio = { workspace = true, features = ["fs"] }
 # The STS request's form body.
 url.workspace = true
 
