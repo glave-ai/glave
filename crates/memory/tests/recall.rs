@@ -11,7 +11,7 @@ use glave_event::{
     Role, Seq, ThreadId, ToolCallCompleted, encode,
 };
 use glave_harness::{AllowAll, Cancel, Change, change_standing};
-use glave_memory::{MOST_HITS, Recalled, Source, Writer};
+use glave_memory::{Recalled, Source, Writer};
 use glave_ports::memories::{FORGET, Memory as _, MemoryContext, RECALL, REMEMBER};
 use glave_ports::{Clock as _, EventLog, Scope};
 use serde_json::json;
@@ -220,7 +220,8 @@ fn a_shared_project_finds_memories_its_threads_and_the_persons_never_another_pro
                 .await
                 .unwrap()
                 .len()
-                <= MOST_HITS
+                <= 10,
+            "at most ten hits"
         );
         assert!(
             memories

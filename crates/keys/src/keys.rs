@@ -98,7 +98,8 @@ impl<S: KeyStorage> Keys<S> {
         }
     }
 
-    pub fn storage(&self) -> &S {
+    #[cfg(any(test, feature = "conformance"))]
+    pub(crate) fn storage(&self) -> &S {
         &self.storage
     }
 

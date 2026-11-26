@@ -7,9 +7,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use glave_computer::{CancelSwitch, RemoteComputers};
-use glave_ports::BoxFuture;
+use glave_computer::RemoteComputers;
 use glave_ports::computer::{Command, ComputerError, Computers, Ending, FileWrite, Output};
+use glave_ports::{BoxFuture, NeverCancelled};
 use proptest::prelude::*;
 use tokio::time::Instant;
 
@@ -87,7 +87,7 @@ async fn perform(remote: &RemoteComputers, op: Op) -> Result<(), ComputerError> 
             command.timeout_secs = Some(timeout);
             let text = Text::default();
             let finished = remote
-                .run(workspace(), &command, &text, &CancelSwitch::default())
+                .run(workspace(), &command, &text, &NeverCancelled)
                 .await?;
             assert_eq!(finished.ending, Ending::Exited { code: 0 }, "{op:?}");
             let printed = text.0.lock().unwrap().clone();

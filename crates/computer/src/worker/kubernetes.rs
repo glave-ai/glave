@@ -224,7 +224,8 @@ impl Kubernetes {
 
     /// Puts `labels` on every object a computer is made of too, such as a test run's.
     #[must_use]
-    pub fn with_labels(mut self, labels: BTreeMap<String, String>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn with_labels(mut self, labels: BTreeMap<String, String>) -> Self {
         self.labels = labels;
         self
     }
