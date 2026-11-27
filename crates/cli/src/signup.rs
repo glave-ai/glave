@@ -10,7 +10,7 @@ use glave_event::{At, Money, Secret};
 use glave_session::protocol::{Reply, Request};
 
 use crate::reach;
-use crate::tasks::run_with;
+use crate::session::run_with;
 
 pub(crate) const USAGE: &str = "\
 glave signup: let someone sign up for their own personal space, while this glave takes no

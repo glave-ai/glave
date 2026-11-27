@@ -46,9 +46,11 @@ use crate::scope::{Located, OrgId, ProjectId, Scope};
 use crate::stream::Reserved;
 use crate::tools::NeverCancelled;
 
-type Verdict = Result<(), String>;
+/// What a conformance suite says: nothing, or the first violation it found.
+pub type Verdict = Result<(), String>;
 
-fn ensure(condition: bool, violation: &str) -> Verdict {
+/// `violation` unless `condition` holds.
+pub fn ensure(condition: bool, violation: &str) -> Verdict {
     if condition {
         Ok(())
     } else {
@@ -56,7 +58,8 @@ fn ensure(condition: bool, violation: &str) -> Verdict {
     }
 }
 
-fn uuid_v7(n: u64) -> Uuid {
+/// A UUID v7 at one fixed moment, its random bits `n`: the same id for the same `n`.
+pub fn uuid_v7(n: u64) -> Uuid {
     let mut random = [0u8; 10];
     for (slot, byte) in random.iter_mut().zip(n.to_be_bytes()) {
         *slot = byte;

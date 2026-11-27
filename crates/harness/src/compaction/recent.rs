@@ -61,13 +61,7 @@ pub(crate) fn recent(messages: &[Message], room: usize) -> Option<String> {
 
 /// One call and its output's text.
 fn entry(call: &ToolCall, is_error: bool, output: &[Part]) -> String {
-    let text: Vec<&str> = output
-        .iter()
-        .filter_map(|part| match part {
-            Part::Text { text } => Some(text.as_str()),
-            Part::Reasoning { .. } | Part::File { .. } => None,
-        })
-        .collect();
+    let text: Vec<&str> = output.iter().filter_map(Part::text).collect();
     let failed = if is_error { " (failed)" } else { "" };
     let mut entry = String::new();
     let _ = write!(

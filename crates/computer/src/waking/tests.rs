@@ -8,27 +8,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use glave_ports::NeverCancelled;
 use glave_ports::block_on;
-use glave_ports::computer::Ending;
 use glave_ports::testing::{ManualClock, TempDir};
 
 use super::*;
 use crate::LocalComputers;
-
-/// What ran, collected.
-#[derive(Default)]
-struct Said(Mutex<String>);
-
-impl Output for Said {
-    fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push_str(text);
-        Box::pin(std::future::ready(()))
-    }
-}
 
 /// A computer of this machine with its home at `home`, woken once for each count in `wakes`
 /// that `again` has moved past: each wake after the first is a computer of its own, as a Pod
@@ -125,14 +109,7 @@ fn scratch(name: &str) -> Sources {
 }
 
 async fn run(home: &Home, workspace: WorkspaceId, script: &str) -> String {
-    let said = Said::default();
-    let finished = home
-        .computers
-        .run(workspace, &Command::new(script), &said, &NeverCancelled)
-        .await
-        .unwrap();
-    assert_eq!(finished.ending, Ending::Exited { code: 0 });
-    said.0.into_inner().unwrap()
+    crate::testing::ran(home.computers.as_ref(), workspace, script).await
 }
 
 fn folder(name: &str) -> (TempDir, PathBuf) {

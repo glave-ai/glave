@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::client::read_events;
 use crate::reach::{self, Reached};
+use crate::session::{finish, parsed};
 use crate::turns::{Here, no_project};
 
 pub(crate) const USAGE: &str = "\
@@ -76,36 +77,9 @@ fn thread_id(id: &str) -> Result<ThreadId, String> {
 }
 
 pub(crate) fn main(arguments: &[String]) -> ExitCode {
-    if arguments
-        .iter()
-        .any(|word| word == "--help" || word == "-h")
-    {
-        println!("{USAGE}");
-        return ExitCode::SUCCESS;
-    }
-    let command = match parse(arguments) {
-        Ok(command) => command,
-        Err(message) => {
-            eprintln!("glave: {message}\n\n{USAGE}");
-            return ExitCode::from(2);
-        }
-    };
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!("glave: could not start: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
-    match runtime.block_on(run(command)) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("glave: {error:#}");
-            ExitCode::FAILURE
-        }
+    match parsed(arguments, USAGE, parse) {
+        Ok(command) => finish(run(command)),
+        Err(code) => code,
     }
 }
 

@@ -206,10 +206,7 @@ fn after(thread: ThreadId, seq: Seq) -> Result<Seq, HarnessError> {
 
 /// The text parts of `parts`.
 fn texts(parts: &[Part]) -> impl DoubleEndedIterator<Item = &str> {
-    parts.iter().filter_map(|part| match part {
-        Part::Text { text } => Some(text.as_str()),
-        _ => None,
-    })
+    parts.iter().filter_map(Part::text)
 }
 
 /// `text`, cut to `most` characters.

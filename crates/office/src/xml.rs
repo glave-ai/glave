@@ -362,7 +362,7 @@ const NEAR: usize = 40;
 
 /// Where `at` is in `text`, by line and column, with the text around it.
 fn broken(text: &str, at: usize, why: &str) -> Broken {
-    let at = floor(text, at.min(text.len()));
+    let at = text.floor_char_boundary(at);
     let before = text.get(..at).unwrap_or_default();
     let line = before.matches('\n').count() + 1;
     let column = before
@@ -372,8 +372,8 @@ fn broken(text: &str, at: usize, why: &str) -> Broken {
         .chars()
         .count()
         + 1;
-    let from = floor(text, at.saturating_sub(NEAR));
-    let to = floor(text, at.saturating_add(NEAR).min(text.len()));
+    let from = text.floor_char_boundary(at.saturating_sub(NEAR));
+    let to = text.floor_char_boundary(at.saturating_add(NEAR));
     let near = text
         .get(from..to)
         .unwrap_or_default()
@@ -386,14 +386,6 @@ fn broken(text: &str, at: usize, why: &str) -> Broken {
         why: why.to_owned(),
         near,
     }
-}
-
-/// The nearest character boundary of `text` at or before `at`.
-fn floor(text: &str, mut at: usize) -> usize {
-    while at > 0 && !text.is_char_boundary(at) {
-        at -= 1;
-    }
-    at
 }
 
 #[cfg(test)]

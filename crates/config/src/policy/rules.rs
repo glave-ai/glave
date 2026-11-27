@@ -204,15 +204,6 @@ impl Constraints {
         )
     }
 
-    /// The modes anyone may choose, in the order a person is offered them.
-    pub fn permissions_allowed(&self) -> Vec<Permissions> {
-        let (highest, _) = self.highest_permissions();
-        Permissions::ALL
-            .into_iter()
-            .filter(|mode| *mode <= highest)
-            .collect()
-    }
-
     /// The judge rule in force, `required` or `off`; an error when files ask for both.
     pub fn judge(&self) -> crate::Result<Option<(JudgeRule, &Path)>> {
         let mut found: Option<&Rule> = None;

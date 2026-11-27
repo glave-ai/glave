@@ -284,7 +284,7 @@ impl Equipment {
             .with_skills(self.skills)
             .with_own_tools(self.own)
             .with_hooks(self.hooks)
-            .with_memory_if(self.memory)
+            .with_memory(self.memory)
             .with_project_folders(self.project_folders)
             .with_homes(self.homes)
             .with_credentials_of(self.credentials_of)

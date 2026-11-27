@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use glave_event::{CredentialConnected, CredentialId, Secret};
 use glave_ports::host::shown;
-use glave_session::AccountsError;
+use glave_session::{Accounts, AccountsError};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 
@@ -75,6 +75,23 @@ struct State<A> {
     /// has a new id, and a token that lasts minutes is as soon due again: its address waits
     /// all the same, so a sign-in's renewals start at most once a while.
     started: BTreeMap<String, Instant>,
+}
+
+/// Whether the sign-in at `url` is still among the person's accounts in `ledger`, as `kept`
+/// finds it there; where they can't be read, its renewal fails, to be tried again.
+pub(crate) async fn still_kept<A>(
+    ledger: &Ledger,
+    url: &str,
+    kept: impl FnOnce(&Accounts) -> bool,
+) -> Result<bool, Ended<A>> {
+    match ledger.accounts().await {
+        Ok(accounts) => Ok(kept(&accounts)),
+        Err(error) => {
+            let error = format!("{error:#}");
+            tracing::warn!(url = %shown(url), %error, "could not read the accounts to renew a sign-in");
+            Err(Ended::Failed(Instant::now()))
+        }
+    }
 }
 
 /// One sign-in's latest renewal.
@@ -269,17 +286,13 @@ impl Renew for HostRenewal {
         let current = &self.current;
         let url = &current.url;
         let failed = || Ended::Failed(Instant::now());
-        let kept = match self.ledger.accounts().await {
-            Ok(accounts) => accounts
+        let kept = still_kept(&self.ledger, url, |accounts| {
+            accounts
                 .credentials
                 .iter()
-                .any(|kept| kept.credential == current.credential),
-            Err(error) => {
-                let error = format!("{error:#}");
-                tracing::warn!(url = %shown(url), %error, "could not read the hosts to renew");
-                return Err(failed());
-            }
-        };
+                .any(|kept| kept.credential == current.credential)
+        })
+        .await?;
         let (true, Some(renewal)) = (kept, &current.renewal) else {
             return Err(Ended::Done(Instant::now()));
         };

@@ -43,10 +43,8 @@ fn tool_results(request: &ModelRequest) -> Vec<String> {
             Message::Tool { output, .. } => Some(
                 output
                     .iter()
-                    .filter_map(|part| match part {
-                        Part::Text { text } => Some(text.clone()),
-                        _ => None,
-                    })
+                    .filter_map(Part::text)
+                    .map(str::to_owned)
                     .collect::<Vec<_>>()
                     .join("\n"),
             ),

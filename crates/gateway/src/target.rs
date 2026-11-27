@@ -158,22 +158,6 @@ impl Target {
         self
     }
 
-    /// Another model at the same provider, through the same handle: assumed able to do
-    /// everything, with no price, named `provider/model`, and a router where this one is.
-    #[must_use]
-    pub fn sibling(&self, model: impl Into<String>) -> Self {
-        Self {
-            // The same router's providers; who serves the other model, its catalog says.
-            router: self.router.as_ref().map(|router| {
-                Arc::new(Router {
-                    providers: Arc::clone(&router.providers),
-                    endpoints: Vec::new(),
-                })
-            }),
-            ..Self::new(Arc::clone(&self.handle), self.provider.clone(), model)
-        }
-    }
-
     #[must_use]
     pub fn with_capabilities(mut self, can: Capabilities) -> Self {
         self.can = can;
