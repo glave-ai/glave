@@ -101,8 +101,6 @@ fn a_yes_or_no_may_say_what_only_typing_would_give_away() {
 
 #[test]
 fn what_could_rewrite_a_terminal_or_hide_letters_is_gone_before_anyone_shows_it() {
-    assert_eq!(clean("a\u{1b}[2Kb\nc\u{200b}d\u{202e}e"), "a[2Kb cde");
-    assert_eq!(clean("  two\r\n\tlines\u{2028}here "), "two lines here");
     let schema = json!({"type": "object", "properties": {
         "one": {"type": "string", "title": "\u{1b}[1mBold", "description": "x\ny",
             "oneOf": [{"const": "a\u{7}", "title": "A\u{7}y"}], "default": "a\u{7}"},

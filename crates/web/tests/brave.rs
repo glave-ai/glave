@@ -45,9 +45,10 @@ fn answer(results: &Value) -> String {
 fn a_search_sends_the_query_and_key_to_brave_and_reads_its_web_results() {
     let results = json!([
         {"title": "<strong>Tokio</strong> - An asynchronous Rust runtime", "url": "https://tokio.rs/",
-         "description": "Tokio is an <strong>asynchronous</strong> runtime for Rust &amp; more.", "age": "1 day"},
+         "description": "Tokio is an <strong>asynchronous</strong> runtime for Rust &amp; more &mdash; it&#x27;s &#8220;fast&#8221;.", "age": "1 day"},
         {"title": "No address"},
-        {"title": "smol", "url": "https://github.com/smol-rs/smol"}
+        {"title": "smol", "url": "https://github.com/smol-rs/smol",
+         "description": "a > b&#10;c&#27;[2Kd &#x202E;e"}
     ]);
     let stand_in = FakeHttp::start(vec![(200, answer(&results))]).unwrap();
     let key = any_secret();
@@ -61,12 +62,14 @@ fn a_search_sends_the_query_and_key_to_brave_and_reads_its_web_results() {
             Hit {
                 title: "Tokio - An asynchronous Rust runtime".into(),
                 url: "https://tokio.rs/".into(),
-                snippet: "Tokio is an asynchronous runtime for Rust & more.".into(),
+                snippet: "Tokio is an asynchronous runtime for Rust & more — it's “fast”.".into(),
             },
             Hit {
                 title: "smol".into(),
                 url: "https://github.com/smol-rs/smol".into(),
-                snippet: String::new(),
+                // A `>` outside a tag stays; a line end or a control character a reference
+                // names never reaches the model or a terminal.
+                snippet: "a > b c[2Kd e".into(),
             },
         ]
     );

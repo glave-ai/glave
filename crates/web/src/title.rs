@@ -1,6 +1,8 @@
 //! The title an HTML page gives itself, read from its `<title>` as a person would see it in a
 //! tab: its character references read, its spaces made single, cut short when long.
 
+use glave_event::one_line;
+
 /// The most characters of a title kept.
 const MOST: usize = 200;
 
@@ -15,15 +17,9 @@ pub(crate) fn title(html: &str) -> Option<String> {
         return None;
     }
     let end = start.saturating_add(lower.get(start..)?.find("</title")?);
-    let text: String = references(html.get(start..end)?)
-        .chars()
-        .filter_map(|c| match c {
-            c if c.is_whitespace() => Some(' '),
-            c if hidden(c) => None,
-            c => Some(c),
-        })
-        .collect();
-    let title = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Only what a person sees is kept, so no bidirectional override or invisible mark can make
+    // an address shown beside the title read as another.
+    let title = one_line(&references(html.get(start..end)?));
     if title.is_empty() {
         return None;
     }
@@ -32,25 +28,6 @@ pub(crate) fn title(html: &str) -> Option<String> {
         return Some(format!("{}…", kept.trim_end()));
     }
     Some(title)
-}
-
-/// Whether `c` shows nothing of its own: a control character, or one that only changes how the
-/// text around it is laid out (the marks and overrides of bidirectional text, and the other
-/// invisible format characters), which could make an address shown beside the title read as
-/// another.
-fn hidden(c: char) -> bool {
-    c.is_control()
-        || matches!(
-            c,
-            '\u{00AD}'
-                | '\u{061C}'
-                | '\u{180E}'
-                | '\u{200B}'..='\u{200F}'
-                | '\u{202A}'..='\u{202E}'
-                | '\u{2060}'..='\u{206F}'
-                | '\u{FEFF}'
-                | '\u{FFF9}'..='\u{FFFB}'
-        )
 }
 
 /// Where the text of the first `<title>` tag in `lower` starts: just after its `>`.
@@ -73,7 +50,7 @@ fn opened(lower: &str) -> Option<usize> {
 
 /// `text` with its character references read: numeric ones, and the named ones titles use.
 /// Any other `&` stays as it is.
-fn references(text: &str) -> String {
+pub(crate) fn references(text: &str) -> String {
     let mut pieces = text.split('&');
     let mut out = pieces.next().unwrap_or_default().to_owned();
     for piece in pieces {
