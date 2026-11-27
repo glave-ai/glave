@@ -12,8 +12,6 @@ mod tool;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use frontmatter::Value;
-
 pub use tool::{SKILL, Skills};
 
 /// The file that makes a folder a skill.
@@ -58,10 +56,13 @@ impl Skill {
     /// One of glave's own skills, from its SKILL.md's text, named `glave:` and its name.
     pub fn built_in(text: &'static str) -> Result<Self, String> {
         let document = frontmatter::parse(text)?;
-        let name = text_field(&document, "name")?.ok_or("its frontmatter has no name")?;
+        let name = document
+            .text("name")?
+            .ok_or("its frontmatter has no name")?;
         check_name(&name, &name)?;
-        let description =
-            text_field(&document, "description")?.ok_or("its frontmatter has no description")?;
+        let description = document
+            .text("description")?
+            .ok_or("its frontmatter has no description")?;
         check_description(&description)?;
         Ok(Self {
             name: format!("{BUILT_IN}{name}"),
@@ -114,7 +115,8 @@ pub fn skill_folders(root: &Path, personal: &[PathBuf]) -> Vec<PathBuf> {
 pub async fn find_skills(folders: &[PathBuf]) -> Found {
     let mut gathered = Gathered::default();
     for folder in folders {
-        for file in skill_files(folder, &mut gathered.found.warnings).await {
+        let skill_md = |subfolder: PathBuf| Some(subfolder.join(SKILL_MD));
+        for file in files_in(folder, &mut gathered.found.warnings, skill_md).await {
             let read = read(&file).await;
             gathered.add(&file, read);
         }
@@ -178,13 +180,23 @@ impl Gathered {
     }
 }
 
-/// The SKILL.md in each subfolder of `folder`, in name order. A folder that is not there has
-/// none; one that cannot be read is a warning.
-async fn skill_files(folder: &Path, warnings: &mut Vec<String>) -> Vec<PathBuf> {
+/// The file `file_of` names for each entry directly in `folder`, those that are files, in
+/// name order. A folder that is not there has none; one that cannot be read is a warning.
+pub(crate) async fn files_in(
+    folder: &Path,
+    warnings: &mut Vec<String>,
+    file_of: impl Fn(PathBuf) -> Option<PathBuf>,
+) -> Vec<PathBuf> {
     let mut entries = match tokio::fs::read_dir(folder).await {
         Ok(entries) => entries,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
-        Err(err) if err.kind() == std::io::ErrorKind::NotADirectory => return Vec::new(),
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Vec::new();
+        }
         Err(err) => {
             warnings.push(format!("could not read {}: {err}", folder.display()));
             return Vec::new();
@@ -194,10 +206,10 @@ async fn skill_files(folder: &Path, warnings: &mut Vec<String>) -> Vec<PathBuf> 
     loop {
         match entries.next_entry().await {
             Ok(Some(entry)) => {
-                let file = entry.path().join(SKILL_MD);
-                if tokio::fs::metadata(&file)
-                    .await
-                    .is_ok_and(|meta| meta.is_file())
+                if let Some(file) = file_of(entry.path())
+                    && tokio::fs::metadata(&file)
+                        .await
+                        .is_ok_and(|meta| meta.is_file())
                 {
                     files.push(file);
                 }
@@ -231,7 +243,7 @@ async fn read(file: &Path) -> Result<Option<Skill>, String> {
 /// model.
 pub(crate) fn parsed(text: &str, file: &Path) -> Result<Option<Skill>, String> {
     let document = frontmatter::parse(text)?;
-    if text_field(&document, "disable-model-invocation")?.as_deref() == Some("true") {
+    if document.text("disable-model-invocation")?.as_deref() == Some("true") {
         return Ok(None);
     }
     let folder = file
@@ -240,25 +252,17 @@ pub(crate) fn parsed(text: &str, file: &Path) -> Result<Option<Skill>, String> {
         .and_then(|name| name.to_str())
         .unwrap_or_default();
     // Without a name, the folder names it, as Claude Code and Codex read it.
-    let name = text_field(&document, "name")?.unwrap_or_else(|| folder.to_owned());
+    let name = document.text("name")?.unwrap_or_else(|| folder.to_owned());
     check_name(&name, folder)?;
-    let description =
-        text_field(&document, "description")?.ok_or("its frontmatter has no description")?;
+    let description = document
+        .text("description")?
+        .ok_or("its frontmatter has no description")?;
     check_description(&description)?;
     Ok(Some(Skill {
         name,
         description,
         source: SkillSource::File(file.to_path_buf()),
     }))
-}
-
-/// A frontmatter field that must be text, trimmed; `None` when it is not there.
-fn text_field(document: &frontmatter::Document, key: &str) -> Result<Option<String>, String> {
-    match document.fields.get(key) {
-        Some(Value::Text(text)) => Ok(Some(text.trim().to_owned())),
-        Some(Value::Other) => Err(format!("{key} must be text")),
-        None => Ok(None),
-    }
 }
 
 /// A name is 1 to 64 lowercase letters, digits and single hyphens, neither first nor last,

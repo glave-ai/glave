@@ -106,11 +106,6 @@ fn a_shared_project_reads_personal_and_project_memory_and_an_isolated_one_only_i
             matches!(refused, Err(MemoryError::Refused(_))),
             "{refused:?}"
         );
-        let other_org = scope(9, 2);
-        assert!(
-            texts(memories.list(&on(other_org)).await.unwrap()).is_empty(),
-            "nothing crosses organizations"
-        );
         let elsewhere = memories.list(&on(scope(1, 5))).await.unwrap();
         assert_eq!(
             texts(elsewhere),

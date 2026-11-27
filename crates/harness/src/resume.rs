@@ -219,7 +219,7 @@ where
 }
 
 /// The calls in `events` with no result, in order.
-fn dangling_calls(events: &[Event]) -> Vec<ToolCall> {
+pub(crate) fn dangling_calls(events: &[Event]) -> Vec<ToolCall> {
     let completed: HashSet<&CallId> = events
         .iter()
         .filter_map(|event| match &event.body {
@@ -252,10 +252,12 @@ fn asked(events: &[Event]) -> Vec<String> {
         .iter()
         .filter_map(|event| match &event.body {
             Body::MessageAdded(added) if by_person(added) => added.typed.clone().or_else(|| {
-                added.parts.iter().rev().find_map(|part| match part {
-                    Part::Text { text } => Some(text.clone()),
-                    _ => None,
-                })
+                added
+                    .parts
+                    .iter()
+                    .rev()
+                    .find_map(Part::text)
+                    .map(str::to_owned)
             }),
             _ => None,
         })
@@ -301,14 +303,7 @@ fn above(events: &[Event]) -> Vec<ThreadId> {
 fn latest_request(events: &[Event]) -> Option<String> {
     events.iter().rev().find_map(|event| match &event.body {
         Body::MessageAdded(added) if by_person(added) => {
-            let texts: Vec<&str> = added
-                .parts
-                .iter()
-                .filter_map(|part| match part {
-                    Part::Text { text } => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect();
+            let texts: Vec<&str> = added.parts.iter().filter_map(Part::text).collect();
             Some(texts.join("\n"))
         }
         _ => None,

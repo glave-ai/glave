@@ -32,17 +32,10 @@ where
         self
     }
 
-    /// Gives threads `memory`: loaded at their start, its tools offered, the person's controls
-    /// served (`specs/memory.md`).
+    /// Gives threads `memory` when there is one: loaded at their start, its tools offered, the
+    /// person's controls served (`specs/memory.md`). None leaves them without.
     #[must_use]
-    pub fn with_memory(mut self, memory: Arc<dyn Memory>) -> Self {
-        self.memory = Some(memory);
-        self
-    }
-
-    /// Gives threads `memory` when there is one; none leaves them without.
-    #[must_use]
-    pub fn with_memory_if(mut self, memory: Option<Arc<dyn Memory>>) -> Self {
+    pub fn with_memory(mut self, memory: Option<Arc<dyn Memory>>) -> Self {
         self.memory = memory;
         self
     }

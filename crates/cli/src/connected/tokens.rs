@@ -18,7 +18,7 @@ use super::Connected;
 use super::flows::expires;
 use crate::accounts::Ledger;
 use crate::credentials::new_id;
-use crate::credentials::renewing::{Ended, RENEW_BEFORE, Renew, Renewing};
+use crate::credentials::renewing::{Ended, RENEW_BEFORE, Renew, Renewing, still_kept};
 
 impl Connected {
     /// What signs each request to the person's server at `url` in: their sign-in there as
@@ -149,17 +149,13 @@ impl Renew for ConnectionRenewal {
         let current = &self.current;
         let url = &current.url;
         let failed = || Ended::Failed(Instant::now());
-        let kept = match self.ledger.accounts().await {
-            Ok(accounts) => accounts
+        let kept = still_kept(&self.ledger, url, |accounts| {
+            accounts
                 .connections
                 .iter()
-                .any(|kept| kept.connection == current.connection),
-            Err(error) => {
-                let error = format!("{error:#}");
-                tracing::warn!(url = %shown(url), %error, "could not read the connections to renew a sign-in");
-                return Err(failed());
-            }
-        };
+                .any(|kept| kept.connection == current.connection)
+        })
+        .await?;
         let (true, Some(refresh)) = (kept, &current.refresh) else {
             return Err(Ended::Done(Instant::now()));
         };

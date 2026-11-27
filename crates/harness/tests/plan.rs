@@ -57,10 +57,7 @@ fn said(request: &ModelRequest) -> Vec<String> {
         .messages
         .iter()
         .filter_map(|message| match message {
-            Message::User { parts } => parts.iter().find_map(|part| match part {
-                Part::Text { text } => Some(text.clone()),
-                _ => None,
-            }),
+            Message::User { parts } => parts.iter().find_map(Part::text).map(str::to_owned),
             _ => None,
         })
         .collect()

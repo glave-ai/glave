@@ -22,6 +22,7 @@ use glave_ports::{ToolCall, ToolOutput, ToolSpec};
 use serde_json::{Map, Value, json};
 
 use super::ToolSet;
+use crate::compaction::CHARS_PER_TOKEN;
 use crate::own_tools::Connectable;
 
 /// The search's name.
@@ -44,9 +45,6 @@ const ABOUT: usize = 300;
 
 /// The most characters of a found tool's description a search shows.
 const DESCRIBED: usize = 1_000;
-
-/// Characters to a token, as the window is estimated everywhere else.
-const CHARS_PER_TOKEN: u64 = 4;
 
 /// What a call of the model's comes to before it runs.
 #[derive(Debug, Clone, PartialEq)]

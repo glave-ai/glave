@@ -1,6 +1,12 @@
 use glave_event::{HookPoint, HookResult};
 
-use super::run::decided_for_tests as decided;
+use super::run;
+
+/// What a hook that exited 0 with `text` came to, and why.
+fn decided(point: HookPoint, text: &str) -> (HookResult, Option<String>) {
+    let ran = run::decided(point, text);
+    (ran.result, ran.reason)
+}
 
 #[test]
 fn json_on_exit_zero_can_only_block() {

@@ -13,6 +13,8 @@ mod disk;
 mod local;
 mod remote;
 mod serve;
+#[cfg(test)]
+mod testing;
 mod token;
 mod waking;
 mod wire;
