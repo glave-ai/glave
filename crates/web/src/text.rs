@@ -81,13 +81,13 @@ fn markdown(html: &str) -> String {
 }
 
 /// `html` with everything between `<` and `>` dropped: a last resort.
-fn strip_tags(html: &str) -> String {
+pub(crate) fn strip_tags(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut inside = false;
     for c in html.chars() {
         match c {
             '<' => inside = true,
-            '>' => inside = false,
+            '>' if inside => inside = false,
             c if !inside => out.push(c),
             _ => {}
         }

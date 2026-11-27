@@ -1,8 +1,8 @@
-//! The token a client of `glave computer serve` presents first: a long-lived one a person
-//! sets, or a short-lived one the harness side mints for a worker, which only opens
-//! connections until it expires. A minted token travels as a secret and a lifetime, and the
-//! side that reads it counts the lifetime on its own clock, so two clocks that disagree never
-//! shorten it.
+//! The token a client of `glave computer serve` presents first: a short-lived one the harness
+//! side mints for a person's computer, which only opens connections until it expires, or one
+//! whose file names no lifetime, which lasts. A minted token travels as a secret and a
+//! lifetime, and the side that reads it counts the lifetime on its own clock, so two clocks
+//! that disagree never shorten it.
 
 use std::fmt::{self, Write as _};
 use std::path::PathBuf;
@@ -14,7 +14,7 @@ use glave_ports::computer::ComputerError;
 /// Random bytes in a minted token.
 const MINTED_BYTES: usize = 32;
 /// The shortest secret a listener accepts.
-pub(crate) const MIN_SECRET: usize = 16;
+const MIN_SECRET: usize = 16;
 
 /// A secret, and when it stops opening connections. A connection opened before then lasts.
 #[derive(Clone, PartialEq, Eq)]
@@ -37,15 +37,6 @@ impl fmt::Debug for Token {
 }
 
 impl Token {
-    /// A token that never expires, such as one a person sets in `GLAVE_COMPUTER_TOKEN`.
-    pub fn lasting(secret: impl Into<String>) -> Self {
-        Self {
-            secret: secret.into(),
-            lifetime: None,
-            expires: None,
-        }
-    }
-
     /// A new token of 32 random bytes (64 hex digits) that opens connections for `lifetime`
     /// after `now`.
     pub fn mint(now: SystemTime, lifetime: Duration) -> Result<Self, ComputerError> {
@@ -67,11 +58,6 @@ impl Token {
     /// What a client presents.
     pub fn secret(&self) -> &str {
         &self.secret
-    }
-
-    /// When it stops opening connections, if it does.
-    pub fn expires(&self) -> Option<SystemTime> {
-        self.expires
     }
 
     /// Whether `given` opens a connection at `now`: the same secret, compared in time that
@@ -118,31 +104,22 @@ impl Token {
     }
 }
 
-/// Where a listener finds the token each new connection must present: one given once, or a
-/// file read again for every connection, so the side that minted it can renew it (a worker
-/// whose connection died is reached again with a fresh one). A token's lifetime counts from
-/// when the listener first reads it.
+/// Where a listener finds the token each new connection must present: a file read again for
+/// every connection, so the side that minted it can renew it (a computer whose connection died
+/// is reached again with a fresh one). A token's lifetime counts from when the listener first
+/// reads it.
 #[derive(Debug, Clone)]
 pub struct Tokens {
-    file: Option<PathBuf>,
-    /// The token in force: the one given, or the last one read from the file.
+    file: PathBuf,
+    /// The last token read from the file.
     current: Arc<Mutex<Option<Token>>>,
-}
-
-impl From<Token> for Tokens {
-    fn from(token: Token) -> Self {
-        Self {
-            file: None,
-            current: Arc::new(Mutex::new(Some(token))),
-        }
-    }
 }
 
 impl Tokens {
     /// The token in the file at `path`, as [`Token::to_file`] wrote it.
     pub fn file(path: impl Into<PathBuf>) -> Self {
         Self {
-            file: Some(path.into()),
+            file: path.into(),
             current: Arc::new(Mutex::new(None)),
         }
     }
@@ -150,11 +127,7 @@ impl Tokens {
     /// The token a connection opened at `now` must present. A file holding the same secret
     /// as before keeps that token's expiry; a new secret starts its lifetime at `now`.
     pub async fn current(&self, now: SystemTime) -> std::io::Result<Token> {
-        let held = || self.current.lock().ok().and_then(|current| current.clone());
-        let Some(file) = &self.file else {
-            return held().ok_or_else(|| std::io::Error::other("no token is set"));
-        };
-        let text = tokio::fs::read_to_string(file).await?;
+        let text = tokio::fs::read_to_string(&self.file).await?;
         let read = Token::from_file(&text, now).map_err(std::io::Error::other)?;
         let mut current = self
             .current

@@ -15,4 +15,4 @@ mod maker;
 mod reasoning;
 mod wire;
 
-pub use client::{Config, IDLE_TIMEOUT, OpenAiCompatible};
+pub use client::{Config, OpenAiCompatible};

@@ -4,12 +4,13 @@
 #[cfg(test)]
 mod over_http {
     use glave_event::{Arguments, Part, StopReason};
+    use glave_ports::auth::IDLE_TIMEOUT;
     use glave_ports::testing::{fake_secret, unreached};
     use glave_ports::{
         Failure, Message, ModelProvider, ModelRequest, ProviderError, ToolChoice, block_on,
     };
     use glave_provider_openai::fake::{FakeServer, Reply};
-    use glave_provider_openai::{Config, IDLE_TIMEOUT, OpenAiCompatible};
+    use glave_provider_openai::{Config, OpenAiCompatible};
     use serde_json::json;
 
     fn provider(base_url: &str, key: Option<&str>) -> OpenAiCompatible {
@@ -414,10 +415,11 @@ mod over_http {
 
 #[cfg(test)]
 mod conformance {
+    use glave_ports::auth::IDLE_TIMEOUT;
     use glave_ports::conformance::{Script, model_provider};
     use glave_ports::{auth::Auth, block_on};
     use glave_provider_openai::fake::{FakeServer, Reply};
-    use glave_provider_openai::{Config, IDLE_TIMEOUT, OpenAiCompatible};
+    use glave_provider_openai::{Config, OpenAiCompatible};
     use serde_json::{Value, json};
 
     fn delta(delta: &Value) -> Value {

@@ -1,5 +1,5 @@
 //! The same turn on this machine and on a computer across the wire: a remote computer served
-//! over TCP on 127.0.0.1 must give the model exactly what a local one does, tool for tool.
+//! across the protocol must give the model exactly what a local one does, tool for tool.
 
 mod golden {
     use std::path::Path;

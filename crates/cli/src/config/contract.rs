@@ -11,9 +11,10 @@ use glave_azure::{DEFAULT_SCOPE, WorkloadIdentity};
 use glave_config::policy::{ApiChoice, BedrockEndpointChoice, Chosen, ProviderFile, Source};
 use glave_google::{Adc, Vertex};
 use glave_ports::SystemClock;
+use glave_ports::auth::IDLE_TIMEOUT;
 use glave_ports::auth::{Auth, KeyHeader};
 use glave_provider_anthropic::Api;
-use glave_provider_openai::{Config, IDLE_TIMEOUT};
+use glave_provider_openai::Config;
 
 use crate::model::{Claude, Family};
 

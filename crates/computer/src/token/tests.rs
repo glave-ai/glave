@@ -24,7 +24,7 @@ fn tokens_survive_their_file_and_short_ones_are_refused() {
     let token = Token::mint(at(5), Duration::from_secs(10)).unwrap();
     let back = Token::from_file(&token.to_file(), at(5)).unwrap();
     assert_eq!(back, token);
-    assert_eq!(back.expires(), Some(at(15)));
+    assert_eq!(back.expires, Some(at(15)));
     let lasting = Token::from_file("0123456789abcdef\n", at(0)).unwrap();
     assert!(lasting.admits("0123456789abcdef", at(u64::from(u32::MAX))));
     assert!(Token::from_file("short\n", at(0)).is_err());
@@ -69,10 +69,10 @@ fn a_token_file_is_read_again_and_a_renewed_token_starts_fresh() {
     let tokens = Tokens::file(&path);
     block_on!(async {
         let read = tokens.current(at(100)).await.unwrap();
-        assert_eq!(read.expires(), Some(at(700)));
+        assert_eq!(read.expires, Some(at(700)));
         let again = tokens.current(at(650)).await.unwrap();
         assert_eq!(
-            again.expires(),
+            again.expires,
             Some(at(700)),
             "reading again never extends it"
         );
@@ -87,8 +87,6 @@ fn a_token_file_is_read_again_and_a_renewed_token_starts_fresh() {
             "the old secret opens nothing"
         );
 
-        let fixed = Tokens::from(first.clone());
-        assert_eq!(fixed.current(at(1)).await.unwrap(), first);
         std::fs::remove_file(&path).unwrap();
         assert!(
             tokens.current(at(900)).await.is_err(),

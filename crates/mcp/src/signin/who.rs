@@ -7,7 +7,7 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use glave_event::seen;
+use glave_event::one_line;
 use serde_json::{Map, Value};
 
 /// The longest name kept for who a sign-in is, in characters: anything longer is cut there.
@@ -51,12 +51,7 @@ fn claims(token: &str) -> Option<Map<String, Value>> {
 /// or format character: no bidirectional override or isolate, no zero-width mark, so it can't
 /// dress itself as another name), at most [`LONGEST`].
 fn tidy(text: &str) -> String {
-    let shown: String = text
-        .chars()
-        .filter(|it| it.is_whitespace() || seen(*it))
-        .collect();
-    let words: Vec<&str> = shown.split_whitespace().collect();
-    words.join(" ").chars().take(LONGEST).collect()
+    one_line(text).chars().take(LONGEST).collect()
 }
 
 #[cfg(test)]

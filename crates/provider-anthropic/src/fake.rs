@@ -3,10 +3,8 @@
 //! asked. Enabled by the `fake-server` feature; glave-ports' `ScriptedHttp` serves it.
 
 use std::fmt::Write as _;
-use std::time::Duration;
 
-use glave_ports::conformance::Listening;
-use glave_ports::testing::{Received as Asked, ScriptedHttp, Written};
+use glave_ports::testing::{Received as Asked, ScriptedReply, Written};
 use serde_json::{Value, json};
 
 /// One scripted answer.
@@ -53,8 +51,26 @@ impl Reply {
             json!({"type": "message_stop"}),
         ])
     }
+}
 
-    /// The reply as it goes on the wire.
+fn message_start() -> Value {
+    json!({"type": "message_start", "message": {
+        "id": "msg_fake", "type": "message", "role": "assistant", "model": "fake-model",
+        "content": [], "stop_reason": null,
+        "usage": {"input_tokens": 100, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0, "output_tokens": 1}
+    }})
+}
+
+fn message_delta(stop: &str) -> Value {
+    json!({"type": "message_delta", "delta": {"stop_reason": stop, "stop_sequence": null},
+           "usage": {"output_tokens": 10}})
+}
+
+impl ScriptedReply for Reply {
+    type Received = Received;
+
+    const BASE: &'static str = "";
+
     fn written(self) -> Written {
         match self {
             Self::Stream(events) => {
@@ -77,19 +93,6 @@ impl Reply {
             Self::Stall => Written::Stall,
         }
     }
-}
-
-fn message_start() -> Value {
-    json!({"type": "message_start", "message": {
-        "id": "msg_fake", "type": "message", "role": "assistant", "model": "fake-model",
-        "content": [], "stop_reason": null,
-        "usage": {"input_tokens": 100, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0, "output_tokens": 1}
-    }})
-}
-
-fn message_delta(stop: &str) -> Value {
-    json!({"type": "message_delta", "delta": {"stop_reason": stop, "stop_sequence": null},
-           "usage": {"output_tokens": 10}})
 }
 
 /// A request the server received.
@@ -121,44 +124,4 @@ impl From<Asked> for Received {
 }
 
 /// The running server. Dropping it stops the server and waits for its thread.
-pub struct FakeServer {
-    url: String,
-    server: ScriptedHttp,
-}
-
-impl FakeServer {
-    /// Starts a server that answers with `replies`, in order. After the last one, every request
-    /// gets a 500 saying the script ran out.
-    pub fn start(replies: Vec<Reply>) -> std::io::Result<Self> {
-        let server = ScriptedHttp::start(replies.into_iter().map(Reply::written).collect())?;
-        Ok(Self {
-            url: server.url(),
-            server,
-        })
-    }
-
-    /// The base URL to configure, such as `http://127.0.0.1:53211`.
-    pub fn url(&self) -> &str {
-        &self.url
-    }
-
-    /// The requests received so far, in order.
-    pub fn received(&self) -> Vec<Received> {
-        self.server
-            .received()
-            .into_iter()
-            .map(Received::from)
-            .collect()
-    }
-
-    /// Waits until `count` requests have arrived, or `limit` has passed; whether they did.
-    pub fn wait_for_requests(&self, count: usize, limit: Duration) -> bool {
-        self.server.wait_for_requests(count, limit)
-    }
-}
-
-impl Listening for FakeServer {
-    fn heard(&self, limit: Duration) -> bool {
-        self.wait_for_requests(1, limit)
-    }
-}
+pub type FakeServer = glave_ports::testing::FakeServer<Reply>;

@@ -64,11 +64,10 @@ pub fn listen_socket(path: &Path) -> std::io::Result<UnixListener> {
 pub async fn serve_socket<C: Computers + 'static>(
     computers: Arc<C>,
     listener: UnixListener,
-    tokens: impl Into<Tokens>,
+    tokens: Tokens,
     idle: Option<Idle>,
     keeper: Option<Keeper>,
 ) -> std::io::Result<()> {
-    let tokens = tokens.into();
     let activity = Activity::new();
     // Kept from one connection to the next, so the minutes it counts are never reset.
     let mut keeping = pin!(async {

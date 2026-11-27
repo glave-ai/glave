@@ -6,8 +6,7 @@ use std::future::{Future, ready};
 use std::sync::Mutex;
 
 use glave_event::{
-    Arguments, Body, Event, ModelRef, Part, RawEvent, StopReason, TokenCounts, TurnResult, Usage,
-    decode,
+    Body, Event, Part, RawEvent, StopReason, TokenCounts, TurnResult, Usage, decode,
 };
 use glave_harness::{
     AllowAll, ApprovalRequest, Approver, Cancel, Decision, Harness, Parts, Place, Settings, Thread,
@@ -18,7 +17,7 @@ use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
 use glave_ports::{
     BlobStore, Caller, Completion, EventLog, InMemoryBlobs, InMemoryLog, Message, ModelProvider,
-    OrgId, ProjectId, RequestedCall, Scope,
+    OrgId, ProjectId, Scope,
 };
 
 pub(crate) struct Refuse;
@@ -68,38 +67,14 @@ pub(crate) fn answer(
     calls: Vec<(&str, serde_json::Value)>,
     stop: StopReason,
 ) -> Completion {
+    let mut answer = glave_ports::testing::answer(text, calls).unwrap();
     let counts = TokenCounts {
-        input: 100,
         cache_read: 40,
-        cache_write: 0,
-        output: 10,
-        reasoning: 0,
+        ..answer.usage.counts()
     };
-    Completion {
-        model: ModelRef {
-            provider: "script".into(),
-            name: "test-model".into(),
-        },
-        response_id: None,
-        parts: text
-            .map(|t| Part::Text { text: t.into() })
-            .into_iter()
-            .collect(),
-        tool_calls: calls
-            .into_iter()
-            .map(|(tool, args)| RequestedCall {
-                provider_call_id: Some(format!("p_{tool}")),
-                tool: tool.into(),
-                arguments: Arguments::Json(args.as_object().unwrap().clone()),
-            })
-            .collect(),
-        stop,
-        provider_stop: None,
-        usage: Usage::new(counts, false, None).unwrap(),
-        cost: None,
-        served: None,
-        upstream: None,
-    }
+    answer.usage = Usage::new(counts, false, None).unwrap();
+    answer.stop = stop;
+    answer
 }
 
 /// An answer that reads `path`.

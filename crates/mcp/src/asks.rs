@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use glave_event::{Part, ServiceAnswer, ServiceField, ServiceFieldKind, ServiceOption};
+use glave_event::{Part, ServiceAnswer, ServiceField, ServiceFieldKind, ServiceOption, one_line};
 use glave_ports::ToolOutput;
 use rmcp::model::{
     ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationSchema, EnumSchema,
@@ -277,7 +277,7 @@ fn form(key: &str, params: ElicitRequestParams) -> Result<Form, Note> {
     else {
         return Err(Note::Page);
     };
-    let message = clean(&message);
+    let message = one_line(&message);
     let fields = fields(&requested_schema)?;
     if message.is_empty() || message.chars().count() > LONGEST_MESSAGE || fields.len() > MOST_FIELDS
     {
@@ -292,18 +292,6 @@ fn form(key: &str, params: ElicitRequestParams) -> Result<Form, Note> {
         message,
         fields,
     })
-}
-
-/// `text` as a client may show it: on one line, without what could rewrite the terminal it is
-/// shown in or hide letters from the eye, control and format characters and the line and
-/// paragraph separators. Line ends, tabs among them, become a space.
-pub(crate) fn clean(text: &str) -> String {
-    let spaced = text.chars().map(|letter| match letter {
-        '\n' | '\r' | '\t' | '\u{2028}' | '\u{2029}' => ' ',
-        other => other,
-    });
-    let kept: String = spaced.filter(|letter| glave_event::seen(*letter)).collect();
-    kept.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Names a service may not ask the person under, as it could pass as glave or the model: its
@@ -323,7 +311,7 @@ const NAMES_NOT_ITS_OWN: [&str; 9] = [
 /// Whether a service of this name may ask the person: one with nothing unseen in its name, which
 /// could not pass as glave or the model.
 fn may_ask(server: &str) -> bool {
-    let plain = clean(server) == server && !server.is_empty();
+    let plain = one_line(server) == server && !server.is_empty();
     plain && !NAMES_NOT_ITS_OWN.contains(&collapsed(server).as_str())
 }
 
@@ -337,14 +325,16 @@ fn fields(schema: &ElicitationSchema) -> Result<Vec<ServiceField>, Note> {
         .into_iter()
         .map(|name| {
             // Its name goes back as it is, so it can be shown only if nothing in it is unseen.
-            if clean(&name) != name {
+            if one_line(&name) != name {
                 return Err(Note::Refused);
             }
             let property = schema.properties.get(&name).ok_or(Note::Refused)?;
             let (title, description, kind) = described(property)?;
-            let title = title.map(|title| clean(&title)).filter(|t| !t.is_empty());
-            let label = title.unwrap_or_else(|| clean(&name));
-            let description = description.map(|words| clean(&words));
+            let title = title
+                .map(|title| one_line(&title))
+                .filter(|t| !t.is_empty());
+            let label = title.unwrap_or_else(|| one_line(&name));
+            let description = description.map(|words| one_line(&words));
             let description = description.filter(|words| !words.is_empty());
             let shown = [Some(&name), Some(&label), description.as_ref()];
             let fits = shown
@@ -373,7 +363,7 @@ fn described(
     let words = |word: &Option<std::borrow::Cow<'static, str>>| word.as_deref().map(str::to_owned);
     Ok(match property {
         PrimitiveSchemaDefinition::String(text) => {
-            let default = text.default.as_deref().map(clean);
+            let default = text.default.as_deref().map(one_line);
             let default = default.filter(|default| !default.is_empty());
             if default
                 .as_ref()
@@ -500,7 +490,7 @@ fn chosen(choice: &EnumSchema) -> Result<(Option<String>, Option<String>, Servic
 fn option(value: &str, label: &str) -> ServiceOption {
     ServiceOption {
         value: value.to_owned(),
-        label: clean(label),
+        label: one_line(label),
     }
 }
 
