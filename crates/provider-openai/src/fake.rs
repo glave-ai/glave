@@ -3,10 +3,8 @@
 //! was asked. Enabled by the `fake-server` feature; glave-ports' `ScriptedHttp` serves it.
 
 use std::fmt::Write as _;
-use std::time::Duration;
 
-use glave_ports::conformance::Listening;
-use glave_ports::testing::{Received as Asked, ScriptedHttp, Written};
+use glave_ports::testing::{Received as Asked, ScriptedReply, Written};
 use serde_json::{Value, json};
 
 /// One scripted answer.
@@ -44,8 +42,13 @@ impl Reply {
                    "usage": {"prompt_tokens": 100, "completion_tokens": 10}}),
         ])
     }
+}
 
-    /// The reply as it goes on the wire.
+impl ScriptedReply for Reply {
+    type Received = Received;
+
+    const BASE: &'static str = "/v1";
+
     fn written(self) -> Written {
         let events = |chunks: Vec<Value>| {
             let mut body = String::new();
@@ -99,44 +102,4 @@ impl From<Asked> for Received {
 }
 
 /// The running server. Dropping it stops the server and waits for its thread.
-pub struct FakeServer {
-    url: String,
-    server: ScriptedHttp,
-}
-
-impl FakeServer {
-    /// Starts a server that answers with `replies`, in order. After the last one, every request
-    /// gets a 500 saying the script ran out.
-    pub fn start(replies: Vec<Reply>) -> std::io::Result<Self> {
-        let server = ScriptedHttp::start(replies.into_iter().map(Reply::written).collect())?;
-        Ok(Self {
-            url: format!("{}/v1", server.url()),
-            server,
-        })
-    }
-
-    /// The base URL to configure, such as `http://127.0.0.1:53211/v1`.
-    pub fn url(&self) -> &str {
-        &self.url
-    }
-
-    /// The requests received so far, in order.
-    pub fn received(&self) -> Vec<Received> {
-        self.server
-            .received()
-            .into_iter()
-            .map(Received::from)
-            .collect()
-    }
-
-    /// Waits until `count` requests have arrived, or `limit` has passed; whether they did.
-    pub fn wait_for_requests(&self, count: usize, limit: Duration) -> bool {
-        self.server.wait_for_requests(count, limit)
-    }
-}
-
-impl Listening for FakeServer {
-    fn heard(&self, limit: Duration) -> bool {
-        self.wait_for_requests(1, limit)
-    }
-}
+pub type FakeServer = glave_ports::testing::FakeServer<Reply>;

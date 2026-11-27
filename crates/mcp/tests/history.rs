@@ -6,16 +6,14 @@ use std::future::{Future, ready};
 use std::path::Path;
 use std::sync::Arc;
 
-use glave_event::{
-    Arguments, BlobRef, ModelRef, Part, RawEvent, Sha256, StopReason, ThreadId, TokenCounts, Usage,
-};
+use glave_event::{BlobRef, Part, RawEvent, Sha256, ThreadId};
 use glave_harness::{AllowAll, Cancel, Harness, Parts, Permissions, Settings, Thread, Workspace};
 use glave_mcp::{Limits, McpServer};
 use glave_ports::settings::mcp::ServerConfig;
-use glave_ports::testing::{CountingEntropy, ManualClock, ScriptedModel, Seen, TempDir};
+use glave_ports::testing::{CountingEntropy, ManualClock, ScriptedModel, Seen, TempDir, answer};
 use glave_ports::{
     Blob, BlobError, BlobStore, Chunks, Completion, EventLog as _, InMemoryBlobs, InMemoryLog,
-    Message, OrgId, ProjectId, RequestedCall, Scope, Swept, ToolSource, block_on, read_all,
+    Message, OrgId, ProjectId, Scope, Swept, ToolSource, block_on, read_all,
 };
 use serde_json::{Value, json};
 
@@ -38,42 +36,8 @@ pub(crate) fn scope() -> Scope {
 
 /// The model's answer: a call of the server's `blocks` for `what`, or, with none, done.
 pub(crate) fn step(what: Option<&str>) -> Completion {
-    let counts = TokenCounts {
-        input: 100,
-        cache_read: 0,
-        cache_write: 0,
-        output: 10,
-        reasoning: 0,
-    };
-    let call = what.map(|what| RequestedCall {
-        provider_call_id: Some(format!("p_{what}")),
-        tool: "mcp__tests__blocks".into(),
-        arguments: Arguments::Json(
-            json!({ "what": what })
-                .as_object()
-                .cloned()
-                .unwrap_or_default(),
-        ),
-    });
-    Completion {
-        model: ModelRef {
-            provider: "script".into(),
-            name: "test-model".into(),
-        },
-        response_id: None,
-        parts: Vec::new(),
-        stop: if call.is_some() {
-            StopReason::ToolUse
-        } else {
-            StopReason::EndTurn
-        },
-        tool_calls: call.into_iter().collect(),
-        provider_stop: None,
-        usage: Usage::new(counts, false, None).unwrap(),
-        cost: None,
-        served: None,
-        upstream: None,
-    }
+    let calls = what.map(|what| ("mcp__tests__blocks", json!({ "what": what })));
+    answer(None, calls.into_iter().collect()).unwrap()
 }
 
 /// The turn calling for each of [`KINDS`], then done, on `blobs`: its events and what the model

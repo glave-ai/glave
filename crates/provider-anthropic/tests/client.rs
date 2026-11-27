@@ -4,12 +4,13 @@
 #[cfg(test)]
 mod over_http {
     use glave_event::{Arguments, Part, StopReason};
+    use glave_ports::auth::IDLE_TIMEOUT;
     use glave_ports::testing::{fake_secret, unreached};
     use glave_ports::{
         Failure, Message, ModelProvider, ModelRequest, ProviderError, ToolChoice, block_on,
     };
     use glave_provider_anthropic::fake::{FakeServer, Reply};
-    use glave_provider_anthropic::{Anthropic, Api, Config, IDLE_TIMEOUT};
+    use glave_provider_anthropic::{Anthropic, Api, Config};
     use serde_json::json;
 
     fn provider(base_url: &str, key: Option<&str>) -> Anthropic {
@@ -301,11 +302,12 @@ mod over_http {
 
 #[cfg(test)]
 mod conformance {
+    use glave_ports::auth::IDLE_TIMEOUT;
     use glave_ports::auth::{Auth, KeyHeader};
     use glave_ports::block_on;
     use glave_ports::conformance::{Script, model_provider};
     use glave_provider_anthropic::fake::{FakeServer, Reply};
-    use glave_provider_anthropic::{Anthropic, Api, Config, IDLE_TIMEOUT};
+    use glave_provider_anthropic::{Anthropic, Api, Config};
     use serde_json::{Value, json};
 
     fn start(usage: bool) -> Value {

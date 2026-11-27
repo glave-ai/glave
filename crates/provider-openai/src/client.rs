@@ -4,7 +4,8 @@
 use std::time::Duration;
 
 use glave_ports::auth::{
-    Auth, CONNECT_TIMEOUT, Outgoing, not_encoded, not_json, request_failed, send_signed,
+    Auth, BodyError, IDLE_TIMEOUT, Outgoing, not_encoded, not_json, provider_client, read_body,
+    request_failed, send_signed,
 };
 use glave_ports::host::is_this_computer;
 use glave_ports::{Completion, Delta, Made, MediaAsk, ModelProvider, ModelRequest, ProviderError};
@@ -31,10 +32,6 @@ pub struct Config {
     /// fails as timed out.
     pub idle_timeout: Duration,
 }
-
-/// The default idle timeout, as Codex sets it: long enough for a local model to read a long
-/// prompt before its first token.
-pub const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 impl Config {
     /// The endpoint at `base_url`, with `api_key` as a bearer token when there is one, named
@@ -95,12 +92,7 @@ pub struct OpenAiCompatible {
 
 impl OpenAiCompatible {
     pub fn new(config: Config) -> Result<Self, ProviderError> {
-        let http = reqwest::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            // Each read may wait this long: for the first token, and between the rest.
-            .read_timeout(config.idle_timeout)
-            .build()
-            .map_err(|e| ProviderError::Transport(e.to_string()))?;
+        let http = provider_client(config.idle_timeout)?;
         let base = config.base_url.trim_end_matches('/').to_owned();
         Ok(Self {
             http,
@@ -166,17 +158,15 @@ impl OpenAiCompatible {
         url: &str,
         most: usize,
     ) -> Result<Vec<u8>, ProviderError> {
-        let mut body = Vec::new();
-        while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
-            if body.len().saturating_add(bytes.len()) > most {
-                return Err(ProviderError::Protocol(format!(
+        read_body(&mut response, most)
+            .await
+            .map_err(|error| match error {
+                BodyError::Read(error) => self.failed(error),
+                BodyError::TooLarge(_) => ProviderError::Protocol(format!(
                     "{} answered with more than {most} bytes",
                     glave_ports::host::shown(url)
-                )));
-            }
-            body.extend_from_slice(&bytes);
-        }
-        Ok(body)
+                )),
+            })
     }
 
     /// Reads the response's events into `assembler`, until `[DONE]` or the end of the body.

@@ -9,6 +9,7 @@ use std::fmt;
 use std::time::Duration;
 
 use glave_event::{Currency, Money, Nanos, Secret};
+use glave_ports::auth::{BodyError, read_body};
 use glave_ports::{
     Completion, Delta, Failure, Hit, ModelProvider, ModelRequest, ProviderError, Purpose,
     SearchAsk, SearchResults,
@@ -95,15 +96,14 @@ impl Brave {
             .await;
         let mut response = sent.map_err(transport)?;
         let status = response.status();
-        let mut body = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(transport)? {
-            body.extend_from_slice(&chunk);
-            if body.len() > MOST_BYTES {
-                return Err(ProviderError::Protocol(
-                    "web search's answer was too large".to_owned(),
-                ));
-            }
-        }
+        let body = read_body(&mut response, MOST_BYTES)
+            .await
+            .map_err(|error| match error {
+                BodyError::Read(error) => transport(error),
+                BodyError::TooLarge(_) => {
+                    ProviderError::Protocol("web search's answer was too large".to_owned())
+                }
+            })?;
         if !status.is_success() {
             let why: String = String::from_utf8_lossy(&body)
                 .chars()

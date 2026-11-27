@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use glave_event::{Arguments, ModelRef, Part, PrincipalId, StopReason, TokenCounts, Usage};
+use glave_event::{Part, PrincipalId};
 use glave_harness::{Approver, Harness, Parts, Settings, Workspace};
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
@@ -12,7 +12,7 @@ use glave_ports::computer::{RunsFor, Sandbox, SandboxLevel, SandboxNetwork};
 use glave_ports::memories::{Memory, ProjectMemory};
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
-use glave_ports::{Clock, Completion, OrgId, ProjectId, RequestedCall, Scope};
+use glave_ports::{Clock, Completion, OrgId, ProjectId, Scope};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 use jiff::Timestamp;
 
@@ -197,43 +197,7 @@ pub(crate) fn settings() -> Settings {
 }
 
 pub(crate) fn answer(text: Option<&str>, calls: Vec<(&str, serde_json::Value)>) -> Completion {
-    let counts = TokenCounts {
-        input: 100,
-        cache_read: 0,
-        cache_write: 0,
-        output: 10,
-        reasoning: 0,
-    };
-    let stop = if calls.is_empty() {
-        StopReason::EndTurn
-    } else {
-        StopReason::ToolUse
-    };
-    Completion {
-        model: ModelRef {
-            provider: "script".into(),
-            name: "test-model".into(),
-        },
-        response_id: None,
-        parts: text
-            .map(|t| Part::Text { text: t.into() })
-            .into_iter()
-            .collect(),
-        tool_calls: calls
-            .into_iter()
-            .map(|(tool, args)| RequestedCall {
-                provider_call_id: None,
-                tool: tool.into(),
-                arguments: Arguments::Json(args.as_object().unwrap().clone()),
-            })
-            .collect(),
-        stop,
-        provider_stop: None,
-        usage: Usage::new(counts, false, None).unwrap(),
-        cost: None,
-        served: None,
-        upstream: None,
-    }
+    glave_ports::testing::answer(text, calls).unwrap()
 }
 
 pub(crate) fn said(text: &str) -> Completion {

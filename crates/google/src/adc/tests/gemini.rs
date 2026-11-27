@@ -2,9 +2,10 @@
 //! provider, with the metadata server's token as its bearer.
 
 use glave_event::Part;
+use glave_ports::auth::IDLE_TIMEOUT;
 use glave_ports::{Message, ModelProvider, ModelRequest, ToolChoice};
 use glave_provider_openai::fake::{FakeServer, Reply};
-use glave_provider_openai::{Config, IDLE_TIMEOUT, OpenAiCompatible};
+use glave_provider_openai::{Config, OpenAiCompatible};
 
 use super::*;
 
