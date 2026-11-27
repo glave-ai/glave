@@ -140,21 +140,31 @@ where
         &self,
         caller: &Caller,
     ) -> Result<(Project, Scope), ApiError> {
-        let now = self.inner.harness.clock().now();
-        let id = ThreadId::new(now, self.inner.harness.entropy().bytes()?)?;
-        let new = Project {
-            id: ProjectId::from_uuid(id.as_uuid()),
-            kind: ProjectKind::Personal,
-            name: PERSONAL_NAME.to_owned(),
-            owner: Principal::person(self.person_of(caller)?),
-            created_at: At::from(now),
-            updated_at: At::from(now),
-        };
+        let new = self.new_project(caller, ProjectKind::Personal, PERSONAL_NAME.to_owned())?;
         let org = self.org_of(caller);
         let kept = self.inner.projects.personal(org, &new).await?;
         let person = self.person_of(caller)?;
         let scope = Scope::of_owner(org, &kept, person).ok_or_else(|| no_project(kept.id))?;
         Ok((kept, scope))
+    }
+
+    /// A new project of `kind` named `name`, the caller's, made now: not yet kept.
+    fn new_project(
+        &self,
+        caller: &Caller,
+        kind: ProjectKind,
+        name: String,
+    ) -> Result<Project, ApiError> {
+        let now = self.inner.harness.clock().now();
+        let id = ThreadId::new(now, self.inner.harness.entropy().bytes()?)?;
+        Ok(Project {
+            id: ProjectId::from_uuid(id.as_uuid()),
+            kind,
+            name,
+            owner: Principal::person(self.person_of(caller)?),
+            created_at: At::from(now),
+            updated_at: At::from(now),
+        })
     }
 
     /// The scope of `person`'s Chats in `org`, when they have them: found, never made.
@@ -325,16 +335,7 @@ where
         folder: Option<NewFolder>,
     ) -> Result<Reply, ApiError> {
         Project::check_name(&name)?;
-        let now = self.inner.harness.clock().now();
-        let id = ThreadId::new(now, self.inner.harness.entropy().bytes()?)?;
-        let project = Project {
-            id: ProjectId::from_uuid(id.as_uuid()),
-            kind: ProjectKind::Project,
-            name,
-            owner: Principal::person(self.person_of(caller)?),
-            created_at: At::from(now),
-            updated_at: At::from(now),
-        };
+        let project = self.new_project(caller, ProjectKind::Project, name)?;
         if let Some(folder) = folder {
             return self.create_with_folder(caller, project, folder).await;
         }
