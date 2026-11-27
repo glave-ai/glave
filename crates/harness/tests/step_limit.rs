@@ -12,13 +12,9 @@ use crate::support::*;
 
 fn text(message: &Message) -> String {
     match message {
-        Message::User { parts } | Message::Assistant { parts, .. } => parts
-            .iter()
-            .filter_map(|part| match part {
-                Part::Text { text } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect(),
+        Message::User { parts } | Message::Assistant { parts, .. } => {
+            parts.iter().filter_map(Part::text).collect()
+        }
         Message::Tool { .. } => String::new(),
     }
 }

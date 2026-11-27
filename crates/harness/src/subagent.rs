@@ -89,13 +89,7 @@ pub(crate) fn brief(asked: &Asked) -> String {
 pub(crate) fn report(messages: &[Message], outcome: Outcome) -> String {
     let last = messages.iter().rev().find_map(|message| match message {
         Message::Assistant { parts, .. } => {
-            let text: Vec<&str> = parts
-                .iter()
-                .filter_map(|part| match part {
-                    Part::Text { text } => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect();
+            let text: Vec<&str> = parts.iter().filter_map(Part::text).collect();
             let text = text.join("\n");
             (!text.trim().is_empty()).then_some(text)
         }

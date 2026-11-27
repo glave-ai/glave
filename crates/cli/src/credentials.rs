@@ -16,11 +16,11 @@ use std::sync::{Arc, PoisonError, RwLock};
 use glave_config::policy::GithubFile;
 use glave_event::{CredentialConnected, CredentialId, Forge, Principal, PrincipalId, Secret};
 use glave_ports::computer::CredentialHost;
-use glave_ports::{BoxFuture, Clock as _, SystemClock};
+use glave_ports::{BoxFuture, Clock as _, Entropy as _, OsEntropy, SystemClock};
 use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, code};
 use glave_session::{GitHosts, NewCredential};
 
-use crate::accounts::{Ledger, random};
+use crate::accounts::Ledger;
 use crate::data::Data;
 use check::{Checked, Http};
 use device::{Flows, Github, Grant, Polled};
@@ -259,15 +259,18 @@ pub(crate) fn origin(url: &str) -> Option<String> {
 
 /// A new sign-in's id: a git host's, or a connection's.
 pub(crate) fn new_id() -> anyhow::Result<CredentialId> {
-    Ok(CredentialId::new(SystemClock.now(), random()?)?)
+    Ok(CredentialId::new(SystemClock.now(), OsEntropy.bytes()?)?)
 }
 
 /// A new id for a sign-in waiting in the browser, which clients name it by: random, in hex.
 pub(crate) fn new_flow() -> anyhow::Result<String> {
-    Ok(random()?.iter().fold(String::new(), |mut flow, byte| {
-        let _ = write!(flow, "{byte:02x}");
-        flow
-    }))
+    Ok(OsEntropy
+        .bytes()?
+        .iter()
+        .fold(String::new(), |mut flow, byte| {
+            let _ = write!(flow, "{byte:02x}");
+            flow
+        }))
 }
 
 /// `text` without the spaces around it, when it is one line of visible characters.

@@ -20,12 +20,14 @@ use std::time::Instant;
 
 use glave_event::{At, Catalog, Principal, ProviderConnected, ProviderId, ProviderKind, Secret};
 use glave_ports::auth::safe_to_send;
-use glave_ports::{BoxFuture, Clock as _, Failure, ProviderError, SystemClock};
+use glave_ports::{
+    BoxFuture, Clock as _, Entropy as _, Failure, OsEntropy, ProviderError, SystemClock,
+};
 use glave_provider_openai::Config;
 use glave_session::protocol::{ApiError, ErrorData, ProviderInfo, code};
 use glave_session::{Models, NewProvider, Providers, Refreshed};
 
-use crate::accounts::{Ledger, random};
+use crate::accounts::Ledger;
 use crate::catalogs::Catalogs;
 use crate::config::Endpoint;
 use crate::gateway::GatewaySwitch;
@@ -106,7 +108,9 @@ impl ModelAccounts {
         let url = checked_url(new.kind, new.url)?;
         let key = checked_key(&new.key)?;
         let mut account = ProviderConnected {
-            provider: random()
+            provider: OsEntropy
+                .bytes()
+                .map_err(anyhow::Error::from)
                 .and_then(|random| Ok(ProviderId::new(SystemClock.now(), random)?))
                 .map_err(|e| ApiError::internal(&e))?,
             kind: new.kind,

@@ -17,6 +17,7 @@ use crate::args::Args;
 use crate::client::Session;
 use crate::input::Input;
 use crate::reach::{self, Reached};
+use crate::session::run_with;
 use crate::turns::{DECLINED, Here, NO_PROJECT};
 
 pub(crate) const TASKS_USAGE: &str = "\
@@ -100,34 +101,6 @@ enum Asked {
     /// Pause it (`true`) or resume it.
     Pause(ScheduleId, bool),
     Remove(ScheduleId),
-}
-
-pub(crate) fn run_with<F, R>(words: &[String], usage: &str, run: F) -> ExitCode
-where
-    F: FnOnce(Vec<String>) -> R,
-    R: Future<Output = anyhow::Result<()>>,
-{
-    if words.iter().any(|word| word == "--help" || word == "-h") {
-        println!("{usage}");
-        return ExitCode::SUCCESS;
-    }
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!("glave: could not start: {error}");
-            return ExitCode::FAILURE;
-        }
-    };
-    match runtime.block_on(run(words.to_vec())) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("glave: {error:#}");
-            ExitCode::FAILURE
-        }
-    }
 }
 
 async fn list_tasks(server: &mut Reached) -> anyhow::Result<()> {

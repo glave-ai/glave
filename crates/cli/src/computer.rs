@@ -21,6 +21,7 @@ use tokio::io::{AsyncReadExt as _, BufReader};
 use tokio::net::TcpListener;
 
 use crate::home;
+use crate::session::{parsed, runtime};
 
 mod fence;
 
@@ -178,29 +179,13 @@ fn parse(arguments: &[String]) -> Result<Asked, String> {
 }
 
 pub(crate) fn main(arguments: &[String]) -> ExitCode {
-    if arguments
-        .iter()
-        .any(|argument| argument == "--help" || argument == "-h")
-    {
-        println!("{USAGE}");
-        return ExitCode::SUCCESS;
-    }
-    let asked = match parse(arguments) {
+    let asked = match parsed(arguments, USAGE, parse) {
         Ok(asked) => asked,
-        Err(message) => {
-            eprintln!("glave: {message}\n\n{USAGE}");
-            return ExitCode::from(2);
-        }
+        Err(code) => return code,
     };
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
+    let runtime = match runtime() {
         Ok(runtime) => runtime,
-        Err(error) => {
-            eprintln!("glave: could not start: {error}");
-            return ExitCode::FAILURE;
-        }
+        Err(code) => return code,
     };
     let ran = match asked {
         Asked::Bridge(path) => {

@@ -43,10 +43,10 @@ impl<'a> ToolHook<'a> {
 }
 
 /// What one hook decided.
-struct Ran {
-    result: HookResult,
+pub(super) struct Ran {
+    pub(super) result: HookResult,
     exit_code: Option<i32>,
-    reason: Option<String>,
+    pub(super) reason: Option<String>,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -221,7 +221,7 @@ where
 /// Code and Codex read it: `"decision": "block"`, or for `PreToolUse` a
 /// `hookSpecificOutput.permissionDecision` of `"deny"`. Allowing fields are ignored: a hook
 /// never lets anything through that would otherwise ask.
-fn decided(point: HookPoint, text: &str) -> Ran {
+pub(super) fn decided(point: HookPoint, text: &str) -> Ran {
     let passed = Ran {
         result: HookResult::Passed,
         exit_code: Some(0),
@@ -297,10 +297,7 @@ fn tool_input(call: &ToolHook<'_>) -> Map<String, Value> {
 fn text_of(parts: &[Part]) -> String {
     parts
         .iter()
-        .filter_map(|part| match part {
-            Part::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
+        .filter_map(Part::text)
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -319,18 +316,9 @@ impl Output for Kept {
     fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
         if let Ok(mut kept) = self.0.lock() {
             let room = MAX_OUTPUT.saturating_sub(kept.len());
-            let mut end = room.min(text.len());
-            while !text.is_char_boundary(end) {
-                end = end.saturating_sub(1);
-            }
+            let end = text.floor_char_boundary(room);
             kept.push_str(text.get(..end).unwrap_or_default());
         }
         Box::pin(std::future::ready(()))
     }
-}
-
-#[cfg(test)]
-pub(crate) fn decided_for_tests(point: HookPoint, text: &str) -> (HookResult, Option<String>) {
-    let ran = decided(point, text);
-    (ran.result, ran.reason)
 }

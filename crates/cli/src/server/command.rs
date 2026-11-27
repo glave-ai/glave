@@ -12,6 +12,7 @@ use glave_session::protocol::{Reply, Request, TaskStatus};
 use rustix::process::{Pid, Signal};
 
 use super::{Lock, connect, log_path, socket_path, start};
+use crate::session::{ended, runtime};
 use crate::socket::Connection;
 
 const USAGE: &str = "\
@@ -39,15 +40,9 @@ const NOT_RUNNING: u8 = 3;
 /// `glave server …`, reading the words after `server`.
 pub(crate) fn main(words: &[String]) -> ExitCode {
     let words: Vec<&str> = words.iter().map(String::as_str).collect();
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
+    let runtime = match runtime() {
         Ok(runtime) => runtime,
-        Err(e) => {
-            eprintln!("glave: could not start: {e}");
-            return ExitCode::FAILURE;
-        }
+        Err(code) => return code,
     };
     let ran = match words.as_slice() {
         ["status"] => runtime.block_on(status()),
@@ -65,13 +60,7 @@ pub(crate) fn main(words: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    match ran {
-        Ok(code) => code,
-        Err(error) => {
-            eprintln!("glave: {error:#}");
-            ExitCode::FAILURE
-        }
-    }
+    ended(ran)
 }
 
 /// `glave server status`.

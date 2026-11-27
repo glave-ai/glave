@@ -3,36 +3,28 @@
 # place they are in. A copy not listed here fails the check, and so does a line no longer found:
 # a change that shares a copy takes its line out, and one that edits or moves a listed copy puts
 # the line the check prints in its place. Nothing is added here but that.
-04879cd549cea09e 7 crates/cli/src/memory.rs crates/cli/src/threads.rs
 090ee4c561993ff7 6 crates/session/tests/listing.rs crates/session/tests/standing.rs
 104f93b401311b5c 7 crates/store-postgres/src/store.rs crates/store-sqlite/src/store.rs
 111e9eda7f7fe431 9 crates/azure/src/workload/tests.rs crates/google/src/adc/tests.rs
 164d700574459588 9 crates/provider-anthropic/tests/client.rs crates/provider-openai/tests/client.rs
 1c3c0adb8bac6fcc 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
-21324c4068197f18 7 crates/harness/src/resume.rs crates/harness/src/waits.rs
 23b41c206c1cac43 10 crates/session/tests/server.rs crates/session/tests/server.rs
 25a502a12f8d717f 6 crates/cli/src/worktrees/cleanup/tests.rs crates/computer/src/worktrees/tests.rs
 2e3ce5bbc0e838ca 7 crates/session/src/http/body/tests.rs crates/session/src/http/body/tests.rs
 2efd93b7f3eedc0e 10 crates/session/tests/outside.rs crates/session/tests/outside.rs
 4fac0a7d959a48c2 13 crates/session/tests/list_watching.rs crates/session/tests/subagents.rs
 5730335cee541409 6 crates/session/src/held.rs crates/session/src/held.rs
-6b61e6143887a11d 8 crates/cli/src/computer.rs crates/cli/src/threads.rs crates/cli/src/worktrees.rs
 6e88cd02a8308b96 10 crates/computer/src/worktrees/tests.rs crates/computer/src/worktrees/tests.rs
 7542976e8395bedc 9 crates/session/tests/turn_streams.rs crates/session/tests/watching.rs
-7fac9e009813a8c7 10 crates/cli/src/computer.rs crates/cli/src/threads.rs
 81e2ed3cd1c45cf4 8 crates/harness/tests/project_folders.rs crates/session/tests/trust.rs
 83355f733bf6c3cb 6 crates/store-postgres/src/store.rs crates/store-sqlite/src/store.rs
 aab82f086101a3df 6 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs
 9555910be626e4a7 8 crates/store-postgres/src/leases.rs crates/store-sqlite/src/leases.rs
-9686706281056062 6 crates/cli/tests/computer.rs crates/computer/src/local/background/tests.rs
 9917f56ff024635e 7 crates/computer/src/local/credentials/tests.rs crates/computer/src/local/sandbox/linux/tests.rs crates/computer/src/local/sandbox/tests.rs
-9e0deedec0a616b8 11 crates/cli/src/memory.rs crates/cli/src/threads.rs
 a3e4b5de28fa9b4d 12 crates/cli/src/worktrees/cleanup/tests.rs crates/computer/src/worktrees/tests.rs
 a4c6e50cee13806d 11 crates/store-postgres/src/blobs.rs crates/store-postgres/src/blobs.rs
 a55f04d0fc470d9f 11 crates/session/src/answers.rs crates/session/src/turn.rs
-a8649abdfb794d0a 7 crates/harness/src/commands.rs crates/harness/src/skills.rs
 a9f65d4fb272be59 8 crates/harness/tests/project_folders.rs crates/session/tests/choices.rs
-afa24c0018395dcb 13 crates/keys/src/conformance.rs crates/ports/src/conformance.rs
 bbb0d4e47b13c4ec 7 crates/session/tests/turn_streams.rs crates/session/tests/turn_streams.rs
 bbd73ee3de4c9b51 8 crates/computer/src/local/confinement_tests.rs crates/computer/src/local/confinement_tests.rs
 c12ac87a932d4b74 9 crates/provider-anthropic/src/client.rs crates/provider-openai/src/client.rs

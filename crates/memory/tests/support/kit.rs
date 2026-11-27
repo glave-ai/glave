@@ -9,7 +9,7 @@ use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 pub(crate) use glave_ports::block_on;
 use glave_ports::computer::{RunsFor, Sandbox, SandboxLevel, SandboxNetwork};
-use glave_ports::memories::ProjectMemory;
+use glave_ports::memories::{Memory, ProjectMemory};
 use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub(crate) use glave_ports::testing::{ScriptedModel, Seen};
 use glave_ports::{Clock, Completion, OrgId, ProjectId, Scope};
@@ -173,11 +173,8 @@ impl Kit {
             entropy: Box::new(CountingEntropy::starting_at(7 << 40)),
             workspace,
         };
-        let mut harness = Harness::new(parts, settings);
-        if let Some(memory) = memory {
-            harness = harness.with_memory(memory);
-        }
-        (harness, seen)
+        let memory = memory.map(|memory| memory as Arc<dyn Memory>);
+        (Harness::new(parts, settings).with_memory(memory), seen)
     }
 }
 

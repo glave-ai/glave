@@ -31,10 +31,7 @@ impl Tail {
     /// The last `most` bytes, cut at a character boundary.
     pub(crate) fn text(&self, most: usize) -> String {
         let all = self.0.lock().map(|all| all.clone()).unwrap_or_default();
-        let mut start = all.len().saturating_sub(most);
-        while !all.is_char_boundary(start) {
-            start = start.saturating_add(1);
-        }
+        let start = all.ceil_char_boundary(all.len().saturating_sub(most));
         all.get(start..).unwrap_or_default().trim().to_owned()
     }
 }
@@ -47,10 +44,7 @@ impl glave_ports::computer::Output for Tail {
             // Bounded.
             let excess = all.len().saturating_sub(KEPT);
             if excess > 0 {
-                let mut cut = excess;
-                while !all.is_char_boundary(cut) {
-                    cut = cut.saturating_add(1);
-                }
+                let cut = all.ceil_char_boundary(excess);
                 all.replace_range(..cut, "");
             }
         }

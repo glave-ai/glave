@@ -131,10 +131,7 @@ impl Output for Masking<'_> {
             held.push_str(text);
             let mut ready = self.known.mask(&held);
             let keep = self.known.longest().saturating_sub(1);
-            let mut at = ready.len().saturating_sub(keep);
-            while !ready.is_char_boundary(at) {
-                at = at.saturating_sub(1);
-            }
+            let at = ready.floor_char_boundary(ready.len().saturating_sub(keep));
             *held = ready.split_off(at);
             ready
         };

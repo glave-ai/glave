@@ -14,11 +14,11 @@ pub(crate) fn new_uuid_v7() -> anyhow::Result<uuid::Uuid> {
     Ok(uuid::Builder::from_unix_timestamp_millis(millis, &random).into_uuid())
 }
 
-/// Random bytes from the operating system, or why there are none: an id is never left with a
-/// zero-filled random part.
-fn random<const N: usize>() -> anyhow::Result<[u8; N]> {
+/// Random bytes from the operating system, or why there are none: an id or a token is never
+/// left zero-filled.
+pub(crate) fn random<const N: usize>() -> anyhow::Result<[u8; N]> {
     let mut bytes = [0u8; N];
     getrandom::fill(&mut bytes)
-        .map_err(|e| anyhow::anyhow!("could not get random bytes for a new id: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("could not get random bytes from this computer: {e}"))?;
     Ok(bytes)
 }

@@ -40,10 +40,7 @@ pub(crate) fn sweep(text: &mut String, room: usize, saved: &mut Vec<Vec<u8>>) {
         *text = swept;
     }
     if text.len() > room {
-        let mut end = PREVIEW.min(room);
-        while !text.is_char_boundary(end) {
-            end = end.saturating_sub(1);
-        }
+        let end = text.floor_char_boundary(PREVIEW.min(room));
         let line = saved_line("text", text.as_bytes());
         let preview = text.get(..end).unwrap_or_default();
         let shown = format!("{preview}\n{line}");
